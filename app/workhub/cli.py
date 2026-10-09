@@ -10,20 +10,25 @@ from workhub.config import settings
 from workhub.db import connection
 from workhub.security import issue_session
 
-MIGRATION = Path(__file__).resolve().parent / "migrations" / "0001_workforce_identity_position_permission.sql"
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 
 def migrate():
-    sql = MIGRATION.read_text(encoding="utf-8")
-    version = MIGRATION.name
-    with connection() as conn:
-        has_schema = conn.execute("SELECT to_regclass('workhub.schema_migrations') AS table_name").fetchone()["table_name"]
-        if has_schema and conn.execute("SELECT 1 FROM workhub.schema_migrations WHERE version = %s", (version,)).fetchone():
-            print(f"Already applied {version}")
-            return
-        conn.execute(sql)
-        conn.execute("INSERT INTO workhub.schema_migrations (version) VALUES (%s)", (version,))
-    print(f"Applied {version}")
+    migrations = sorted(MIGRATIONS_DIR.glob("*.sql"))
+    if not migrations:
+        raise SystemExit(f"No migration files found under {MIGRATIONS_DIR}")
+    for migration in migrations:
+        sql = migration.read_text(encoding="utf-8")
+        version = migration.name
+        with connection() as conn:
+            # The table does not exist until the first migration creates it.
+            has_table = conn.execute("SELECT to_regclass('workhub.schema_migrations') AS table_name").fetchone()["table_name"]
+            if has_table and conn.execute("SELECT 1 FROM workhub.schema_migrations WHERE version = %s", (version,)).fetchone():
+                print(f"Already applied {version}")
+                continue
+            conn.execute(sql)
+            conn.execute("INSERT INTO workhub.schema_migrations (version) VALUES (%s)", (version,))
+        print(f"Applied {version}")
 
 
 def bootstrap_admin(args):
@@ -55,6 +60,8 @@ def bootstrap_admin(args):
             ("workforce.positions", "read"), ("workforce.positions", "manage"),
             ("workforce.assignments", "read"), ("workforce.assignments", "manage"),
             ("workforce.grants", "read"), ("workforce.grants", "manage"),
+            ("workforce.work_items", "read"), ("workforce.work_items", "manage"),
+            ("workforce.reports", "read"),
             ("workforce.audit", "read"),
         ]
         for resource, action in resources:

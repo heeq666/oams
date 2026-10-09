@@ -60,10 +60,12 @@
 
 ## 4. 需要新建的东西（按依赖顺序）
 
-1. **迁移 0002：工作项与申报**，同时补齐 0001 的四个缺口
+1. **迁移 0002：工作项与申报** ✅ **已完成**。文件 `app/workhub/migrations/0002_work_items_reports_and_policy_gaps.sql`，已在临时 PostgreSQL **16.14** 上实测通过，12 项约束逐条验证（`db/verify/0002_constraints.sql`，全部 PASS）
    - `work_items`：`org_unit_id`、`position_id`、`title`、`kind`、`status`、`blocked_reason`、`needs_decision`、时间戳
    - `work_item_reports`：`work_item_id`、`reported_by_member_id`、`submitted_via`（`human` / `agent`）、`progress_value`、`note`、`evidence`、`reported_at`
    - 补齐：主岗唯一性、审批记录表（双签）、`acting` 90 天 CHECK、字段级脱敏
+   - 额外加的两条 DB 强制：`blocked` 必须有非空原因；工作项 `org_unit_id` 必须与其 `position_id` 所属部门一致（触发器，否则看板会按部门聚合错）
+   - **双签只做到"每人一票、不可重复"**，DB 不强制"凑齐两票"——数据库不知道谁是哪一角色，这条留给应用层读 `approval_records` 判定
 2. **看板聚合接口**：按部门 / 岗位聚合，返回进度、阻塞项、待决策项
 3. **MCP 适配层**（v1）
    - 读：`list_my_work_items`、`list_work_items_by_position`、`get_department_board`、`who_is_responsible_for`
@@ -97,5 +99,5 @@
 
 - 行级范围过滤（可粗粒度）
 - 敏感字段脱敏与审计
-- 迁移 0002 的四个补齐项
+- ~~迁移 0002 的四个补齐项~~ ✅ 已完成并实测
 - 服务器上建独立库、专用账号、备份策略（尚未开始）
