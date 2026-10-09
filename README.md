@@ -1,0 +1,58 @@
+# Company Workhub
+
+全公司工作进度与岗位协同系统。目标是让管理层同步跨部门事项进度、风险和待决策项，并让部门在保留自身工作方式的基础上，通过统一数据规则接入。
+
+## 项目边界
+
+- 本项目负责员工身份映射、组织与岗位、任职历史、岗位工作配置、业务权限、工作项、审计和公司级进度看板。
+- 企业微信用于登录身份认证及提供可用的组织信息；本系统负责岗位归属、业务授权、数据范围和权限审计。
+- 商品中心继续作为商品业务事实来源。本系统通过商品中心 API 获取经确认的只读进度数据，不直接读写商品中心数据库。
+- 工作进度数据库与商品中心数据库逻辑隔离；初期可部署在同一台 Windows 局域网服务器和同一 PostgreSQL 服务上，但使用独立数据库、账号和备份策略。数据库端口不对公网开放。
+- 各部门 Skill 后续负责解释统一规则、辅助表格映射和检查数据；实际认证、授权和数据写入由本系统服务端完成。
+
+## 架构草图
+
+```text
+企业微信登录 ──> Company Workhub ──> 工作进度数据库（独立）
+                       │
+                       ├── 企业人员/岗位/任职/授权/审计
+                       ├── 部门工作项与公司级看板
+                       └── 只读 API ──> 商品中心 API（商品业务事实）
+```
+
+## 当前资料
+
+- [身份、岗位与权限底座方案](docs/architecture/workforce-identity-position-permission-plan.md)
+- [身份、岗位与权限底座首期实现契约](docs/architecture/workforce-identity-position-permission-implementation.md)
+- [Frappe HR / ERPNext 适配评估](docs/architecture/frappe-erpnext-adaptation-assessment.md)
+- [PostgreSQL 初始迁移](db/migrations/0001_workforce_identity_position_permission.sql)
+- [Windows 服务器部署准备手册](docs/runbooks/windows-server-deployment.md)
+
+## 建设顺序
+
+1. 评审岗位目录权责、一人多岗/代理、换岗交接和人事数据分级规则。
+2. 核验企业微信自建应用、可信域名、OAuth 回调与可读取的成员信息范围。
+3. 设计并实现身份、岗位、任职、配置版本、权限和审计底座。
+4. 以招聘为首个部门试点，验证换人、调岗、代理到期、新增岗位和数据权限。
+5. 接入商品中心只读进度，再推广到其他部门并完善管理看板和 Skill。
+
+
+## 当前可运行后端
+
+要求 Python 3.11+。复制 `.env.example` 为 `.env`。先通过受控配置机制将 `WORKHUB_DATABASE_URL` 指向迁移账号运行 `workhub migrate`；随后切换到运行时账号，再创建管理员并启动服务：
+
+```sh
+python -m venv .venv
+. .venv/bin/activate
+pip install -e .
+workhub bootstrap-admin --name "系统管理员" --employee-code "ADMIN001" --org-code "COMPANY" --org-name "公司"
+workhub serve
+```
+
+首次管理员不自动绑定企业微信；在 OAuth 接入前，应通过受控运维通道使用 `workhub issue-token --member-id ...` 签发短时令牌。当前底座管理 API 仅接受明确授予的 `all` 数据范围；其他范围记录可配置，但行级过滤器尚未实现，因此不能据此向普通用户开放数据接口。
+
+## 数据库部署原则
+
+生产数据库计划安装在现有 Windows 局域网服务器上的 PostgreSQL 服务中，但必须创建独立数据库和专用最小权限账号。已确认可通过 SSH 别名 `win` 只读连接到服务器，PostgreSQL 16 服务运行于 `D:\pgdata`，当前监听端口为 `5433`（本机 TCP 探测成功）。实际数据库清单、账号权限、备份/恢复能力和远程访问范围尚未核验。企业微信登录所需 HTTPS 回调由应用服务提供；PostgreSQL 不直接暴露给客户端或公网。
+
+当前已有 FastAPI 后端、身份/岗位/任职/授权/审计数据库迁移、管理员引导 CLI 和 Windows 部署准备手册。服务器上的数据库尚未创建或修改，企业微信 OAuth、按部门/岗位的数据范围过滤、管理界面、招聘工作项和商品中心只读 API 仍待实施。
