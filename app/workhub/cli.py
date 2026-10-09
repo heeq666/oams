@@ -1,0 +1,105 @@
+import argparse
+import json
+from pathlib import Path
+from uuid import UUID
+
+import uvicorn
+from psycopg.types.json import Jsonb
+
+from workhub.config import settings
+from workhub.db import connection
+from workhub.security import issue_session
+
+MIGRATION = Path(__file__).resolve().parent / "migrations" / "0001_workforce_identity_position_permission.sql"
+
+
+def migrate():
+    sql = MIGRATION.read_text(encoding="utf-8")
+    version = MIGRATION.name
+    with connection() as conn:
+        has_schema = conn.execute("SELECT to_regclass('workhub.schema_migrations') AS table_name").fetchone()["table_name"]
+        if has_schema and conn.execute("SELECT 1 FROM workhub.schema_migrations WHERE version = %s", (version,)).fetchone():
+            print(f"Already applied {version}")
+            return
+        conn.execute(sql)
+        conn.execute("INSERT INTO workhub.schema_migrations (version) VALUES (%s)", (version,))
+    print(f"Applied {version}")
+
+
+def bootstrap_admin(args):
+    with connection() as conn:
+        row = conn.execute("SELECT count(*) AS n FROM workhub.permission_grants WHERE resource = 'workforce.grants' AND action = 'manage' AND scope_type = 'all' AND revoked_at IS NULL").fetchone()
+        if row["n"]:
+            raise SystemExit("An all-scope administrator grant already exists; refusing to bootstrap another administrator.")
+        org = conn.execute(
+            "INSERT INTO workhub.org_units (org_code, name, unit_type) VALUES (%s, %s, 'company') RETURNING org_unit_id",
+            (args.org_code, args.org_name),
+        ).fetchone()
+        member = conn.execute(
+            "INSERT INTO workhub.workforce_members (employee_code, display_name, employment_status) VALUES (%s, %s, 'active') RETURNING member_id",
+            (args.employee_code, args.name),
+        ).fetchone()
+        position = conn.execute(
+            "INSERT INTO workhub.positions (position_code, title, org_unit_id) VALUES (%s, 'System Administrator', %s) RETURNING position_id",
+            (args.position_code, org["org_unit_id"]),
+        ).fetchone()
+        conn.execute(
+            """INSERT INTO workhub.position_assignments
+               (member_id, position_id, assignment_type, status, starts_at, reason)
+               VALUES (%s, %s, 'primary', 'active', now(), 'initial system bootstrap')""",
+            (member["member_id"], position["position_id"]),
+        )
+        resources = [
+            ("workforce.org_units", "read"), ("workforce.org_units", "manage"),
+            ("workforce.members", "read"), ("workforce.members", "manage"),
+            ("workforce.positions", "read"), ("workforce.positions", "manage"),
+            ("workforce.assignments", "read"), ("workforce.assignments", "manage"),
+            ("workforce.grants", "read"), ("workforce.grants", "manage"),
+            ("workforce.audit", "read"),
+        ]
+        for resource, action in resources:
+            conn.execute(
+                """INSERT INTO workhub.permission_grants
+                   (subject_type, position_id, resource, action, scope_type, effect, valid_from, reason)
+                   VALUES ('position', %s, %s, %s, 'all', 'allow', now(), 'initial system bootstrap')""",
+                (position["position_id"], resource, action),
+            )
+        conn.execute(
+            """INSERT INTO workhub.workforce_audit_events
+               (actor_member_id, event_type, subject_type, subject_id, reason, after_state)
+               VALUES (%s, 'system.bootstrapped', 'member', %s, 'initial administrator bootstrap', %s)""",
+            (member["member_id"], member["member_id"], Jsonb({"position_id": str(position["position_id"]), "org_unit_id": str(org["org_unit_id"])})),
+        )
+    print(json.dumps({"member_id": str(member["member_id"]), "position_id": str(position["position_id"]), "org_unit_id": str(org["org_unit_id"])}, indent=2))
+
+
+def issue(args):
+    token, expires_at = issue_session(str(UUID(args.member_id)))
+    print(json.dumps({"access_token": token, "expires_at": expires_at.isoformat()}, indent=2))
+
+
+def serve():
+    uvicorn.run("workhub.api:app", host=settings.bind_host, port=settings.bind_port)
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="workhub")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("migrate", help="apply the initial migration to the configured database").set_defaults(func=lambda _: migrate())
+    bootstrap = commands.add_parser("bootstrap-admin", help="create the first administrator; run once from a trusted operator shell")
+    bootstrap.add_argument("--name", required=True)
+    bootstrap.add_argument("--employee-code", required=True)
+    bootstrap.add_argument("--org-code", required=True)
+    bootstrap.add_argument("--org-name", required=True)
+    bootstrap.add_argument("--position-code", default="SYSADMIN")
+    bootstrap.set_defaults(func=bootstrap_admin)
+    token = commands.add_parser("issue-token", help="issue a temporary session to an active member from a trusted operator shell")
+    token.add_argument("--member-id", required=True)
+    token.set_defaults(func=issue)
+    commands.add_parser("serve", help="run the API").set_defaults(func=lambda _: serve())
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

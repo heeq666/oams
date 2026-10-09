@@ -1,0 +1,24 @@
+[project]
+name = "company-workhub"
+version = "0.1.0"
+description = "Company workforce identity, positions, assignments, and permissions service"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "psycopg[binary,pool]>=3.2,<4",
+  "pydantic-settings>=2.7,<3",
+]
+
+[project.scripts]
+workhub = "workhub.cli:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+workhub = ["migrations/*.sql"]
+
+[tool.setuptools.packages.find]
+where = ["app"]
