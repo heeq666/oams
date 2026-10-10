@@ -22,6 +22,7 @@ of it.
 import http.cookiejar
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -47,6 +48,23 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect,
                                     urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+
+def lane_counts(html):
+    """(count in the lane header, cards actually painted in that lane)."""
+    out = {}
+    for stage, inner in re.findall(r'<section class="lane (\w+)">([\s\S]*?)</section>', html):
+        header = re.search(r'<span class="cnt">(\d+)</span>', inner)
+        out[stage] = (int(header.group(1)) if header else None, inner.count('class="mini '))
+    return out
+
+
+def api_json(path):
+    """The JSON API wants a bearer header; the cookie is only good for the pages.
+    Comparing the two is the point: the layer badge and the lane must agree."""
+    req = urllib.request.Request(BASE + path, headers={"Authorization": "Bearer " + admin_token})
+    with opener.open(req, timeout=20) as resp:
+        return json.loads(resp.read().decode())
 
 
 def hdr(headers, name):
@@ -123,7 +141,7 @@ try:
     check("board shows the silence metric", "从未申报" in body, "")
     check("board names positions, not people",
           "人事经理" in body and "周岚" not in body, "")
-    check("board flags the vacant position", "无人任职" in body, "")
+    check("board flags the vacant position", "岗位空缺" in body or "空缺" in body, "")
 
     code, body, _ = call("/board/body?org=" + str(_org := "x"))
     check("fragment rejects a malformed org id", code in (401, 403, 422), str(code))
@@ -145,6 +163,36 @@ try:
     check("page refuses a blocked item without a reason",
           code in (303, 422) and ("blocked" in (hdr(headers, "Location") or "") or code == 422),
           f"{code} {hdr(headers, 'Location')}")
+
+    # --- layers and flow lanes ------------------------------------------------
+    # A layer is a filter, not a second aggregation. The count on the badge and
+    # the cards actually painted in the lanes come from the same predicate, so if
+    # they ever disagree the page is lying to itself.
+    api_board = api_json(f"/v1/board/org-units/{real_org}")
+    counts = {layer["id"]: layer["count"] for layer in api_board["layers"]}
+
+    code, all_html, _ = call(f"/board/body?org={real_org}&layer=all")
+    check("board fragment renders every flow lane",
+          code == 200 and all(label in all_html for label in ("未开始", "进行中", "阻塞", "已完成")), str(code))
+    check("board fragment offers every layer",
+          all(label in all_html for label in ("全部", "阻塞", "待决策", "AI 代笔", "沉默")), "")
+
+    for layer_id in ("blocked", "decision", "agent", "silent"):
+        _, html, _ = call(f"/board/body?org={real_org}&layer={layer_id}")
+        painted = html.count('class="mini ')
+        listed = html.count('<li class="')
+        check(f"layer '{layer_id}' paints exactly its badge count",
+              painted == counts[layer_id] and listed == counts[layer_id],
+              f"badge={counts[layer_id]} lanes={painted} detail={listed}")
+        # A header claiming 4 cards above a lane holding 1 is the page disagreeing
+        # with itself, which is exactly what made the first cut of this confusing.
+        lanes = lane_counts(html)
+        check(f"layer '{layer_id}' lane headers match the cards painted",
+              all(header == painted_in for header, painted_in in lanes.values()), str(lanes))
+
+    bogus_code, bogus_html, _ = call(f"/board/body?org={real_org}&layer=bogus")
+    check("an unknown layer falls back to all instead of an empty board",
+          bogus_code == 200 and bogus_html.count('class="mini ') == counts["all"], str(bogus_code))
 
     code, body, _ = call("/admin/positions")
     check("admin positions page renders", code == 200 and "全部岗位" in body, str(code))
