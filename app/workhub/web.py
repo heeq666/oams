@@ -208,7 +208,13 @@ def board_body(request: Request, org: UUID, stale_days: int = Query(default=7, g
     stage = api.normalize_stage(stage)
     with connection() as conn:
         data = api.build_board(conn, org, stale_days, layer, stage)
+        # The page head (title + department segmented control) lives inside this
+        # fragment, so switching departments re-renders it with the right segment.
+        org_units = conn.execute(
+            """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+               WHERE status = 'active' ORDER BY unit_type DESC, org_code""").fetchall()
     return TEMPLATES.TemplateResponse(request, "board_body.html", {
+        "org_units": org_units,
         "selected_id": str(org),
         "board": data,
         "stale_days": stale_days,

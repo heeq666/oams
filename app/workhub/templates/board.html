@@ -1,20 +1,13 @@
 {% extends "base.html" %}
 {% block title %}看板 · Workhub{% endblock %}
 {% block content %}
-<h1>进度看板</h1>
 {% if not org_units %}
+  <h1>进度看板</h1>
   <p class="empty">系统里还没有组织单位。先用 CLI 建首管理员，再录一个部门。</p>
 {% else %}
-  <div class="tabs">
-    {% for unit in org_units %}
-      <a class="{% if unit.org_unit_id|string == selected_id %}on{% endif %}"
-         href="/board?org={{ unit.org_unit_id }}&layer={{ layer }}{% if stage %}&stage={{ stage }}{% endif %}"
-         hx-get="/board/body?org={{ unit.org_unit_id }}&layer={{ layer }}{% if stage %}&stage={{ stage }}{% endif %}&stale_days={{ stale_days }}"
-         hx-target="#board-body"
-         hx-push-url="/board?org={{ unit.org_unit_id }}&layer={{ layer }}{% if stage %}&stage={{ stage }}{% endif %}">{{ unit.name }}</a>
-    {% endfor %}
-  </div>
-  <div id="board-body">
+  {# The whole page head lives inside the fragment: switching department swaps it
+     too, so the segmented control re-renders with the right segment highlighted. #}
+  <div id="board-body" aria-live="polite">
     {% include "board_body.html" %}
   </div>
 {% endif %}

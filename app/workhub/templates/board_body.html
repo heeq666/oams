@@ -1,9 +1,9 @@
 {% macro card_badges(card) %}
   <span class="badge {{ 'blocked' if card.status == 'blocked' }}">{{ status_labels[card.status] }}</span>
   {% if card.needs_decision %}<span class="badge decision">待决策</span>{% endif %}
-  <span class="badge">{{ card.position.title }}</span>
-  {% if card.position.holder_count == 0 %}<span class="badge vacant">岗位空缺</span>{% endif %}
-  {% if card.overdue %}<span class="badge vacant">已逾期</span>{% endif %}
+  {# Position is metadata: plain grey text on the right. Only real warnings get
+     a coloured accent, and each gets exactly one. #}
+  <span class="pos">{{ card.position.title }}{% if card.position.holder_count == 0 %}<em class="vac">岗位空缺</em>{% endif %}{% if card.overdue %}<em class="vac">已逾期</em>{% endif %}</span>
 {% endmacro %}
 
 {% macro report_line(card) %}
@@ -19,6 +19,9 @@
     </div>
     {% if card.latest_report.note %}<div class="note">{{ card.latest_report.note }}</div>{% endif %}
     <div class="evidence">依据：{{ card.latest_report.evidence }}</div>
+    {% if card.latest_report.progress_value is not none %}
+      <div class="bar"><span style="width: {{ card.latest_report.progress_value }}%"></span></div>
+    {% endif %}
   {% else %}
     <div class="meta">
       <span class="badge">从未申报</span>
@@ -26,6 +29,20 @@
     </div>
   {% endif %}
 {% endmacro %}
+
+<div class="pagehead">
+  <h1>进度看板</h1>
+  <nav class="orgnav" aria-label="选择部门">
+    {% for unit in org_units %}
+      <a class="{% if unit.org_unit_id|string == selected_id %}on{% endif %}"
+         {% if unit.org_unit_id|string == selected_id %}aria-current="true"{% endif %}
+         href="/board?org={{ unit.org_unit_id }}&layer={{ layer }}{% if stage %}&stage={{ stage }}{% endif %}"
+         hx-get="/board/body?org={{ unit.org_unit_id }}&layer={{ layer }}{% if stage %}&stage={{ stage }}{% endif %}&stale_days={{ stale_days }}"
+         hx-target="#board-body"
+         hx-push-url="/board?org={{ unit.org_unit_id }}&layer={{ layer }}{% if stage %}&stage={{ stage }}{% endif %}">{{ unit.name }}</a>
+    {% endfor %}
+  </nav>
+</div>
 
 <div class="grid">
   <div class="metric"><div class="n">{{ board.summary.open_items }}</div><div class="k">未完成工作项</div></div>
@@ -38,15 +55,35 @@
   <div class="metric"><div class="n">{{ board.summary.overdue }}</div><div class="k">超过 {{ board.stale_days }} 天未更新</div></div>
   <div class="metric {% if board.summary.positions_without_holder %}alert{% endif %}">
     <div class="n">{{ board.summary.positions_without_holder }}</div><div class="k">岗位空缺</div></div>
-  <div class="metric">
-    <div class="n">{{ board.summary.latest_report_by_channel.agent }} / {{ board.summary.latest_report_by_channel.human + board.summary.latest_report_by_channel.agent }}</div>
-    <div class="k">当前状态下 AI 代笔占比</div></div>
+</div>
+
+{% set agent_n = board.summary.latest_report_by_channel.agent %}
+{% set human_n = board.summary.latest_report_by_channel.human %}
+{% set total_n = agent_n + human_n %}
+{# The v1 scoreboard gets a whole split bar instead of a metric card: 2/4 as a
+   ratio you can see, not a fraction you have to compute. #}
+<div class="channel-scorecard">
+  <div class="head">
+    <span class="k">最新申报渠道（当前状态）</span>
+    <span class="n">{{ agent_n }} / {{ total_n }} AI 代笔</span>
+  </div>
+  {% if total_n %}
+    <div class="split">
+      <span class="agent" style="width: {{ (agent_n * 100 / total_n) | round(1) }}%"></span>
+      <span class="human" style="width: {{ (human_n * 100 / total_n) | round(1) }}%"></span>
+    </div>
+  {% endif %}
+  <div class="legend">
+    <span><span class="dot" style="background:#4c51bf"></span>AI 代笔 {{ agent_n }}</span>
+    <span><span class="dot" style="background:#4a5568"></span>人工 {{ human_n }}</span>
+  </div>
 </div>
 
 {% set active = board.layers | selectattr('id', 'equalto', layer) | list | first %}
 <div class="tabs layers">
   {% for l in board.layers %}
     <a class="{% if l.id == layer %}on{% endif %}" title="{{ l.hint }}"
+       {% if l.id == layer %}aria-current="true"{% endif %}
        href="/board?org={{ selected_id }}&layer={{ l.id }}{% if board.stage %}&stage={{ board.stage }}{% endif %}&stale_days={{ stale_days }}"
        hx-get="/board/body?org={{ selected_id }}&layer={{ l.id }}{% if board.stage %}&stage={{ board.stage }}{% endif %}&stale_days={{ stale_days }}"
        hx-target="#board-body"
@@ -66,13 +103,14 @@
     {% if stage.selectable %}
       <a class="stage {{ stage.id }} {% if board.stage == stage.id %}on{% endif %}"
          title="{{ stage.note or stage.label }}"
+         {% if board.stage == stage.id %}aria-current="true"{% endif %}
          href="/board?org={{ selected_id }}&layer={{ layer }}&stage={{ stage.id }}&stale_days={{ stale_days }}"
          hx-get="/board/body?org={{ selected_id }}&layer={{ layer }}&stage={{ stage.id }}&stale_days={{ stale_days }}"
          hx-target="#board-body"
          hx-push-url="/board?org={{ selected_id }}&layer={{ layer }}&stage={{ stage.id }}&stale_days={{ stale_days }}">
         {{ stage.label }}<span class="cnt">{{ stage.count }}</span></a>
     {% else %}
-      <span class="stage {{ stage.id }} terminal" title="{{ stage.note }}">
+      <span class="stage {{ stage.id }} terminal{% if stage.count == 0 %} zero{% endif %}" title="{{ stage.note }}">
         {{ stage.label }}<span class="cnt">{{ stage.count }}</span></span>
     {% endif %}
     {% if not stage.branch and not loop.last %}<span class="arrow" aria-hidden="true">▸</span>{% endif %}
@@ -85,7 +123,6 @@
        hx-push-url="/board?org={{ selected_id }}&layer={{ layer }}&stale_days={{ stale_days }}">清除阶段筛选 ×</a>
   {% endif %}
 </div>
-<p class="sub">流转条按当前图层计数；「已完成」只以数字出现，明细见工作项列表。</p>
 
 <h2>{{ active.label }} · {{ board.visible_cards | length }} 项</h2>
 <ul class="items">
