@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}审计 · Workhub{% endblock %}
+{% block content %}
+<h1>审计</h1>
+<p class="sub">最近 {{ limit }} 条。谁在什么时候做了什么，一条一条都在这里；审计表对运行账号不可改不可删。</p>
+<table>
+  <thead><tr><th>时间</th><th>操作人</th><th>事件</th><th>对象</th><th>说明</th></tr></thead>
+  <tbody>
+  {% for e in events %}
+    <tr>
+      <td>{{ e.occurred_at | dt }}</td>
+      <td>{{ e.actor_name or '系统' }}</td>
+      <td class="mono">{{ e.event_type }}</td>
+      <td class="mono">{{ e.subject_type }}{% if e.subject_id %}:{{ e.subject_id|string|truncate(8, True, '') }}{% endif %}</td>
+      <td>{{ e.reason }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="empty">没有审计事件。</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Workhub{% endblock %}</title>
+<script src="/static/vendor/htmx.min.js" defer></script>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --ink: #1d2126;
+    --muted: #6b7280;
+    --line: #e3e6ea;
+    --accent: #2f3437;
+    --blocked: #c0392b;
+    --decision: #b7791f;
+    --done: #2f855a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.55 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+  header.topbar { display: flex; align-items: center; gap: 24px; padding: 12px 24px;
+                  background: var(--accent); color: #fff; }
+  header.topbar a { color: #fff; text-decoration: none; opacity: .85; }
+  header.topbar a:hover { opacity: 1; }
+  header.topbar .brand { font-weight: 600; letter-spacing: .02em; }
+  header.topbar nav { display: flex; gap: 18px; flex: 1; }
+  header.topbar .who { display: flex; align-items: center; gap: 12px; font-size: 14px; opacity: .9; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 24px 64px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 28px 0 12px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .metric { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .metric .n { font-size: 24px; font-weight: 600; }
+  .metric .k { color: var(--muted); font-size: 12px; }
+  .metric.alert .n { color: var(--blocked); }
+  .metric.warn .n { color: var(--decision); }
+  ul.items { list-style: none; margin: 0; padding: 0; }
+  ul.items > li { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--line);
+                  border-radius: 6px; padding: 12px 14px; margin-bottom: 8px; }
+  ul.items > li.blocked { border-left-color: var(--blocked); }
+  ul.items > li.planned { border-left-color: #cbd5e0; }
+  .row1 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .title { font-weight: 600; }
+  .badge { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line);
+           color: var(--muted); background: #fafbfc; }
+  .badge.blocked { color: #fff; background: var(--blocked); border-color: var(--blocked); }
+  .badge.decision { color: #fff; background: var(--decision); border-color: var(--decision); }
+  .badge.agent { color: #fff; background: #4c51bf; border-color: #4c51bf; }
+  .badge.human { color: #fff; background: #4a5568; border-color: #4a5568; }
+  .badge.vacant { color: var(--blocked); border-color: var(--blocked); }
+  .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .note { margin-top: 6px; font-size: 14px; }
+  .evidence { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .empty { color: var(--muted); font-size: 14px; padding: 8px 0; }
+  table { width: 100%; border-collapse: collapse; background: var(--card);
+          border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  th { background: #fafbfc; color: var(--muted); font-weight: 500; font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  form.inline { display: inline; }
+  button, .btn { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+                 padding: 6px 14px; font-size: 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+  button.link { background: none; color: var(--muted); padding: 0; }
+  input, select, textarea { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+                            font-size: 14px; background: #fff; color: var(--ink); }
+  label { font-size: 13px; color: var(--muted); }
+  .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .flash { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; background: #edf7ee; color: var(--done); }
+  .flash.error { background: #fdecea; color: var(--blocked); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tabs a { padding: 5px 12px; border-radius: 16px; border: 1px solid var(--line);
+            background: #fff; color: var(--ink); text-decoration: none; font-size: 14px; }
+  .tabs a.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/board">Workhub</a>
+  <nav>
+    <a href="/board">看板</a>
+    <a href="/admin/work-items">工作项</a>
+    <a href="/admin/positions">岗位</a>
+    <a href="/admin/audit">审计</a>
+  </nav>
+  <div class="who">
+    {% if member %}
+      <span>{{ member.display_name }}</span>
+      <form method="post" action="/logout" class="inline">
+        <button type="submit" class="link" style="color:#fff;opacity:.85">退出</button>
+      </form>
+    {% else %}
+      <a href="/login">登录</a>
+    {% endif %}
+  </div>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

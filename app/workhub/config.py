@@ -6,6 +6,11 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 8
     bind_host: str = "127.0.0.1"
     bind_port: int = 8000
+    # The web UI hands the browser the same session token the bearer scheme uses,
+    # so a cookie is exactly as strong as a token -- and revoking the session logs
+    # the browser out. 'Secure' is deliberately absent: intranet deployments run
+    # plain http and a Secure cookie would simply never be sent back.
+    web_session_cookie: str = "workhub_session"
 
     model_config = SettingsConfigDict(env_prefix="WORKHUB_", env_file=".env", extra="ignore")
 
