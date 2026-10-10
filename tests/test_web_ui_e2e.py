@@ -238,6 +238,35 @@ try:
     check("an unknown stage falls back to no stage filter",
           listed_cards(junk_html) == counts["all"], str(listed_cards(junk_html)))
 
+    # --- presentation pass: hierarchy, keyboard, and the scoreboard -----------
+    # These are the rules that keep three rows of controls from reading as one
+    # and keep keyboard users from navigating blind. They fail loudly on purpose:
+    # a focus outline or a live region is easy to lose in a template refactor.
+    code, page, _ = call("/board")
+    check("keyboard focus is visible site-wide", ":focus-visible" in page, "")
+    check("department navigation is a segmented control, not another pill row",
+          'class="orgnav"' in page and 'aria-label="选择部门"' in page, "")
+    check("the board fragment announces itself as a live region",
+          'aria-live="polite"' in page, "")
+    check("selected controls carry aria-current",
+          all_html.count('aria-current="true"') >= 2, str(all_html.count('aria-current="true"')))
+
+    check("the AI scoreboard is a split bar, not a stranded metric card",
+          "channel-scorecard" in all_html and "class=\"split\"" in all_html
+          and "AI 代笔占比" not in all_html, "")
+    check("the implementation note about flow counting is gone from the page",
+          "流转条按当前图层计数" not in all_html, "")
+    check("card positions render as metadata, not as competing badges",
+          'class="pos"' in all_html, "")
+
+    fin = next(flow["count"] for flow in api_board["flow"] if flow["id"] == "done")
+    check("a zero terminal count fades instead of glowing green",
+          fin != 0 or "terminal zero" in all_html, str(fin))
+    any_progress = any(card["latest_report"] and card["latest_report"]["progress_value"] is not None
+                       for card in api_board["visible_cards"])
+    check("reported progress renders as a bar, not only text",
+          not any_progress or '<div class="bar">' in all_html, "")
+
     code, body, _ = call("/admin/positions")
     check("admin positions page renders", code == 200 and "全部岗位" in body, str(code))
 

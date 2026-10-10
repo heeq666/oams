@@ -45,6 +45,10 @@
   ul.items > li.planned { border-left-color: #cbd5e0; }
   .row1 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .title { font-weight: 600; }
+  /* Position is metadata, not a state -- grey text at the row end instead of a
+     badge that competes with status colours. Warnings keep one accent each. */
+  .row1 .pos { margin-left: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .row1 .pos .vac { color: var(--blocked); font-style: normal; margin-left: 6px; }
   .badge { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line);
            color: var(--muted); background: #fafbfc; }
   .badge.blocked { color: #fff; background: var(--blocked); border-color: var(--blocked); }
@@ -56,6 +60,8 @@
   .note { margin-top: 6px; font-size: 14px; }
   .evidence { color: var(--muted); font-size: 13px; margin-top: 4px; }
   .empty { color: var(--muted); font-size: 14px; padding: 8px 0; }
+  /* Keyboard users get to see where they are; WCAG 2.4.7. */
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
   table { width: 100%; border-collapse: collapse; background: var(--card);
           border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
@@ -72,18 +78,48 @@
   .field { display: flex; flex-direction: column; gap: 4px; }
   .flash { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 14px; background: #edf7ee; color: var(--done); }
   .flash.error { background: #fdecea; color: var(--blocked); }
-  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tabs a { padding: 5px 12px; border-radius: 16px; border: 1px solid var(--line);
+  .pagehead { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .pagehead h1 { margin: 0; }
+  /* Department navigation is a segmented control on purpose: it navigates space,
+     while the chip row below it filters the list. Same page, two silhouettes. */
+  .orgnav { display: inline-flex; border: 1px solid var(--line); border-radius: 8px;
+            background: #fff; overflow: hidden; }
+  .orgnav a { padding: 7px 16px; font-size: 14px; color: var(--muted); text-decoration: none; }
+  .orgnav a + a { border-left: 1px solid var(--line); }
+  .orgnav a.on { background: var(--accent); color: #fff; }
+  .orgnav a:hover:not(.on) { background: #fafbfc; color: var(--ink); }
+  /* The AI-dictation scoreboard: one horizontal human/agent split, not a metric card. */
+  .channel-scorecard { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+                       padding: 12px 14px; margin-bottom: 16px; }
+  .channel-scorecard .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .channel-scorecard .head .k { color: var(--muted); font-size: 12px; }
+  .channel-scorecard .head .n { font-size: 20px; font-weight: 600; }
+  .channel-scorecard .split { display: flex; height: 8px; border-radius: 4px; overflow: hidden;
+                              background: var(--line); margin: 8px 0 6px; }
+  .channel-scorecard .split .agent { background: #4c51bf; }
+  .channel-scorecard .split .human { background: #4a5568; }
+  .channel-scorecard .legend { display: flex; gap: 16px; color: var(--muted); font-size: 12px; }
+  .channel-scorecard .legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tabs a { padding: 7px 14px; border-radius: 16px; border: 1px solid var(--line);
             background: #fff; color: var(--ink); text-decoration: none; font-size: 14px; }
   .tabs a.on { background: var(--accent); color: #fff; border-color: var(--accent); }
   .tabs a .cnt { margin-left: 6px; font-size: 12px; opacity: .65; }
-  .tabs.layers a { font-size: 13px; }
+  /* Layers are text chips: the department selector above is navigation, stages
+     below are a flow -- both get a different silhouette, so the three rows never
+     read as the same kind of control. */
+  .tabs.layers { gap: 2px; margin-bottom: 12px; }
+  .tabs.layers a { border: none; background: transparent; color: var(--muted);
+                   padding: 6px 12px; border-radius: 8px; }
+  .tabs.layers a:hover { background: #eceef0; color: var(--ink); }
+  .tabs.layers a.on { background: var(--accent); color: #fff; }
+  .tabs.layers a .cnt { font-weight: 600; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
   .flowstrip { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
                background: #fafbfc; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
   .flowstrip .arrow, .flowstrip .fork { color: var(--muted); font-size: 13px; }
   .flowstrip .fork { margin-left: 10px; }
-  .flowstrip .stage { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 12px;
+  .flowstrip .stage { display: inline-flex; align-items: baseline; gap: 6px; padding: 7px 14px;
                       border: 1px solid var(--line); border-radius: 16px; background: #fff;
                       color: var(--ink); font-size: 14px; text-decoration: none; }
   .flowstrip a.stage:hover { border-color: var(--accent); }
@@ -93,7 +129,14 @@
   .flowstrip .stage.blocked.on { background: var(--blocked); border-color: var(--blocked); }
   .flowstrip .stage.terminal { color: var(--muted); background: #f2f8f4; border-color: #cfe3d6; cursor: default; }
   .flowstrip .stage.terminal .cnt { color: var(--done); }
-  .flowstrip .clear { margin-left: auto; font-size: 13px; color: var(--muted); text-decoration: none; }
+  /* A zero is not good news worth highlighting -- fade the terminal count when
+     nothing has finished, keep the colour for when there is something to show. */
+  .flowstrip .stage.terminal.zero { opacity: .55; }
+  .flowstrip .stage.terminal.zero .cnt { color: var(--muted); }
+  .flowstrip .clear { margin-left: auto; font-size: 13px; color: var(--muted); text-decoration: none; align-self: center; padding: 7px 0; }
+  .flowstrip .clear:hover { color: var(--ink); text-decoration: underline; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
   .flowstrip .clear:hover { color: var(--ink); text-decoration: underline; }
 </style>
 </head>
