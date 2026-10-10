@@ -90,3 +90,45 @@ class PositionConfigCreate(BaseModel):
 class MemberStatusUpdate(BaseModel):
     employment_status: Literal["active", "suspended", "departed"]
     reason: str = Field(min_length=1, max_length=1000)
+
+
+WORK_ITEM_STATUS = Literal["planned", "in_progress", "blocked", "done", "cancelled"]
+
+
+class WorkItemCreate(BaseModel):
+    # Only the position is supplied. The department is derived from the position,
+    # because a work item whose department disagrees with its position's department
+    # would appear on the wrong board for no visible reason (see migration 0002).
+    position_id: UUID
+    title: str = Field(min_length=1, max_length=300)
+    kind: Literal["project", "routine", "adhoc"] = "routine"
+    status: WORK_ITEM_STATUS = "planned"
+    blocked_reason: str | None = None
+    needs_decision: bool = False
+
+    @model_validator(mode="after")
+    def blocked_reason_required(self):
+        if self.status == "blocked" and not (self.blocked_reason and self.blocked_reason.strip()):
+            raise ValueError("blocked work items require a blocked_reason")
+        return self
+
+
+class WorkItemUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    status: WORK_ITEM_STATUS | None = None
+    blocked_reason: str | None = None
+    needs_decision: bool | None = None
+
+
+class ReportCreate(BaseModel):
+    # 'human' or 'agent' is provenance, not trust: when a number turns out wrong we
+    # need to know how it was produced. The reporter is always the authenticated
+    # member; an AI is the member's pen, so the member stays accountable.
+    submitted_via: Literal["human", "agent"]
+    progress_value: int | None = Field(default=None, ge=0, le=100)
+    note: str | None = None
+    evidence: str = Field(min_length=1, max_length=4000)
+
+
+class ReportRetract(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)

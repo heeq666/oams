@@ -1,15 +1,17 @@
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Response, status
-from psycopg.errors import ForeignKeyViolation, UniqueViolation, ExclusionViolation
+from psycopg.errors import CheckViolation, ForeignKeyViolation, RaiseException, UniqueViolation, ExclusionViolation
 from psycopg.types.json import Jsonb
 import json
 
 from workhub.db import connection
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
-                             PositionConfigCreate, PositionCreate)
+                             PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
+                             WorkItemCreate, WorkItemUpdate)
 from workhub.security import current_principal, require_permission
 
 app = FastAPI(title="Company Workhub API", version="0.1.0")
@@ -399,6 +401,309 @@ def revoke_grant(grant_id: UUID, reason: str,
         ).fetchone()
         audit(conn, actor["member_id"], "grant.revoked", row["subject_type"], row["position_id"] or row["member_id"], reason, row, prior)
         return row
+
+
+# ---------------------------------------------------------------------------
+# Work items and progress reports
+#
+# SCOPE WARNING: require_permission only understands scope_type='all' today, so
+# every endpoint in this section is effectively an all-scope reader until row-level
+# range filtering exists. Do not issue a member token on that basis.
+#
+# One deliberate omission: submitting a report does not change the work item's
+# status. The two are kept separate so that appending progress cannot be used to
+# rewrite the state of an item behind someone's back; status changes stay explicit
+# and auditable through the work item endpoints.
+# ---------------------------------------------------------------------------
+
+OPEN_ITEM_STATUSES = ("planned", "in_progress", "blocked")
+
+WORK_ITEM_SELECT = """w.work_item_id, w.org_unit_id, w.position_id, w.title, w.kind, w.status,
+                      w.blocked_reason, w.needs_decision, w.created_at, w.updated_at,
+                      p.position_code, p.title AS position_title, o.org_code, o.name AS org_name"""
+
+
+@app.get("/v1/work-items")
+def list_work_items(org_unit_id: UUID | None = None, position_id: UUID | None = None, open_only: bool = False,
+                    _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
+    filters = []
+    params: list[Any] = []
+    if org_unit_id is not None:
+        filters.append("w.org_unit_id = %s")
+        params.append(org_unit_id)
+    if position_id is not None:
+        filters.append("w.position_id = %s")
+        params.append(position_id)
+    if open_only:
+        filters.append("w.status IN ('planned', 'in_progress', 'blocked')")
+    where = ("WHERE " + " AND ".join(filters)) if filters else ""
+    with connection() as conn:
+        return conn.execute(
+            f"""SELECT {WORK_ITEM_SELECT}
+                  FROM workhub.work_items w
+                  JOIN workhub.positions p USING (position_id)
+                  JOIN workhub.org_units o ON o.org_unit_id = w.org_unit_id
+                  {where}
+                 ORDER BY CASE w.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,
+                          w.needs_decision DESC, w.updated_at DESC""",
+            params,
+        ).fetchall()
+
+
+@app.post("/v1/work-items", status_code=status.HTTP_201_CREATED)
+def create_work_item(payload: WorkItemCreate, actor: dict = Depends(require_permission("workforce.work_items", "manage"))):
+    try:
+        with connection() as conn:
+            position = conn.execute(
+                "SELECT p.position_id, p.org_unit_id, p.status FROM workhub.positions p WHERE p.position_id = %s",
+                (payload.position_id,),
+            ).fetchone()
+            if not position:
+                raise HTTPException(status_code=404, detail="position not found")
+            if position["status"] != "active":
+                raise HTTPException(status_code=409, detail="work items can only be attached to an active position")
+            row = conn.execute(
+                """INSERT INTO workhub.work_items
+                   (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision, created_by)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING work_item_id, org_unit_id, position_id, title, kind, status, blocked_reason,
+                             needs_decision, created_at, updated_at""",
+                (position["org_unit_id"], payload.position_id, payload.title, payload.kind, payload.status,
+                 payload.blocked_reason, payload.needs_decision, actor["member_id"]),
+            ).fetchone()
+            audit(conn, actor["member_id"], "work_item.created", "work_item", row["work_item_id"],
+                  "created through management API", row)
+            return row
+    except CheckViolation:
+        raise HTTPException(status_code=422, detail="blocked work items require a non-empty blocked_reason")
+
+
+@app.patch("/v1/work-items/{work_item_id}")
+def update_work_item(work_item_id: UUID, payload: WorkItemUpdate,
+                     actor: dict = Depends(require_permission("workforce.work_items", "manage"))):
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=422, detail="no fields supplied")
+    try:
+        with connection() as conn:
+            prior = conn.execute(
+                "SELECT * FROM workhub.work_items WHERE work_item_id = %s FOR UPDATE", (work_item_id,)
+            ).fetchone()
+            if not prior:
+                raise HTTPException(status_code=404, detail="work item not found")
+            if "status" in updates and updates["status"] == "blocked":
+                reason = updates.get("blocked_reason", prior["blocked_reason"])
+                if not (reason and reason.strip()):
+                    raise HTTPException(status_code=422, detail="blocked work items require a non-empty blocked_reason")
+            column_map = {"title": "title", "status": "status", "blocked_reason": "blocked_reason",
+                          "needs_decision": "needs_decision"}
+            assignments = ", ".join(f"{column_map[field]} = %s" for field in updates)
+            params = list(updates.values()) + [work_item_id]
+            row = conn.execute(
+                f"""UPDATE workhub.work_items SET {assignments}, updated_at = now()
+                    WHERE work_item_id = %s
+                    RETURNING work_item_id, org_unit_id, position_id, title, kind, status, blocked_reason,
+                              needs_decision, created_at, updated_at""",
+                params,
+            ).fetchone()
+            audit(conn, actor["member_id"], "work_item.updated", "work_item", work_item_id,
+                  "updated through management API", row, prior)
+            return row
+    except CheckViolation:
+        raise HTTPException(status_code=422, detail="blocked work items require a non-empty blocked_reason")
+
+
+@app.post("/v1/work-items/{work_item_id}/reports", status_code=status.HTTP_201_CREATED)
+def submit_report(work_item_id: UUID, payload: ReportCreate,
+                  actor: dict = Depends(require_permission("workforce.reports", "submit"))):
+    try:
+        with connection() as conn:
+            item = conn.execute(
+                "SELECT work_item_id, status FROM workhub.work_items WHERE work_item_id = %s FOR UPDATE",
+                (work_item_id,),
+            ).fetchone()
+            if not item:
+                raise HTTPException(status_code=404, detail="work item not found")
+            if item["status"] not in OPEN_ITEM_STATUSES:
+                raise HTTPException(status_code=409, detail="cannot report progress on a closed work item")
+            row = conn.execute(
+                """INSERT INTO workhub.work_item_reports
+                   (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   RETURNING report_id, work_item_id, reported_by_member_id, submitted_via, progress_value,
+                             note, evidence, status, reported_at""",
+                (work_item_id, actor["member_id"], payload.submitted_via, payload.progress_value,
+                 payload.note, payload.evidence),
+            ).fetchone()
+            conn.execute("UPDATE workhub.work_items SET updated_at = now() WHERE work_item_id = %s", (work_item_id,))
+            audit(conn, actor["member_id"], "work_item_report.created", "work_item_report", row["report_id"],
+                  f"progress submitted via {payload.submitted_via}", row)
+            return row
+    except CheckViolation:
+        raise HTTPException(status_code=422, detail="evidence is required and progress_value must be between 0 and 100")
+
+
+@app.get("/v1/work-items/{work_item_id}/reports")
+def list_work_item_reports(work_item_id: UUID,
+                           _actor: dict = Depends(require_permission("workforce.reports", "read"))):
+    with connection() as conn:
+        exists = conn.execute("SELECT 1 FROM workhub.work_items WHERE work_item_id = %s", (work_item_id,)).fetchone()
+        if not exists:
+            raise HTTPException(status_code=404, detail="work item not found")
+        return conn.execute(
+            """SELECT r.report_id, r.reported_by_member_id, m.display_name AS reported_by, r.submitted_via,
+                      r.progress_value, r.note, r.evidence, r.status, r.retracted_at, r.reported_at
+               FROM workhub.work_item_reports r
+               JOIN workhub.workforce_members m ON m.member_id = r.reported_by_member_id
+               WHERE r.work_item_id = %s ORDER BY r.reported_at DESC""",
+            (work_item_id,),
+        ).fetchall()
+
+
+@app.post("/v1/reports/{report_id}/retract")
+def retract_report(report_id: UUID, payload: ReportRetract,
+                   actor: dict = Depends(require_permission("workforce.reports", "submit"))):
+    with connection() as conn:
+        prior = conn.execute(
+            "SELECT * FROM workhub.work_item_reports WHERE report_id = %s FOR UPDATE", (report_id,)
+        ).fetchone()
+        if not prior:
+            raise HTTPException(status_code=404, detail="report not found")
+        if prior["status"] == "retracted":
+            raise HTTPException(status_code=409, detail="report already retracted")
+        # A member owns what they submitted, including what their own AI typed. The
+        # row is marked rather than deleted: retracting must not rewrite history.
+        if prior["reported_by_member_id"] != actor["member_id"]:
+            raise HTTPException(status_code=403, detail="members can only retract their own reports")
+        row = conn.execute(
+            """UPDATE workhub.work_item_reports
+               SET status = 'retracted', retracted_by_member_id = %s, retracted_at = now()
+               WHERE report_id = %s
+               RETURNING report_id, work_item_id, submitted_via, status, retracted_at""",
+            (actor["member_id"], report_id),
+        ).fetchone()
+        audit(conn, actor["member_id"], "work_item_report.retracted", "work_item_report", report_id, payload.reason, row, prior)
+        return row
+
+
+# ---------------------------------------------------------------------------
+# Board aggregation
+#
+# The board answers one question for management: what is stuck, what needs a
+# decision, and what has nobody touched. It deliberately reports silence too --
+# an item with no report, or a position with no holder, is visible rather than
+# quietly absent. A board that only shows what people filled in hides exactly the
+# cases management needs.
+#
+# Responsibility is shown as a position, not a person. Work items hang off
+# positions so that a departure hands them over automatically, and the board keeps
+# that property: holdership changes must not require the board to be redrawn.
+# ---------------------------------------------------------------------------
+
+BOARD_QUERY = """SELECT w.work_item_id, w.title, w.kind, w.status, w.blocked_reason, w.needs_decision,
+                        w.created_at, w.updated_at,
+                        p.position_id, p.position_code, p.title AS position_title,
+                        (SELECT count(*) FROM workhub.position_assignments a
+                          WHERE a.position_id = p.position_id
+                            AND a.status IN ('active', 'scheduled')
+                            AND a.starts_at <= now()
+                            AND (a.ends_at IS NULL OR now() < a.ends_at)) AS holder_count,
+                        s.latest_report_id, s.latest_submitted_via, s.latest_progress_value,
+                        s.latest_note, s.latest_evidence, s.latest_reported_at
+                   FROM workhub.work_items w
+                   JOIN workhub.positions p ON p.position_id = w.position_id
+                   LEFT JOIN workhub.work_item_current_state s ON s.work_item_id = w.work_item_id
+                  WHERE w.org_unit_id = %s AND w.status IN ('planned', 'in_progress', 'blocked')
+                  ORDER BY CASE w.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,
+                           w.needs_decision DESC, w.updated_at DESC"""
+
+
+def _board_card(row: dict[str, Any], now: datetime, stale_after: timedelta) -> dict[str, Any]:
+    reported_at = row["latest_reported_at"]
+    reported = reported_at is not None
+    overdue = row["status"] in ("in_progress", "blocked") and (
+        not reported or reported_at < now - stale_after
+    )
+    return {
+        "work_item_id": row["work_item_id"],
+        "title": row["title"],
+        "kind": row["kind"],
+        "status": row["status"],
+        "blocked_reason": row["blocked_reason"],
+        "needs_decision": row["needs_decision"],
+        "updated_at": row["updated_at"],
+        "position": {
+            "position_id": row["position_id"],
+            "position_code": row["position_code"],
+            "title": row["position_title"],
+            "holder_count": row["holder_count"],
+        },
+        "latest_report": None if not reported else {
+            "report_id": row["latest_report_id"],
+            "submitted_via": row["latest_submitted_via"],
+            "progress_value": row["latest_progress_value"],
+            "note": row["latest_note"],
+            "evidence": row["latest_evidence"],
+            "reported_at": reported_at,
+        },
+        "reported": reported,
+        "overdue": overdue,
+    }
+
+
+@app.get("/v1/board/org-units/{org_unit_id}")
+def board_for_org_unit(org_unit_id: UUID, stale_days: int = 7,
+                       _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
+    stale_days = min(max(stale_days, 1), 365)
+    now = datetime.now(timezone.utc)
+    stale_after = timedelta(days=stale_days)
+    with connection() as conn:
+        org_unit = conn.execute(
+            "SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status FROM workhub.org_units WHERE org_unit_id = %s",
+            (org_unit_id,),
+        ).fetchone()
+        if not org_unit:
+            raise HTTPException(status_code=404, detail="org unit not found")
+        rows = conn.execute(BOARD_QUERY, (org_unit_id,)).fetchall()
+        child_org_units = conn.execute(
+            """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+               WHERE parent_org_unit_id = %s AND status = 'active' ORDER BY org_code""",
+            (org_unit_id,),
+        ).fetchall()
+
+    cards = [_board_card(row, now, stale_after) for row in rows]
+    by_position: dict[UUID, dict[str, Any]] = {}
+    for card in cards:
+        position_id = card["position"]["position_id"]
+        bucket = by_position.setdefault(position_id, {
+            "position": card["position"],
+            "items": [],
+        })
+        bucket["items"].append(card)
+
+    channel = Counter(card["latest_report"]["submitted_via"] for card in cards if card["reported"])
+    return {
+        "org_unit": org_unit,
+        "generated_at": now,
+        "stale_days": stale_days,
+        "summary": {
+            "open_items": len(cards),
+            "blocked": sum(1 for card in cards if card["status"] == "blocked"),
+            "needs_decision": sum(1 for card in cards if card["needs_decision"]),
+            "never_reported": sum(1 for card in cards if not card["reported"]),
+            "overdue": sum(1 for card in cards if card["overdue"]),
+            "positions_without_holder": sum(1 for bucket in by_position.values() if bucket["position"]["holder_count"] == 0),
+            # The human/agent split of the current state is the scoreboard for v1:
+            # if this stays all-human, AI dictation was not adopted in practice.
+            "latest_report_by_channel": {"human": channel["human"], "agent": channel["agent"]},
+        },
+        "sections": {
+            "blocked": [card for card in cards if card["status"] == "blocked"],
+            "needs_decision": [card for card in cards if card["needs_decision"] and card["status"] != "blocked"],
+            "by_position": sorted(by_position.values(), key=lambda bucket: bucket["position"]["position_code"]),
+        },
+        "child_org_units": child_org_units,
+    }
 
 
 @app.get("/v1/audit-events")

@@ -66,7 +66,15 @@
    - 补齐：主岗唯一性、审批记录表（双签）、`acting` 90 天 CHECK、字段级脱敏
    - 额外加的两条 DB 强制：`blocked` 必须有非空原因；工作项 `org_unit_id` 必须与其 `position_id` 所属部门一致（触发器，否则看板会按部门聚合错）
    - **双签只做到"每人一票、不可重复"**，DB 不强制"凑齐两票"——数据库不知道谁是哪一角色，这条留给应用层读 `approval_records` 判定
-2. **看板聚合接口**：按部门 / 岗位聚合，返回进度、阻塞项、待决策项
+2. **看板聚合接口** ✅ **已完成**（未部署前不算数，当前已在服务器跑通）
+   - `GET /v1/board/org-units/{org_unit_id}`：阻塞项 → 待决策项 → 按岗位分组，每条带最新申报与 `submitted_via`
+   - 写侧：`POST /v1/work-items`、`PATCH /v1/work-items/{id}`、`GET /v1/work-items`
+   - 申报：`POST /v1/work-items/{id}/reports`（`submitted_via` 必填、`evidence` 必填）、`GET /v1/work-items/{id}/reports`（历史，含已撤回）、`POST /v1/reports/{id}/retract`
+   - **撤回是标记不是删除**，撤回后看板回退到上一条有效申报（已验证）
+   - **申报不改工作项状态**：不允许用"追加一条申报"偷偷改写工作项状态，状态变更必须走显式接口并落审计
+   - **沉默也要出现在看板上**：`summary` 返回 `never_reported`（有工作项但从没报过）与 `positions_without_holder`（有工作项但岗位无人）。只显示"填报了什么"的看板，恰好藏掉了管理层最需要看到的那一半
+   - `latest_report_by_channel` 的 human / agent 之比就是第一版的成绩单
+   - 迁移 0003 补发 `workforce.reports` + `submit` 给既有全范围管理员（`bootstrap-admin` 只能跑一次，拿不到后加的动作）
 3. **MCP 适配层**（v1）
    - 读：`list_my_work_items`、`list_work_items_by_position`、`get_department_board`、`who_is_responsible_for`
    - 写：**只有** `submit_progress(work_item_id, value, note, evidence)`
@@ -97,7 +105,7 @@
 
 ## 8. 前置阻塞（没做完不开 MCP 给员工用）
 
-- 行级范围过滤（可粗粒度）
-- 敏感字段脱敏与审计
+- **行级范围过滤（当前缺口）**：`require_permission` 只认 `scope_type='all'`，工作项与看板接口对所有持 all-scope 读取权的人返回全量数据，**不能向普通成员发令牌**。第一版可粗粒度，扩部门前必须做通用
+- 敏感字段脱敏与逐条审计
 - ~~迁移 0002 的四个补齐项~~ ✅ 已完成并实测
-- 服务器上建独立库、专用账号、备份策略（尚未开始）
+- ~~服务器上建独立库、专用账号~~ ✅ 已完成，迁移已应用，首管理员已建
