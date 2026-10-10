@@ -1,0 +1,30 @@
+{
+  "org_unit": {
+    "code": "HR",
+    "name": "人事部",
+    "unit_type": "department"
+  },
+  "positions": [
+    { "code": "HR_MANAGER", "title": "人事经理" },
+    { "code": "HR_SPECIALIST", "title": "人事专员" }
+  ],
+  "members": [
+    { "name": "示例姓名", "employee_code": "EXAMPLE-001", "position_code": "HR_MANAGER" }
+  ],
+  "work_items": [
+    {
+      "position_code": "HR_MANAGER",
+      "title": "示例工作项",
+      "kind": "project",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "HR_MANAGER",
+      "title": "示例阻塞项",
+      "kind": "project",
+      "status": "blocked",
+      "blocked_reason": "说明卡在哪里、在等谁",
+      "needs_decision": true
+    }
+  ]
+}

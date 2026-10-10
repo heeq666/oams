@@ -7,3 +7,6 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+
+# Real department seed data may contain employee names; keep it out of git.
+data/*.local.json
