@@ -135,6 +135,39 @@
   .flowstrip .stage.terminal.zero .cnt { color: var(--muted); }
   .flowstrip .clear { margin-left: auto; font-size: 13px; color: var(--muted); text-decoration: none; align-self: center; padding: 7px 0; }
   .flowstrip .clear:hover { color: var(--ink); text-decoration: underline; }
+  .office-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 1000px) { .office-layout { grid-template-columns: minmax(0, 1fr); } }
+  .floor > svg.plan { width: 100%; height: auto; background: #fff;
+                      border: 1px solid var(--line); border-radius: 12px; display: block; }
+  /* One colour per room, answering one question: does this need me today. */
+  .zone { fill: #eef2ef; stroke: #cfe3d6; stroke-width: 2; }
+  .zone.warn { fill: #fdf6e8; stroke: #e8cf94; }
+  .zone.alert { fill: #fdf1ef; stroke: #eeb2a8; }
+  .zone.uncalibrated { fill: #f7f8f9; stroke: #b8bec4; }
+  .plan a:hover .zone { stroke: var(--accent); }
+  .plan a:focus-visible .zone { stroke: var(--accent); stroke-width: 3; }
+  .zone-name { font-size: 28px; font-weight: 600; fill: var(--ink); }
+  .zone-num { font-size: 48px; font-weight: 600; fill: var(--ink); }
+  .zone-numlabel { font-size: 20px; fill: var(--muted); }
+  .zone-flag { font-size: 22px; fill: var(--blocked); font-weight: 500; }
+  .zone-calib { font-size: 18px; fill: #98a0a8; }
+  .detail { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .zoom-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .zoom-head h2 { margin: 0; }
+  .badge.heat.ok { color: var(--done); border-color: #cfe3d6; background: #f2f8f4; }
+  .badge.heat.warn { color: var(--decision); border-color: #e8cf94; background: #fdf6e8; }
+  .badge.heat.alert { color: #fff; background: var(--blocked); border-color: var(--blocked); }
+  svg.room { width: 100%; height: auto; background: #fbfcfb; border: 1px solid var(--line);
+             border-radius: 10px; margin-bottom: 12px; }
+  .desk rect { fill: #fff; stroke: #d3d9de; stroke-width: 2; }
+  .desk.warn rect { fill: #fdf6e8; stroke: #e8cf94; }
+  .desk.alert rect { fill: #fdf1ef; stroke: #eeb2a8; }
+  .desk.vacant rect { fill: #f6f7f8; stroke: #d9dde1; stroke-dasharray: 10 8; }
+  .desk-name { font-size: 26px; font-weight: 600; fill: var(--ink); }
+  .desk-num { font-size: 22px; fill: var(--muted); }
+  .desk-flag { font-size: 20px; fill: var(--blocked); font-weight: 500; }
+  .stack { margin-bottom: 20px; }
+  .form-row .check { flex-direction: row; align-items: center; gap: 6px; }
   .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
   .bar > span { display: block; height: 100%; background: var(--accent); }
   .flowstrip .clear:hover { color: var(--ink); text-decoration: underline; }
@@ -145,8 +178,10 @@
   <a class="brand" href="/board">Workhub</a>
   <nav>
     <a href="/board">看板</a>
+    <a href="/office">办公室</a>
     <a href="/admin/work-items">工作项</a>
     <a href="/admin/positions">岗位</a>
+    <a href="/admin/spaces">布置</a>
     <a href="/admin/audit">审计</a>
   </nav>
   <div class="who">

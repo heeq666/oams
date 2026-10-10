@@ -1,0 +1,81 @@
+{# One department blown up. Included twice: inside /office when ?org= is set, and
+   swapped into #office-detail when somebody clicks a room. Same fragment either
+   way, so link and click can never show different pictures. #}
+{% set z = unit.zone %}
+<div class="zoom">
+  <div class="zoom-head">
+    <h2>{{ unit.org_name }}</h2>
+    <span class="badge heat {{ unit.heat }}">{% if unit.heat == 'alert' %}有阻塞{% elif unit.heat == 'warn' %}要关注{% else %}正常{% endif %}</span>
+    {% if not z.calibrated %}<span class="badge">位置待校准</span>{% endif %}
+  </div>
+
+  {% if unit.desks %}
+    <svg class="room" viewBox="0 0 1000 1000" role="group"
+         aria-label="{{ unit.org_name }} 内部工位，共 {{ unit.desks | length }} 张"
+         style="aspect-ratio: {{ z.w }} / {{ z.h }}">
+      {% for desk in unit.desks %}
+        <g class="desk {% if desk.blocked %}alert{% elif desk.needs_decision %}warn{% elif desk.vacant %}vacant{% endif %}">
+          <rect x="{{ desk.x }}" y="{{ desk.y }}" width="{{ desk.w }}" height="{{ desk.h }}" rx="10"
+                {% if not desk.calibrated %}stroke-dasharray="12 9"{% endif %}></rect>
+          <text class="desk-name" x="{{ desk.x + 14 }}" y="{{ desk.y + 30 }}">{{ desk.position.title }}</text>
+          <text class="desk-num" x="{{ desk.x + 14 }}" y="{{ desk.y + 62 }}">{{ desk.open_items }} 项</text>
+          {% if desk.blocked %}
+            <text class="desk-flag" x="{{ desk.x + 14 }}" y="{{ desk.y + 86 }}">{{ desk.blocked }} 阻塞</text>
+          {% elif desk.needs_decision %}
+            <text class="desk-flag" x="{{ desk.x + 14 }}" y="{{ desk.y + 86 }}">{{ desk.needs_decision }} 待决策</text>
+          {% elif desk.silent %}
+            <text class="desk-flag" x="{{ desk.x + 14 }}" y="{{ desk.y + 86 }}">{{ desk.silent }} 沉默</text>
+          {% elif desk.vacant %}
+            <text class="desk-flag" x="{{ desk.x + 14 }}" y="{{ desk.y + 86 }}">岗位空缺</text>
+          {% endif %}
+        </g>
+      {% endfor %}
+    </svg>
+  {% else %}
+    <p class="empty">这间房里还没有排任何工位。到「布置」页把岗位排到座位上。</p>
+  {% endif %}
+
+  {% if unit.unseated %}
+    <p class="sub">已建岗但还没排座的岗位：{% for p in unit.unseated %}{{ p.title }}{% if not loop.last %}、{% endif %}{% endfor %}</p>
+  {% endif %}
+
+  <div class="flowstrip">
+    {% for stage in unit.flow %}
+      {% if stage.branch %}<span class="fork" aria-hidden="true">↳</span>{% endif %}
+      <span class="stage {{ stage.id }} {% if stage.id == 'done' %}terminal{% if stage.count == 0 %} zero{% endif %}{% endif %}"
+            title="{{ stage.note or stage.label }}">{{ stage.label }}<span class="cnt">{{ stage.count }}</span></span>
+      {% if not stage.branch and not loop.last %}<span class="arrow" aria-hidden="true">▸</span>{% endif %}
+    {% endfor %}
+  </div>
+
+  <ul class="items">
+    {% for card in unit.top_cards %}
+      <li class="{{ card.status }}">
+        <div class="row1">
+          <span class="title">{{ card.title }}</span>
+          <span class="badge {{ 'blocked' if card.status == 'blocked' }}">{{ status_labels[card.status] }}</span>
+          {% if card.needs_decision %}<span class="badge decision">待决策</span>{% endif %}
+          <span class="pos">{{ card.position.title }}{% if card.position.holder_count == 0 %}<em class="vac">岗位空缺</em>{% endif %}{% if card.overdue %}<em class="vac">已逾期</em>{% endif %}</span>
+        </div>
+        {% if card.blocked_reason %}<div class="meta">卡在：{{ card.blocked_reason }}</div>{% endif %}
+        {% if card.reported %}
+          <div class="meta">
+            <span class="badge {{ 'agent' if card.latest_report.submitted_via == 'agent' else 'human' }}">
+              {{ channel_labels[card.latest_report.submitted_via] }}</span>
+            {% if card.latest_report.progress_value is not none %}<span>进度 {{ card.latest_report.progress_value }}%</span>{% endif %}
+            <span>更新于 {{ card.latest_report.reported_at | dt }}</span>
+          </div>
+          {% if card.latest_report.progress_value is not none %}
+            <div class="bar"><span style="width: {{ card.latest_report.progress_value }}%"></span></div>
+          {% endif %}
+        {% else %}
+          <div class="meta"><span class="badge">从未申报</span></div>
+        {% endif %}
+      </li>
+    {% else %}
+      <li><p class="empty">这个部门现在没有未完成的工作项。</p></li>
+    {% endfor %}
+  </ul>
+
+  <p class="sub"><a href="/board?org={{ unit.org_unit_id }}">在普通看板里打开这个部门 →</a></p>
+</div>

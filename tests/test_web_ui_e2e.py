@@ -162,7 +162,10 @@ try:
 
     with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
         real_org = conn.execute("SELECT org_unit_id FROM workhub.org_units LIMIT 1").fetchone()["org_unit_id"]
-        real_pos = conn.execute("SELECT position_id FROM workhub.positions LIMIT 1").fetchone()["position_id"]
+        # Belongs to the same department: a desk for a post outside the room would
+        # be refused, and rightly so -- the test has to ask for something legal.
+        real_pos = conn.execute("SELECT position_id FROM workhub.positions WHERE org_unit_id = %s LIMIT 1",
+                                (real_org,)).fetchone()["position_id"]
     code, body, headers = call("/admin/work-items", method="POST", form={
         "position_id": real_pos, "title": "界面创建的测试项", "kind": "routine", "status": "in_progress",
         "blocked_reason": "", "needs_decision": ""})
@@ -273,6 +276,56 @@ try:
     code, body, _ = call("/admin/audit")
     check("audit page renders", code == 200 and "审计" in body, str(code))
 
+    # --- the floor plan: departments as zones, click to zoom in ---------------
+    # The whole point of the office view is that it never invents geometry. Every
+    # zone below is entered explicitly and stays uncalibrated, so the page has to
+    # draw it dashed; removing it has to leave the plan empty rather than guess.
+    # Start from a clean floor: previous runs leave zones behind, and this page is
+    # specifically about not drawing things nobody configured.
+    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+        conn.execute("DELETE FROM workhub.spaces")
+        conn.commit()
+
+    code, body, _ = call("/office")
+    check("office page renders", code == 200 and "办公室平面图" in body, str(code))
+    check("with no zone configured the plan refuses to invent a floor",
+          "还没有任何部门被画到平面图上" in body and 'class="zone' not in body, "")
+
+    code, _, headers = call("/admin/spaces", method="POST", form={
+        "kind": "zone", "org_unit_id": real_org, "x": "40", "y": "40",
+        "w": "420", "h": "260", "label": ""})
+    check("a zone can be configured from the page", code == 303, str(code))
+    code, _, headers = call("/admin/spaces", method="POST", form={
+        "kind": "zone", "org_unit_id": real_org, "x": "900", "y": "900",
+        "w": "420", "h": "260", "label": ""})
+    check("a zone off the canvas is refused", code == 303 and "geometry" in (hdr(headers, "Location") or ""),
+          f"{code} {hdr(headers, 'Location')}")
+    code, _, headers = call("/admin/spaces", method="POST", form={
+        "kind": "desk", "org_unit_id": real_org, "position_id": real_pos,
+        "x": "60", "y": "60", "w": "160", "h": "120", "label": ""})
+    check("a desk can be configured for a position", code == 303, str(code))
+
+    code, plan, _ = call("/office")
+    check("the plan draws every configured zone exactly once",
+          code == 200 and plan.count('class="zone ') == 1, str(plan.count('class="zone ')))
+    check("an uncalibrated zone is drawn dashed so nobody reads it as fact",
+          "uncalibrated" in plan and "stroke-dasharray" in plan and "位置待校准" in plan, "")
+    check("the plan offers every department that still has no zone",
+          all(u["name"] in plan for u in api_json("/v1/office")["unplaced"]), "")
+
+    seated_titles = [desk["position"]["title"] for desk in api_json("/v1/office")["units"][0]["desks"]]
+    code, zoom, _ = call(f"/office/zoom?org={real_org}")
+    check("clicking a department zooms into its own room",
+          code == 200 and 'class="room"' in zoom and '<rect' in zoom, str(code))
+    check("the zoomed room draws every seat the department has",
+          bool(seated_titles) and all(title in zoom for title in seated_titles), str(seated_titles))
+    check("the zoomed room carries the department's own flow strip",
+          zoom.count('class="stage ') == 4, str(zoom.count('class="stage ')))
+    check("the plan and the zoom agree on department metrics",
+          str(api_json("/v1/office")["units"][0]["summary"]["open_items"]) in plan, "")
+    check("a department with no zone cannot be zoomed into",
+          call("/office/zoom?org=00000000-0000-0000-0000-000000000000")[0] == 404, "")
+
     # --- the specialist: allowed on the board, refused on audit -------------
     opener2 = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect,
                                           urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
@@ -288,7 +341,20 @@ try:
     code, body, _ = call("/admin/positions", method="POST", form={
         "position_code": "HACK", "title": "hack", "org_unit_id": real_org})
     check("specialist cannot create a position", code == 403 and "没有权限" in body, str(code))
+    code, body, _ = call("/admin/spaces")
+    check("specialist can look at the floor plan setup", code == 200 and "办公室布置" in body, str(code))
+    code, body, _ = call("/admin/spaces", method="POST", form={
+        "kind": "zone", "org_unit_id": real_org, "x": "10", "y": "10", "w": "100", "h": "100"})
+    check("specialist cannot reconfigure the floor plan", code == 403 and "没有权限" in body, str(code))
     opener = global_opener
+
+    # Removing the zone must empty the plan, not leave a stale rectangle behind.
+    space_id = api_json("/v1/office")["units"][0]["zone"]["space_id"]
+    code, _, _ = call(f"/admin/spaces/{space_id}/remove", method="POST", form={})
+    check("a zone can be removed from the plan", code == 303, str(code))
+    code, emptied, _ = call("/office")
+    check("an emptied plan says so instead of guessing a position",
+          code == 200 and "还没有任何部门被画到平面图上" in emptied and 'class="zone' not in emptied, "")
 
     code, body, headers = call("/logout", method="POST", form={})
     check("logout redirects to login and clears the cookie",
