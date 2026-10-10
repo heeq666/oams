@@ -79,28 +79,22 @@
   .tabs a .cnt { margin-left: 6px; font-size: 12px; opacity: .65; }
   .tabs.layers a { font-size: 13px; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-  .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  @media (max-width: 880px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .lane { background: #fafbfc; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
-  .lane > header { display: flex; justify-content: space-between; align-items: baseline;
-                   font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
-  .lane > header em { font-style: normal; font-size: 11px; font-weight: 400; opacity: .7; margin-left: 4px; }
-  .lane > header .cnt { font-size: 13px; opacity: .8; }
-  .lane.blocked { background: #fdf4f3; border-color: #f0ccc8; }
-  .lane.blocked > header { color: var(--blocked); }
-  .lane.done { background: #f2f8f4; border-color: #cfe3d6; }
-  .lane.done > header { color: var(--done); }
-  .mini { background: #fff; border: 1px solid var(--line); border-left: 3px solid #cbd5e0;
-          border-radius: 5px; padding: 8px 10px; margin-bottom: 6px; }
-  .mini.blocked { border-left-color: var(--blocked); }
-  .mini.in_progress { border-left-color: #4a5568; }
-  .mini .t { font-weight: 600; font-size: 13px; display: block; line-height: 1.4; }
-  .mini .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-  .mini .tags .badge { font-size: 11px; padding: 0 6px; }
-  .mini .who { color: var(--muted); font-size: 12px; margin-top: 4px; }
-  .mini .why { color: var(--blocked); font-size: 12px; margin-top: 4px; line-height: 1.4; }
-  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
-  .bar > span { display: block; height: 100%; background: var(--accent); }
+  .flowstrip { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+               background: #fafbfc; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .flowstrip .arrow, .flowstrip .fork { color: var(--muted); font-size: 13px; }
+  .flowstrip .fork { margin-left: 10px; }
+  .flowstrip .stage { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 12px;
+                      border: 1px solid var(--line); border-radius: 16px; background: #fff;
+                      color: var(--ink); font-size: 14px; text-decoration: none; }
+  .flowstrip a.stage:hover { border-color: var(--accent); }
+  .flowstrip .stage .cnt { font-size: 13px; font-weight: 600; opacity: .75; }
+  .flowstrip .stage.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .flowstrip .stage.on .cnt { opacity: .9; }
+  .flowstrip .stage.blocked.on { background: var(--blocked); border-color: var(--blocked); }
+  .flowstrip .stage.terminal { color: var(--muted); background: #f2f8f4; border-color: #cfe3d6; cursor: default; }
+  .flowstrip .stage.terminal .cnt { color: var(--done); }
+  .flowstrip .clear { margin-left: auto; font-size: 13px; color: var(--muted); text-decoration: none; }
+  .flowstrip .clear:hover { color: var(--ink); text-decoration: underline; }
 </style>
 </head>
 <body>

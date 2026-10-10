@@ -55,20 +55,14 @@ def _display_time(value: datetime | None, fmt: str = "%m-%d %H:%M") -> str:
 
 
 TEMPLATES.env.filters["dt"] = _display_time
-# The page filters cards with the very predicate the API counts them with, so a
-# lane can never show a card that the layer badge says is not there.
+# The global stays for anything that still wants the raw predicate; the page itself
+# renders board.visible_cards, which api already filtered with the same function.
 TEMPLATES.env.globals["in_layer"] = api.layer_matches
 
 STATUS_LABELS = {"planned": "未开始", "in_progress": "进行中", "blocked": "阻塞",
                  "done": "已完成", "cancelled": "已取消"}
 KIND_LABELS = {"project": "项目", "routine": "常规", "adhoc": "临时"}
 CHANNEL_LABELS = {"human": "人工", "agent": "AI 代笔"}
-
-
-def _safe_layer(value: str | None) -> str:
-    """Unknown layer ids fall back to 'all' rather than rendering an empty board."""
-    known = {layer_id for layer_id, _, _ in api.BOARD_LAYERS}
-    return value if value in known else "all"
 
 
 def _safe_next(next_url: str | None) -> str:
@@ -164,14 +158,15 @@ def logout(request: Request):
 
 @router.get("/board", response_class=HTMLResponse)
 def board(request: Request, org: UUID | None = None, stale_days: int = Query(default=7, ge=1, le=365),
-          layer: str = Query(default="all")):
+          layer: str = Query(default="all"), stage: str | None = Query(default=None)):
     try:
         _require(request, "workforce.work_items", "read")
     except _NotSignedIn:
         return RedirectResponse(url="/login?next=/board", status_code=302)
     except _NotPermitted:
         return _denied(request, "查看看板需要 workforce.work_items/read 权限。")
-    layer = _safe_layer(layer)
+    layer = api.normalize_layer(layer)
+    stage = api.normalize_stage(stage)
 
     with connection() as conn:
         # ROW-LEVEL FILTERING GAP: this lists every org unit, exactly as the API
@@ -184,13 +179,14 @@ def board(request: Request, org: UUID | None = None, stale_days: int = Query(def
             return TEMPLATES.TemplateResponse(request, "board.html",
                                               {"org_units": [], "board": None, "member": _member(request)})
         selected_id = org or org_units[0]["org_unit_id"]
-        data = api.build_board(conn, selected_id, stale_days)
+        data = api.build_board(conn, selected_id, stale_days, layer, stage)
     return TEMPLATES.TemplateResponse(request, "board.html", {
         "org_units": org_units,
         "selected_id": str(selected_id),
         "board": data,
         "stale_days": stale_days,
         "layer": layer,
+        "stage": stage,
         "member": _member(request),
         "status_labels": STATUS_LABELS,
         "kind_labels": KIND_LABELS,
@@ -200,7 +196,7 @@ def board(request: Request, org: UUID | None = None, stale_days: int = Query(def
 
 @router.get("/board/body", response_class=HTMLResponse)
 def board_body(request: Request, org: UUID, stale_days: int = Query(default=7, ge=1, le=365),
-               layer: str = Query(default="all")):
+               layer: str = Query(default="all"), stage: str | None = Query(default=None)):
     """The board content alone, so switching department or layer does not reload the page."""
     try:
         _require(request, "workforce.work_items", "read")
@@ -208,9 +204,10 @@ def board_body(request: Request, org: UUID, stale_days: int = Query(default=7, g
         return RedirectResponse(url="/login?next=/board", status_code=302)
     except _NotPermitted:
         return _denied(request, "查看看板需要 workforce.work_items/read 权限。")
-    layer = _safe_layer(layer)
+    layer = api.normalize_layer(layer)
+    stage = api.normalize_stage(stage)
     with connection() as conn:
-        data = api.build_board(conn, org, stale_days)
+        data = api.build_board(conn, org, stale_days, layer, stage)
     return TEMPLATES.TemplateResponse(request, "board_body.html", {
         "selected_id": str(org),
         "board": data,

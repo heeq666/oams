@@ -50,13 +50,24 @@ opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect
                                     urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
 
-def lane_counts(html):
-    """(count in the lane header, cards actually painted in that lane)."""
+def strip_counts(html):
+    """{stage id: count printed on the flow strip} -- the strip is one row of
+    counters, so anything outside it does not count as a flow number."""
+    block = re.search(r'<div class="flowstrip">([\s\S]*?)</div>', html)
     out = {}
-    for stage, inner in re.findall(r'<section class="lane (\w+)">([\s\S]*?)</section>', html):
-        header = re.search(r'<span class="cnt">(\d+)</span>', inner)
-        out[stage] = (int(header.group(1)) if header else None, inner.count('class="mini '))
+    if not block:
+        return out
+    # The backreference matters: each pill is wrapped in its own <a> or <span>, so
+    # matching lazily to the first closing tag would stop inside the counter span.
+    for _, stage_id, inner in re.findall(r'<(a|span) class="stage (\w+)[^"]*"[^>]*>([\s\S]*?)</\1>', block.group(1)):
+        found = re.search(r'class="cnt">(\d+)', inner)
+        out[stage_id] = int(found.group(1)) if found else None
     return out
+
+
+def listed_cards(html):
+    """Every card painted in the one list under the strip."""
+    return html.count('<li class="')
 
 
 def api_json(path):
@@ -164,35 +175,68 @@ try:
           code in (303, 422) and ("blocked" in (hdr(headers, "Location") or "") or code == 422),
           f"{code} {hdr(headers, 'Location')}")
 
-    # --- layers and flow lanes ------------------------------------------------
-    # A layer is a filter, not a second aggregation. The count on the badge and
-    # the cards actually painted in the lanes come from the same predicate, so if
-    # they ever disagree the page is lying to itself.
+    # --- one layer, one list, and a flow strip that agrees with both ----------
+    # A layer is a filter, not a second aggregation, and the flow strip is a row of
+    # counters rather than a second copy of the cards. Three things therefore have
+    # to reconcile with the API on every combination: the layer badge, the stage
+    # counter, and the cards painted in the list. If any two disagree the page is
+    # answering a question nobody asked.
     api_board = api_json(f"/v1/board/org-units/{real_org}")
     counts = {layer["id"]: layer["count"] for layer in api_board["layers"]}
+    SELECTABLE = ("planned", "in_progress", "blocked")
 
     code, all_html, _ = call(f"/board/body?org={real_org}&layer=all")
-    check("board fragment renders every flow lane",
-          code == 200 and all(label in all_html for label in ("未开始", "进行中", "阻塞", "已完成")), str(code))
+    check("the flow is one strip of counters, not four lanes of cards",
+          code == 200 and all_html.count('class="stage ') == 4 and 'class="lane' not in all_html, str(code))
+    check("the strip names every stage",
+          all(label in all_html for label in ("未开始", "进行中", "阻塞", "已完成")), "")
     check("board fragment offers every layer",
           all(label in all_html for label in ("全部", "阻塞", "待决策", "AI 代笔", "沉默")), "")
 
-    for layer_id in ("blocked", "decision", "agent", "silent"):
+    for layer_id in ("all", "blocked", "decision", "agent", "silent"):
+        api_layer = api_json(f"/v1/board/org-units/{real_org}?layer={layer_id}")
         _, html, _ = call(f"/board/body?org={real_org}&layer={layer_id}")
-        painted = html.count('class="mini ')
-        listed = html.count('<li class="')
-        check(f"layer '{layer_id}' paints exactly its badge count",
-              painted == counts[layer_id] and listed == counts[layer_id],
-              f"badge={counts[layer_id]} lanes={painted} detail={listed}")
-        # A header claiming 4 cards above a lane holding 1 is the page disagreeing
-        # with itself, which is exactly what made the first cut of this confusing.
-        lanes = lane_counts(html)
-        check(f"layer '{layer_id}' lane headers match the cards painted",
-              all(header == painted_in for header, painted_in in lanes.values()), str(lanes))
+        listed = listed_cards(html)
+        check(f"layer '{layer_id}' lists exactly its badge count",
+              listed == counts[layer_id] and listed == len(api_layer["visible_cards"]),
+              f"badge={counts[layer_id]} listed={listed}")
+        strip = strip_counts(html)
+        check(f"layer '{layer_id}' strip counters add up to the list",
+              sum(strip[s] for s in SELECTABLE) == listed, f"{strip} vs {listed}")
+        check(f"layer '{layer_id}' strip agrees with the API per stage",
+              all(strip[s] == flow["count"] for s in SELECTABLE
+                  for flow in api_layer["flow"] if flow["id"] == s), str(strip))
+        # 'done' is a counter with no cards behind it, so it is printed but never
+        # selectable -- it must still equal the API's count or it is just decor.
+        check(f"layer '{layer_id}' prints the terminal count without offering it as a list",
+              strip["done"] == next(flow["count"] for flow in api_layer["flow"] if flow["id"] == "done")
+              and '<a class="stage done' not in html, str(strip))
+
+    # A stage narrows a layer instead of replacing it: asking for blocked inside
+    # the decision layer means decision AND blocked, never one or the other.
+    for layer_id in ("all", "decision", "silent"):
+        for stage_id in SELECTABLE:
+            api_both = api_json(f"/v1/board/org-units/{real_org}?layer={layer_id}&stage={stage_id}")
+            _, html, _ = call(f"/board/body?org={real_org}&layer={layer_id}&stage={stage_id}")
+            listed = listed_cards(html)
+            check(f"layer '{layer_id}' + stage '{stage_id}' lists what the API returns",
+                  listed == len(api_both["visible_cards"]),
+                  f"listed={listed} api={len(api_both['visible_cards'])}")
+            strip = strip_counts(html)
+            check(f"layer '{layer_id}' + stage '{stage_id}' keeps the whole layer visible in the strip",
+                  sum(strip[s] for s in SELECTABLE) == counts[layer_id], str(strip))
 
     bogus_code, bogus_html, _ = call(f"/board/body?org={real_org}&layer=bogus")
     check("an unknown layer falls back to all instead of an empty board",
-          bogus_code == 200 and bogus_html.count('class="mini ') == counts["all"], str(bogus_code))
+          bogus_code == 200 and listed_cards(bogus_html) == counts["all"], str(bogus_code))
+    # 'done' has no cards behind it by design, so asking for it can only fall back
+    # to no stage filter -- it must never answer with an empty list and a straight face.
+    _, done_html, _ = call(f"/board/body?org={real_org}&stage=done")
+    check("'done' cannot be selected as a stage and falls back to the layer",
+          listed_cards(done_html) == counts["all"], str(listed_cards(done_html)))
+    _, junk_html, _ = call(f"/board/body?org={real_org}&stage=bogus")
+    check("an unknown stage falls back to no stage filter",
+          listed_cards(junk_html) == counts["all"], str(listed_cards(junk_html)))
 
     code, body, _ = call("/admin/positions")
     check("admin positions page renders", code == 200 and "全部岗位" in body, str(code))

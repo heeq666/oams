@@ -8,10 +8,10 @@
   <div class="tabs">
     {% for unit in org_units %}
       <a class="{% if unit.org_unit_id|string == selected_id %}on{% endif %}"
-         href="/board?org={{ unit.org_unit_id }}&layer={{ layer }}"
-         hx-get="/board/body?org={{ unit.org_unit_id }}&layer={{ layer }}&stale_days={{ stale_days }}"
+         href="/board?org={{ unit.org_unit_id }}&layer={{ layer }}{% if stage %}&stage={{ stage }}{% endif %}"
+         hx-get="/board/body?org={{ unit.org_unit_id }}&layer={{ layer }}{% if stage %}&stage={{ stage }}{% endif %}&stale_days={{ stale_days }}"
          hx-target="#board-body"
-         hx-push-url="/board?org={{ unit.org_unit_id }}&layer={{ layer }}">{{ unit.name }}</a>
+         hx-push-url="/board?org={{ unit.org_unit_id }}&layer={{ layer }}{% if stage %}&stage={{ stage }}{% endif %}">{{ unit.name }}</a>
     {% endfor %}
   </div>
   <div id="board-body">
