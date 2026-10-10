@@ -3,7 +3,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.types.json import Jsonb
 
@@ -42,9 +42,12 @@ def issue_session(member_id: str, provider: str = "administrator-issued") -> tup
     return token, expires_at
 
 
-def current_principal(credentials: HTTPAuthorizationCredentials = Depends(bearer)) -> dict[str, Any]:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Bearer session required", headers={"WWW-Authenticate": "Bearer"})
+def principal_for_token(token: str) -> dict[str, Any] | None:
+    """Resolve a session token, whichever channel it arrived on.
+
+    Both the bearer scheme (MCP, curl) and the browser cookie end up here, so a
+    session behaves identically on both: the UI cannot be a softer way in.
+    """
     with connection() as conn:
         row = conn.execute(
             """SELECT m.member_id, m.display_name, m.employment_status, m.token_version,
@@ -53,35 +56,73 @@ def current_principal(credentials: HTTPAuthorizationCredentials = Depends(bearer
                JOIN workhub.workforce_members m USING (member_id)
                WHERE s.token_digest = %s AND s.revoked_at IS NULL
                  AND s.expires_at > now() AND m.employment_status = 'active'""",
-            (digest_token(credentials.credentials),),
+            (digest_token(token),),
         ).fetchone()
     if not row or row["token_version"] != row["session_token_version"]:
+        return None
+    return row
+
+
+def current_principal(credentials: HTTPAuthorizationCredentials = Depends(bearer)) -> dict[str, Any]:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Bearer session required", headers={"WWW-Authenticate": "Bearer"})
+    row = principal_for_token(credentials.credentials)
+    if row is None:
         raise HTTPException(status_code=401, detail="Invalid or expired session", headers={"WWW-Authenticate": "Bearer"})
     return row
+
+
+def principal_from_request(request: Request) -> dict[str, Any] | None:
+    """The browser variant: same session table, same resolution, cookie as carrier."""
+    token = request.cookies.get(settings.web_session_cookie)
+    if not token:
+        return None
+    return principal_for_token(token)
+
+
+def effective_grants(conn, member_id: Any, resource: str, action: str) -> list[dict[str, Any]]:
+    # SCOPE GAP: only scope_type='all' is honoured today, so a narrow grant gives
+    # nothing and a broad grant gives everything. Row-level range filtering has to
+    # land here -- not in each endpoint, and not in the UI -- before a second
+    # department joins.
+    return conn.execute(
+        """SELECT g.effect, g.scope_type, g.scope_org_unit_id, g.scope_definition
+           FROM workhub.permission_grants g
+           WHERE g.resource = %s AND g.action = %s AND g.revoked_at IS NULL
+             AND g.valid_from <= now() AND (g.valid_until IS NULL OR now() < g.valid_until)
+             AND g.scope_type = 'all'
+             AND ((g.subject_type = 'member' AND g.member_id = %s)
+               OR (g.subject_type = 'position' AND EXISTS (
+                    SELECT 1 FROM workhub.position_assignments a
+                    WHERE a.position_id = g.position_id AND a.member_id = %s
+                      AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
+                      AND (a.ends_at IS NULL OR now() < a.ends_at))))""",
+        (resource, action, member_id, member_id),
+    ).fetchall()
+
+
+def has_permission(conn, member_id: Any, resource: str, action: str) -> bool:
+    grants = effective_grants(conn, member_id, resource, action)
+    if not grants:
+        return False
+    return not any(grant["effect"] == "deny" for grant in grants)
+
+
+def revoke_session(conn, session_id: Any, member_id: Any) -> None:
+    """Logout and operator revocation share this, so both leave the same audit trail."""
+    conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE session_id = %s", (session_id,))
+    conn.execute(
+        """INSERT INTO workhub.workforce_audit_events
+           (actor_member_id, event_type, subject_type, subject_id, reason)
+           VALUES (%s, 'session.revoked', 'session', %s, 'member ended the current session')""",
+        (member_id, session_id),
+    )
 
 
 def require_permission(resource: str, action: str):
     def check(principal: dict[str, Any] = Depends(current_principal)) -> dict[str, Any]:
         with connection() as conn:
-            grants = conn.execute(
-                """SELECT g.effect, g.scope_type, g.scope_org_unit_id, g.scope_definition,
-                          p.position_id AS granted_position_id
-                   FROM workhub.permission_grants g
-                   LEFT JOIN workhub.positions p ON p.position_id = g.position_id
-                   WHERE g.resource = %s AND g.action = %s AND g.revoked_at IS NULL
-                     AND g.valid_from <= now() AND (g.valid_until IS NULL OR now() < g.valid_until)
-                     AND g.scope_type = 'all'
-                     AND ((g.subject_type = 'member' AND g.member_id = %s)
-                       OR (g.subject_type = 'position' AND EXISTS (
-                            SELECT 1 FROM workhub.position_assignments a
-                            WHERE a.position_id = g.position_id AND a.member_id = %s
-                              AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
-                              AND (a.ends_at IS NULL OR now() < a.ends_at))))""",
-                (resource, action, principal["member_id"], principal["member_id"]),
-            ).fetchall()
-            if not grants:
-                raise HTTPException(status_code=403, detail="Permission denied")
-            if any(g["effect"] == "deny" for g in grants):
+            if not has_permission(conn, principal["member_id"], resource, action):
                 raise HTTPException(status_code=403, detail="Permission denied")
         return principal
     return check

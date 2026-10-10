@@ -119,14 +119,18 @@ def seed(conn) -> dict:
         (dept, positions["HRMGR"]),
     ).fetchone()["work_item_id"]
 
+    # Explicit timestamps, an hour apart. Two reports inserted in the same
+    # statement share one now(), and work_item_current_state breaks that tie on
+    # report_id -- a random uuid. That is deterministic but arbitrary, so an
+    # assertion about which report wins must not depend on it.
     cur.execute(
-        """INSERT INTO workhub.work_item_reports (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence)
-           VALUES (%s, %s, 'human', 40, '已联系三家外包', '邮件 thread 2026-10-08')""",
+        """INSERT INTO workhub.work_item_reports (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence, reported_at)
+           VALUES (%s, %s, 'human', 40, '已联系三家外包', '邮件 thread 2026-10-08', now() - interval '1 hour')""",
         (items["in_progress"], members["E1002"]),
     )
     cur.execute(
-        """INSERT INTO workhub.work_item_reports (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence)
-           VALUES (%s, %s, 'agent', 60, 'AI 汇总本周邮件后填报', 'AI 依据：mailbox export 2026-10-10')""",
+        """INSERT INTO workhub.work_item_reports (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence, reported_at)
+           VALUES (%s, %s, 'agent', 60, 'AI 汇总本周邮件后填报', 'AI 依据：mailbox export 2026-10-10', now())""",
         (items["in_progress"], members["E1002"]),
     )
     return {"company": company, "dept": dept, "positions": positions, "members": members, "items": items}

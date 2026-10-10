@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}工作项 · Workhub{% endblock %}
+{% block content %}
+<h1>工作项</h1>
+<p class="sub">工作项挂在岗位上，不挂人。人走了，它自动跟着继任者走。</p>
+
+{% if created %}<div class="flash">已创建。</div>{% endif %}
+{% if error == 'blocked' %}<div class="flash error">状态设为「阻塞」时必须写清楚卡在哪、在等谁。</div>{% endif %}
+
+{% if can_manage %}
+<h2>新建工作项</h2>
+<form method="post" action="/admin/work-items" class="card" style="margin-bottom:24px">
+  <div class="form-row">
+    <div class="field">
+      <label for="position_id">挂到岗位</label>
+      <select id="position_id" name="position_id" required>
+        {% for p in positions %}
+          <option value="{{ p.position_id }}">{{ p.org_code }} · {{ p.title }}（{{ p.position_code }}）</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field" style="flex:2">
+      <label for="title">标题</label>
+      <input id="title" name="title" required maxlength="300" style="width:100%">
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="field">
+      <label for="kind">类型</label>
+      <select id="kind" name="kind">
+        <option value="routine">常规</option>
+        <option value="project">项目</option>
+        <option value="adhoc">临时</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="status">状态</label>
+      <select id="status" name="status">
+        <option value="planned">未开始</option>
+        <option value="in_progress">进行中</option>
+        <option value="blocked">阻塞</option>
+        <option value="done">已完成</option>
+      </select>
+    </div>
+    <div class="field" style="flex:2">
+      <label for="blocked_reason">阻塞原因（阻塞时必填：卡在哪、在等谁）</label>
+      <input id="blocked_reason" name="blocked_reason" maxlength="1000" style="width:100%">
+    </div>
+    <div class="field">
+      <label for="needs_decision">需要拍板</label>
+      <input id="needs_decision" name="needs_decision" type="checkbox" value="true">
+    </div>
+    <button type="submit">创建</button>
+  </div>
+</form>
+{% endif %}
+
+<h2>全部工作项</h2>
+<table>
+  <thead><tr><th>标题</th><th>岗位</th><th>类型</th><th>状态</th><th>阻塞原因</th><th>更新</th></tr></thead>
+  <tbody>
+  {% for item in items %}
+    <tr>
+      <td>{{ item.title }}{% if item.needs_decision %} <span class="badge decision">待决策</span>{% endif %}</td>
+      <td>{{ item.org_code }} · {{ item.position_title }}</td>
+      <td>{{ kind_labels[item.kind] }}</td>
+      <td>{{ status_labels[item.status] }}</td>
+      <td>{{ item.blocked_reason or '—' }}</td>
+      <td>{{ item.updated_at | dt }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="empty">还没有工作项。</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

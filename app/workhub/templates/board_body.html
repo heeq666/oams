@@ -1,0 +1,89 @@
+{% macro report_line(card) %}
+  {% if card.reported %}
+    <div class="meta">
+      <span class="badge {{ 'agent' if card.latest_report.submitted_via == 'agent' else 'human' }}">
+        {{ channel_labels[card.latest_report.submitted_via] }}
+      </span>
+      {% if card.latest_report.progress_value is not none %}
+        <span>进度 {{ card.latest_report.progress_value }}%</span>
+      {% endif %}
+      <span>更新于 {{ card.latest_report.reported_at | dt }}</span>
+    </div>
+    {% if card.latest_report.note %}<div class="note">{{ card.latest_report.note }}</div>{% endif %}
+    <div class="evidence">依据：{{ card.latest_report.evidence }}</div>
+  {% else %}
+    <div class="meta">
+      <span class="badge">从未申报</span>
+      {% if card.status != 'planned' %}<span>已 {{ (card.updated_at | dt) }} 起没有进度</span>{% endif %}
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro card_badges(card) %}
+  <span class="badge {{ 'blocked' if card.status == 'blocked' }}">{{ status_labels[card.status] }}</span>
+  {% if card.needs_decision %}<span class="badge decision">待决策</span>{% endif %}
+  <span class="badge">{{ card.position.title }}</span>
+  {% if card.position.holder_count == 0 %}<span class="badge vacant">岗位空缺</span>{% endif %}
+  {% if card.overdue %}<span class="badge vacant">已逾期</span>{% endif %}
+{% endmacro %}
+
+<div class="grid">
+  <div class="metric"><div class="n">{{ board.summary.open_items }}</div><div class="k">未完成工作项</div></div>
+  <div class="metric {% if board.summary.blocked %}alert{% endif %}">
+    <div class="n">{{ board.summary.blocked }}</div><div class="k">阻塞</div></div>
+  <div class="metric {% if board.summary.needs_decision %}warn{% endif %}">
+    <div class="n">{{ board.summary.needs_decision }}</div><div class="k">待决策</div></div>
+  <div class="metric {% if board.summary.never_reported %}warn{% endif %}">
+    <div class="n">{{ board.summary.never_reported }}</div><div class="k">从未申报</div></div>
+  <div class="metric"><div class="n">{{ board.summary.overdue }}</div><div class="k">超过 {{ board.stale_days }} 天未更新</div></div>
+  <div class="metric {% if board.summary.positions_without_holder %}alert{% endif %}">
+    <div class="n">{{ board.summary.positions_without_holder }}</div><div class="k">岗位空缺</div></div>
+  <div class="metric">
+    <div class="n">{{ board.summary.latest_report_by_channel.agent }} / {{ board.summary.latest_report_by_channel.human + board.summary.latest_report_by_channel.agent }}</div>
+    <div class="k">当前状态下 AI 代笔占比</div></div>
+</div>
+
+<h2>阻塞项{% if board.sections.blocked %}<span class="sub">（最该先看这里）</span>{% endif %}</h2>
+{% if board.sections.blocked %}
+<ul class="items">
+  {% for card in board.sections.blocked %}
+  <li class="blocked">
+    <div class="row1"><span class="title">{{ card.title }}</span>{{ card_badges(card) }}</div>
+    <div class="meta">卡在：{{ card.blocked_reason }}</div>
+    {{ report_line(card) }}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}<p class="empty">没有阻塞项。</p>{% endif %}
+
+<h2>待决策</h2>
+{% if board.sections.needs_decision %}
+<ul class="items">
+  {% for card in board.sections.needs_decision %}
+  <li>
+    <div class="row1"><span class="title">{{ card.title }}</span>{{ card_badges(card) }}</div>
+    {{ report_line(card) }}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}<p class="empty">没有待决策项。</p>{% endif %}
+
+<h2>按岗位</h2>
+{% for group in board.sections.by_position %}
+  <div class="card" style="margin-bottom:12px">
+    <div class="row1" style="margin-bottom:8px">
+      <span class="title">{{ group.position.title }}</span>
+      <span class="badge mono">{{ group.position.position_code }}</span>
+      {% if group.position.holder_count == 0 %}<span class="badge vacant">无人任职</span>{% endif %}
+    </div>
+    <ul class="items">
+      {% for card in group['items'] %}
+      <li class="{{ card.status }}">
+        <div class="row1"><span class="title">{{ card.title }}</span>{{ card_badges(card) }}</div>
+        {% if card.blocked_reason %}<div class="meta">卡在：{{ card.blocked_reason }}</div>{% endif %}
+        {{ report_line(card) }}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endfor %}

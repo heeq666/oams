@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}岗位 · Workhub{% endblock %}
+{% block content %}
+<h1>岗位</h1>
+<p class="sub">岗位是工作项和权限的挂靠点。权限跟着岗位走，不跟着人走。</p>
+
+{% if created %}<div class="flash">已创建。</div>{% endif %}
+{% if error == 'duplicate' %}<div class="flash error">这个岗位代码已经存在了。</div>{% endif %}
+{% if error == 'org' %}<div class="flash error">选择的组织不存在。</div>{% endif %}
+
+{% if can_manage %}
+<h2>新建岗位</h2>
+<form method="post" action="/admin/positions" class="card" style="margin-bottom:24px">
+  <div class="form-row">
+    <div class="field">
+      <label for="org_unit_id">所属组织</label>
+      <select id="org_unit_id" name="org_unit_id" required>
+        {% for unit in org_units %}
+          <option value="{{ unit.org_unit_id }}">{{ unit.name }}（{{ unit.org_code }}）</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="position_code">岗位代码</label>
+      <input id="position_code" name="position_code" required maxlength="80">
+    </div>
+    <div class="field">
+      <label for="title">岗位名称</label>
+      <input id="title" name="title" required maxlength="200">
+    </div>
+    <button type="submit">创建</button>
+  </div>
+</form>
+{% endif %}
+
+<h2>全部岗位</h2>
+<table>
+  <thead><tr><th>代码</th><th>名称</th><th>组织</th><th>在职人数</th><th>状态</th></tr></thead>
+  <tbody>
+  {% for p in positions %}
+    <tr>
+      <td class="mono">{{ p.position_code }}</td>
+      <td>{{ p.title }}</td>
+      <td>{{ p.org_name }}（{{ p.org_code }}）</td>
+      <td>{% if p.holder_count == 0 %}<span class="badge vacant">空缺</span>{% else %}{{ p.holder_count }}{% endif %}</td>
+      <td>{{ p.status }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="empty">还没有岗位。</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

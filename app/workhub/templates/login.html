@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}登录 · Workhub{% endblock %}
+{% block content %}
+<h1>登录</h1>
+<p class="sub">企业微信登录还在等可信域名，现在用管理员签发的会话令牌进入。令牌等同于密码，别转发给别人。</p>
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+<form method="post" action="/login" class="card" style="max-width:520px">
+  <input type="hidden" name="next" value="{{ next }}">
+  <div class="field" style="margin-bottom:12px">
+    <label for="token">会话令牌</label>
+    <input id="token" name="token" type="password" autocomplete="off" required style="width:100%">
+  </div>
+  <button type="submit">进入</button>
+</form>
+{% endblock %}

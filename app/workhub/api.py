@@ -1,5 +1,6 @@
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -12,7 +13,7 @@ from workhub.db import connection
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
                              WorkItemCreate, WorkItemUpdate)
-from workhub.security import current_principal, require_permission
+from workhub.security import current_principal, require_permission, revoke_session
 
 app = FastAPI(title="Company Workhub API", version="0.1.0")
 
@@ -118,14 +119,7 @@ def list_positions(_actor: dict = Depends(require_permission("workforce.position
 def create_position(payload: PositionCreate, actor: dict = Depends(require_permission("workforce.positions", "manage"))):
     try:
         with connection() as conn:
-            position = conn.execute(
-                """INSERT INTO workhub.positions (position_code, title, org_unit_id)
-                   VALUES (%s, %s, %s)
-                   RETURNING position_id, position_code, title, org_unit_id, status""",
-                (payload.position_code, payload.title, payload.org_unit_id),
-            ).fetchone()
-            audit(conn, actor["member_id"], "position.created", "position", position["position_id"], "created through management API", position)
-            return position
+            return insert_position(conn, payload, actor["member_id"])
     except UniqueViolation:
         raise HTTPException(status_code=409, detail="position_code already exists")
     except ForeignKeyViolation:
@@ -454,26 +448,7 @@ def list_work_items(org_unit_id: UUID | None = None, position_id: UUID | None = 
 def create_work_item(payload: WorkItemCreate, actor: dict = Depends(require_permission("workforce.work_items", "manage"))):
     try:
         with connection() as conn:
-            position = conn.execute(
-                "SELECT p.position_id, p.org_unit_id, p.status FROM workhub.positions p WHERE p.position_id = %s",
-                (payload.position_id,),
-            ).fetchone()
-            if not position:
-                raise HTTPException(status_code=404, detail="position not found")
-            if position["status"] != "active":
-                raise HTTPException(status_code=409, detail="work items can only be attached to an active position")
-            row = conn.execute(
-                """INSERT INTO workhub.work_items
-                   (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision, created_by)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                   RETURNING work_item_id, org_unit_id, position_id, title, kind, status, blocked_reason,
-                             needs_decision, created_at, updated_at""",
-                (position["org_unit_id"], payload.position_id, payload.title, payload.kind, payload.status,
-                 payload.blocked_reason, payload.needs_decision, actor["member_id"]),
-            ).fetchone()
-            audit(conn, actor["member_id"], "work_item.created", "work_item", row["work_item_id"],
-                  "created through management API", row)
-            return row
+            return insert_work_item(conn, payload, actor["member_id"])
     except CheckViolation:
         raise HTTPException(status_code=422, detail="blocked work items require a non-empty blocked_reason")
 
@@ -651,25 +626,24 @@ def _board_card(row: dict[str, Any], now: datetime, stale_after: timedelta) -> d
     }
 
 
-@app.get("/v1/board/org-units/{org_unit_id}")
-def board_for_org_unit(org_unit_id: UUID, stale_days: int = 7,
-                       _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
+def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
+    """The one board aggregation. Both the JSON endpoint and the HTML board render
+    from this, so the page can never drift from the API it is supposed to show."""
     stale_days = min(max(stale_days, 1), 365)
     now = datetime.now(timezone.utc)
     stale_after = timedelta(days=stale_days)
-    with connection() as conn:
-        org_unit = conn.execute(
-            "SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status FROM workhub.org_units WHERE org_unit_id = %s",
-            (org_unit_id,),
-        ).fetchone()
-        if not org_unit:
-            raise HTTPException(status_code=404, detail="org unit not found")
-        rows = conn.execute(BOARD_QUERY, (org_unit_id,)).fetchall()
-        child_org_units = conn.execute(
-            """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
-               WHERE parent_org_unit_id = %s AND status = 'active' ORDER BY org_code""",
-            (org_unit_id,),
-        ).fetchall()
+    org_unit = conn.execute(
+        "SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status FROM workhub.org_units WHERE org_unit_id = %s",
+        (org_unit_id,),
+    ).fetchone()
+    if not org_unit:
+        raise HTTPException(status_code=404, detail="org unit not found")
+    rows = conn.execute(BOARD_QUERY, (org_unit_id,)).fetchall()
+    child_org_units = conn.execute(
+        """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+           WHERE parent_org_unit_id = %s AND status = 'active' ORDER BY org_code""",
+        (org_unit_id,),
+    ).fetchall()
 
     cards = [_board_card(row, now, stale_after) for row in rows]
     by_position: dict[UUID, dict[str, Any]] = {}
@@ -706,6 +680,49 @@ def board_for_org_unit(org_unit_id: UUID, stale_days: int = 7,
     }
 
 
+@app.get("/v1/board/org-units/{org_unit_id}")
+def board_for_org_unit(org_unit_id: UUID, stale_days: int = 7,
+                       _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
+    with connection() as conn:
+        return build_board(conn, org_unit_id, stale_days)
+
+
+def insert_work_item(conn, payload: WorkItemCreate, actor_member_id: Any) -> dict[str, Any]:
+    """Shared by the JSON endpoint and the admin page; one insert, one audit."""
+    position = conn.execute(
+        "SELECT p.position_id, p.org_unit_id, p.status FROM workhub.positions p WHERE p.position_id = %s",
+        (payload.position_id,),
+    ).fetchone()
+    if not position:
+        raise HTTPException(status_code=404, detail="position not found")
+    if position["status"] != "active":
+        raise HTTPException(status_code=409, detail="work items can only be attached to an active position")
+    row = conn.execute(
+        """INSERT INTO workhub.work_items
+           (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision, created_by)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+           RETURNING work_item_id, org_unit_id, position_id, title, kind, status, blocked_reason,
+                     needs_decision, created_at, updated_at""",
+        (position["org_unit_id"], payload.position_id, payload.title, payload.kind, payload.status,
+         payload.blocked_reason, payload.needs_decision, actor_member_id),
+    ).fetchone()
+    audit(conn, actor_member_id, "work_item.created", "work_item", row["work_item_id"],
+          "created through management API", row)
+    return row
+
+
+def insert_position(conn, payload: PositionCreate, actor_member_id: Any) -> dict[str, Any]:
+    position = conn.execute(
+        """INSERT INTO workhub.positions (position_code, title, org_unit_id)
+           VALUES (%s, %s, %s)
+           RETURNING position_id, position_code, title, org_unit_id, status""",
+        (payload.position_code, payload.title, payload.org_unit_id),
+    ).fetchone()
+    audit(conn, actor_member_id, "position.created", "position", position["position_id"],
+          "created through management API", position)
+    return position
+
+
 @app.get("/v1/audit-events")
 def list_audit_events(limit: int = 100, _actor: dict = Depends(require_permission("workforce.audit", "read"))):
     limit = min(max(limit, 1), 500)
@@ -721,11 +738,29 @@ def list_audit_events(limit: int = 100, _actor: dict = Depends(require_permissio
 @app.post("/v1/sessions/current/revoke", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_current_session(principal: dict = Depends(current_principal)):
     with connection() as conn:
-        conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE session_id = %s", (principal["session_id"],))
-        conn.execute(
-            """INSERT INTO workhub.workforce_audit_events
-               (actor_member_id, event_type, subject_type, subject_id, reason)
-               VALUES (%s, 'session.revoked', 'session', %s, 'member ended the current session')""",
-            (principal["member_id"], principal["session_id"]),
-        )
+        revoke_session(conn, principal["session_id"], principal["member_id"])
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Web UI
+#
+# The pages are mounted on the same app as the JSON API so there is one process to
+# run and one session table to reason about. The only thing the UI layer adds is a
+# cookie carrier: the token in that cookie is an ordinary session, resolved by
+# security.principal_for_token and checked by security.has_permission -- the same
+# functions the bearer scheme uses. Nothing here grants anything by itself.
+# ---------------------------------------------------------------------------
+from workhub.web import router as web_router  # noqa: E402
+from workhub.security import principal_from_request  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
+app.include_router(web_router)
+
+
+@app.middleware("http")
+async def attach_browser_principal(request, call_next):
+    # Cheap when absent: API callers send no cookie, so no lookup happens at all.
+    request.state.member = principal_from_request(request)
+    return await call_next(request)
