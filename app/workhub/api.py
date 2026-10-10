@@ -649,6 +649,12 @@ FLOW_STAGES: tuple[tuple[str, str], ...] = (
 )
 
 
+# Stages that can be used as a second filter inside a layer. 'done' is a count
+# and not a list -- BOARD_QUERY deliberately excludes finished work, so asking for
+# it as a stage could only ever answer with "these zero cards".
+SELECTABLE_STAGES: tuple[str, ...] = ("planned", "in_progress", "blocked")
+
+
 def layer_matches(layer_id: str, card: dict[str, Any]) -> bool:
     if layer_id == "blocked":
         return card["status"] == "blocked"
@@ -661,7 +667,28 @@ def layer_matches(layer_id: str, card: dict[str, Any]) -> bool:
     return True
 
 
-def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
+def normalize_layer(value: str | None) -> str:
+    """Unknown layer ids fall back to 'all' rather than rendering an empty board."""
+    known = {layer_id for layer_id, _, _ in BOARD_LAYERS}
+    return value if value in known else "all"
+
+
+def normalize_stage(value: str | None) -> str | None:
+    """Unknown stage ids fall back to no stage filter, i.e. the whole layer."""
+    return value if value in SELECTABLE_STAGES else None
+
+
+def select_cards(cards, layer: str, stage: str | None) -> list[dict[str, Any]]:
+    """The one predicate the page and the JSON endpoint both use. A stage narrows a
+    layer rather than replacing it: the two filters stack, they do not compete."""
+    layer = normalize_layer(layer)
+    stage = normalize_stage(stage)
+    return [card for card in cards
+            if layer_matches(layer, card) and (stage is None or card["status"] == stage)]
+
+
+def build_board(conn, org_unit_id: UUID, stale_days: int = 7, layer: str = "all",
+                stage: str | None = None) -> dict[str, Any]:
     """The one board aggregation. Both the JSON endpoint and the HTML board render
     from this, so the page can never drift from the API it is supposed to show."""
     stale_days = min(max(stale_days, 1), 365)
@@ -673,6 +700,8 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
     ).fetchone()
     if not org_unit:
         raise HTTPException(status_code=404, detail="org unit not found")
+    layer = normalize_layer(layer)
+    stage = normalize_stage(stage)
     rows = conn.execute(BOARD_QUERY, (org_unit_id,)).fetchall()
     child_org_units = conn.execute(
         """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
@@ -692,14 +721,20 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
 
     channel = Counter(card["latest_report"]["submitted_via"] for card in cards if card["reported"])
 
+    # A layer badge answers "how many would I see if I clicked you", so it counts
+    # inside the stage already selected -- otherwise clicking could never deliver
+    # the number on the tab. The stage strip does the mirror image: `flow` counts
+    # ignore the stage filter and honour the layer. Both readings meet in the list.
     layers = [{"id": layer_id, "label": label, "hint": hint,
-               "count": sum(1 for card in cards if layer_matches(layer_id, card))}
+               "count": len(select_cards(cards, layer_id, stage))}
               for layer_id, label, hint in BOARD_LAYERS]
+    visible_cards = select_cards(cards, layer, stage)
 
-    # "done" is deliberately a count and not a lane of cards. The board exists to
-    # show what is still open, and widening BOARD_QUERY to include finished work
-    # would silently redefine every other number on the page. Counting it keeps
-    # the exit of the flow visible; the detail lives in the work item list.
+    # The flow is one strip of counters, not a second board: every stage count is
+    # measured inside the current layer, so the three selectable stages always add
+    # up to the list below. "done" is the one exception and says so out loud --
+    # BOARD_QUERY excludes finished work on purpose, so it stays a department-wide
+    # count instead of pretending to be a layer of cards.
     finished = conn.execute(
         """SELECT count(*) AS n FROM workhub.work_items
            WHERE org_unit_id = %s AND status IN ('done', 'cancelled')""",
@@ -708,15 +743,21 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
     flow = []
     for stage_id, label in FLOW_STAGES:
         if stage_id == "done":
-            flow.append({"id": stage_id, "label": label, "count": finished, "cards": []})
+            flow.append({"id": stage_id, "label": label, "count": finished, "selectable": False,
+                         "branch": False, "note": "部门累计，明细见工作项列表"})
             continue
         stage_cards = [card for card in cards if card["status"] == stage_id]
-        flow.append({"id": stage_id, "label": label, "count": len(stage_cards), "cards": stage_cards})
+        flow.append({"id": stage_id, "label": label,
+                     "count": sum(1 for card in stage_cards if layer_matches(layer, card)),
+                     "selectable": True, "branch": stage_id == "blocked",
+                     "note": "进行中卡住的分支，不是必经阶段" if stage_id == "blocked" else None})
 
     return {
         "org_unit": org_unit,
         "generated_at": now,
         "stale_days": stale_days,
+        "layer": layer,
+        "stage": stage,
         "summary": {
             "open_items": len(cards),
             "blocked": sum(1 for card in cards if card["status"] == "blocked"),
@@ -731,6 +772,7 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
         "cards": cards,
         "layers": layers,
         "flow": flow,
+        "visible_cards": visible_cards,
         "sections": {
             "blocked": [card for card in cards if card["status"] == "blocked"],
             "needs_decision": [card for card in cards if card["needs_decision"] and card["status"] != "blocked"],
@@ -741,10 +783,11 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
 
 
 @app.get("/v1/board/org-units/{org_unit_id}")
-def board_for_org_unit(org_unit_id: UUID, stale_days: int = 7,
+def board_for_org_unit(org_unit_id: UUID, stale_days: int = 7, layer: str = "all",
+                       stage: str | None = None,
                        _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
     with connection() as conn:
-        return build_board(conn, org_unit_id, stale_days)
+        return build_board(conn, org_unit_id, stale_days, layer, stage)
 
 
 def insert_work_item(conn, payload: WorkItemCreate, actor_member_id: Any) -> dict[str, Any]:

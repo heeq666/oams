@@ -27,26 +27,6 @@
   {% endif %}
 {% endmacro %}
 
-{% macro lane_card(card) %}
-  <div class="mini {{ card.status }}">
-    <span class="t">{{ card.title }}</span>
-    <div class="tags">
-      {% if card.reported %}
-        <span class="badge {{ 'agent' if card.latest_report.submitted_via == 'agent' else 'human' }}">
-          {{ channel_labels[card.latest_report.submitted_via] }}</span>
-      {% else %}<span class="badge">未申报</span>{% endif %}
-      {% if card.needs_decision %}<span class="badge decision">待决策</span>{% endif %}
-      {% if card.overdue %}<span class="badge vacant">逾期</span>{% endif %}
-      {% if card.position.holder_count == 0 %}<span class="badge vacant">空缺</span>{% endif %}
-    </div>
-    {% if card.reported and card.latest_report.progress_value is not none %}
-      <div class="bar"><span style="width: {{ card.latest_report.progress_value }}%"></span></div>
-    {% endif %}
-    <div class="who">{{ card.position.title }}</div>
-    {% if card.blocked_reason %}<div class="why">卡在：{{ card.blocked_reason }}</div>{% endif %}
-  </div>
-{% endmacro %}
-
 <div class="grid">
   <div class="metric"><div class="n">{{ board.summary.open_items }}</div><div class="k">未完成工作项</div></div>
   <div class="metric {% if board.summary.blocked %}alert{% endif %}">
@@ -67,43 +47,49 @@
 <div class="tabs layers">
   {% for l in board.layers %}
     <a class="{% if l.id == layer %}on{% endif %}" title="{{ l.hint }}"
-       href="/board?org={{ selected_id }}&layer={{ l.id }}&stale_days={{ stale_days }}"
-       hx-get="/board/body?org={{ selected_id }}&layer={{ l.id }}&stale_days={{ stale_days }}"
+       href="/board?org={{ selected_id }}&layer={{ l.id }}{% if board.stage %}&stage={{ board.stage }}{% endif %}&stale_days={{ stale_days }}"
+       hx-get="/board/body?org={{ selected_id }}&layer={{ l.id }}{% if board.stage %}&stage={{ board.stage }}{% endif %}&stale_days={{ stale_days }}"
        hx-target="#board-body"
-       hx-push-url="/board?org={{ selected_id }}&layer={{ l.id }}&stale_days={{ stale_days }}">
+       hx-push-url="/board?org={{ selected_id }}&layer={{ l.id }}{% if board.stage %}&stage={{ board.stage }}{% endif %}&stale_days={{ stale_days }}">
       {{ l.label }}<span class="cnt">{{ l.count }}</span>
     </a>
   {% endfor %}
 </div>
 <p class="sub">当前图层：{{ active.label }} — {{ active.hint }}</p>
 
-<h2>工作流转</h2>
-<div class="flow">
+{# The flow is one strip of counters, not a second board: every count is measured
+   inside the layer already selected, so the selectable stages always add up to the
+   list below. "done" is the exception and is labelled as one. #}
+<div class="flowstrip">
   {% for stage in board.flow %}
-    <section class="lane {{ stage.id }}">
-      {% if stage.id == 'done' %}
-        <header><span>{{ stage.label }}</span><span class="cnt">{{ stage.count }}</span></header>
-        <p class="empty">已完成与已取消合计{{ stage.count }}项，明细见工作项列表。</p>
-      {% else %}
-        {% set shown = [] %}
-        {% for card in stage.cards if in_layer(layer, card) %}
-          {% set _ = shown.append(card) %}
-        {% endfor %}
-        <header><span>{{ stage.label }}{% if stage.id == 'blocked' %}<em>分支</em>{% endif %}</span>
-          <span class="cnt">{{ shown | length }}</span></header>
-        {% for card in shown %}
-          {{ lane_card(card) }}
-        {% else %}
-          <p class="empty">该图层下这一阶段没有内容。</p>
-        {% endfor %}
-      {% endif %}
-    </section>
+    {% if stage.branch %}<span class="fork" aria-hidden="true">↳</span>{% endif %}
+    {% if stage.selectable %}
+      <a class="stage {{ stage.id }} {% if board.stage == stage.id %}on{% endif %}"
+         title="{{ stage.note or stage.label }}"
+         href="/board?org={{ selected_id }}&layer={{ layer }}&stage={{ stage.id }}&stale_days={{ stale_days }}"
+         hx-get="/board/body?org={{ selected_id }}&layer={{ layer }}&stage={{ stage.id }}&stale_days={{ stale_days }}"
+         hx-target="#board-body"
+         hx-push-url="/board?org={{ selected_id }}&layer={{ layer }}&stage={{ stage.id }}&stale_days={{ stale_days }}">
+        {{ stage.label }}<span class="cnt">{{ stage.count }}</span></a>
+    {% else %}
+      <span class="stage {{ stage.id }} terminal" title="{{ stage.note }}">
+        {{ stage.label }}<span class="cnt">{{ stage.count }}</span></span>
+    {% endif %}
+    {% if not stage.branch and not loop.last %}<span class="arrow" aria-hidden="true">▸</span>{% endif %}
   {% endfor %}
+  {% if board.stage %}
+    <a class="clear"
+       href="/board?org={{ selected_id }}&layer={{ layer }}&stale_days={{ stale_days }}"
+       hx-get="/board/body?org={{ selected_id }}&layer={{ layer }}&stale_days={{ stale_days }}"
+       hx-target="#board-body"
+       hx-push-url="/board?org={{ selected_id }}&layer={{ layer }}&stale_days={{ stale_days }}">清除阶段筛选 ×</a>
+  {% endif %}
 </div>
+<p class="sub">流转条按当前图层计数；「已完成」只以数字出现，明细见工作项列表。</p>
 
-<h2>{{ active.label }} · 明细</h2>
+<h2>{{ active.label }} · {{ board.visible_cards | length }} 项</h2>
 <ul class="items">
-  {% for card in board.cards if in_layer(layer, card) %}
+  {% for card in board.visible_cards %}
   <li class="{{ card.status }}">
     <div class="row1"><span class="title">{{ card.title }}</span>{{ card_badges(card) }}</div>
     {% if card.blocked_reason %}<div class="meta">卡在：{{ card.blocked_reason }}</div>{% endif %}
