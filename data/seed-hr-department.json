@@ -1,0 +1,175 @@
+{
+  "_note": "FICTIONAL DATA. Names, employee codes and evidence paths are invented. This file exists so the first version can be exercised end to end before real data is collected; replace it, do not extend it.",
+
+  "org_units": [
+    { "code": "example-co", "name": "example-co", "unit_type": "company" },
+    { "code": "HR", "name": "人事部", "unit_type": "department", "parent_code": "example-co" }
+  ],
+
+  "positions": [
+    { "code": "GM", "title": "总经理", "org_unit_code": "example-co" },
+    { "code": "SYSADMIN", "title": "系统管理员", "org_unit_code": "example-co" },
+    { "code": "HR_MANAGER", "title": "人事经理", "org_unit_code": "HR" },
+    { "code": "HR_SPECIALIST", "title": "人事专员", "org_unit_code": "HR" },
+    { "code": "HR_RECRUITER", "title": "招聘专员", "org_unit_code": "HR" }
+  ],
+
+  "members": [
+    { "name": "韩明远", "employee_code": "1000", "position_code": "GM" },
+    { "name": "example-user", "employee_code": "9999", "position_code": "SYSADMIN" },
+    { "name": "周岚", "employee_code": "1001", "position_code": "HR_MANAGER" },
+    { "name": "陈默", "employee_code": "1002", "position_code": "HR_SPECIALIST" }
+  ],
+
+  "grants": [
+    { "subject_code": "GM", "resource": "workforce.org_units", "action": "read" },
+    { "subject_code": "GM", "resource": "workforce.positions", "action": "read" },
+    { "subject_code": "GM", "resource": "workforce.members", "action": "read" },
+    { "subject_code": "GM", "resource": "workforce.assignments", "action": "read" },
+    { "subject_code": "GM", "resource": "workforce.work_items", "action": "read" },
+    { "subject_code": "GM", "resource": "workforce.reports", "action": "read" },
+    { "subject_code": "GM", "resource": "workforce.reports", "action": "submit" },
+    { "subject_code": "GM", "resource": "workforce.audit", "action": "read" },
+
+    { "subject_code": "HR_MANAGER", "resource": "workforce.org_units", "action": "read" },
+    { "subject_code": "HR_MANAGER", "resource": "workforce.positions", "action": "read" },
+    { "subject_code": "HR_MANAGER", "resource": "workforce.members", "action": "read" },
+    { "subject_code": "HR_MANAGER", "resource": "workforce.assignments", "action": "read" },
+    { "subject_code": "HR_MANAGER", "resource": "workforce.work_items", "action": "read" },
+    { "subject_code": "HR_MANAGER", "resource": "workforce.work_items", "action": "manage" },
+    { "subject_code": "HR_MANAGER", "resource": "workforce.reports", "action": "read" },
+    { "subject_code": "HR_MANAGER", "resource": "workforce.reports", "action": "submit" },
+    { "subject_code": "HR_MANAGER", "resource": "workforce.audit", "action": "read" },
+
+    { "subject_code": "HR_SPECIALIST", "resource": "workforce.org_units", "action": "read" },
+    { "subject_code": "HR_SPECIALIST", "resource": "workforce.positions", "action": "read" },
+    { "subject_code": "HR_SPECIALIST", "resource": "workforce.work_items", "action": "read" },
+    { "subject_code": "HR_SPECIALIST", "resource": "workforce.reports", "action": "read" },
+    { "subject_code": "HR_SPECIALIST", "resource": "workforce.reports", "action": "submit" }
+  ],
+
+  "work_items": [
+    {
+      "position_code": "GM",
+      "title": "年度人力成本预算编制",
+      "kind": "project",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "GM",
+      "title": "组织架构调整：增设跨境业务组",
+      "kind": "project",
+      "status": "blocked",
+      "blocked_reason": "等待财务出具 1-9 月人力成本实际发生数，对接人：财务负责人（承诺 10/15 前）",
+      "needs_decision": true
+    },
+    {
+      "position_code": "HR_MANAGER",
+      "title": "10 月招聘：电商运营岗 3 人",
+      "kind": "project",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "HR_MANAGER",
+      "title": "劳动合同续签批次（截至 10/31 共 7 人）",
+      "kind": "routine",
+      "status": "blocked",
+      "blocked_reason": "新版合同模板第 8 条待外部律师确认，10/12 已催办两次",
+      "needs_decision": true
+    },
+    {
+      "position_code": "HR_MANAGER",
+      "title": "绩效方案调整意见征集",
+      "kind": "project",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "HR_SPECIALIST",
+      "title": "五险一金月度申报（10 月）",
+      "kind": "routine",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "HR_SPECIALIST",
+      "title": "员工档案电子化归档",
+      "kind": "project",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "HR_SPECIALIST",
+      "title": "考勤异常核对（10 月）",
+      "kind": "routine",
+      "status": "blocked",
+      "blocked_reason": "考勤机导出缺 10/8 全天记录，等待行政重新导出完整流水"
+    },
+    {
+      "position_code": "HR_SPECIALIST",
+      "title": "新员工入职引导材料更新",
+      "kind": "routine",
+      "status": "planned"
+    },
+    {
+      "position_code": "HR_RECRUITER",
+      "title": "校园招聘渠道评估",
+      "kind": "project",
+      "status": "planned"
+    }
+  ],
+
+  "reports": [
+    {
+      "employee_code": "1000",
+      "position_code": "GM",
+      "work_item_title": "年度人力成本预算编制",
+      "submitted_via": "human",
+      "progress_value": 20,
+      "note": "编制口径已确定：按岗位而非按人；经营/职能分开测算",
+      "evidence": "预算初稿 docs/budget-2027-draft.xlsx，已发财务复核"
+    },
+    {
+      "employee_code": "1000",
+      "position_code": "GM",
+      "work_item_title": "组织架构调整：增设跨境业务组",
+      "submitted_via": "agent",
+      "progress_value": 10,
+      "note": "AI 汇总现有人力编制表，输出跨境组候选名单与缺口",
+      "evidence": "编制表 org/headcount-2026-10.xlsx（AI 生成后本人核对 2 处更正）"
+    },
+    {
+      "employee_code": "1001",
+      "position_code": "HR_MANAGER",
+      "work_item_title": "10 月招聘：电商运营岗 3 人",
+      "submitted_via": "human",
+      "progress_value": 40,
+      "note": "2 人已终面通过，1 人待发 offer；第三个名额暂停",
+      "evidence": "招聘看板截图 2026-10-10，终面评语 2 份"
+    },
+    {
+      "employee_code": "1001",
+      "position_code": "HR_MANAGER",
+      "work_item_title": "绩效方案调整意见征集",
+      "submitted_via": "agent",
+      "progress_value": 30,
+      "note": "AI 汇总三个部门共 17 条反馈，归纳为 4 类诉求",
+      "evidence": "汇总文档 docs/perf-feedback-summary-2026-10.md"
+    },
+    {
+      "employee_code": "1002",
+      "position_code": "HR_SPECIALIST",
+      "work_item_title": "五险一金月度申报（10 月）",
+      "submitted_via": "human",
+      "progress_value": 80,
+      "note": "已申报待社保局回执，预计 10/12 出结果",
+      "evidence": "社保系统申报回执编号 SI20261008-037"
+    },
+    {
+      "employee_code": "1002",
+      "position_code": "HR_SPECIALIST",
+      "work_item_title": "员工档案电子化归档",
+      "submitted_via": "agent",
+      "progress_value": 45,
+      "note": "AI 逐份校验缺件并生成清单，本人抽检 10 份无误",
+      "evidence": "缺件清单 exports/archives-missing.csv"
+    }
+  ]
+}
