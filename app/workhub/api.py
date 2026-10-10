@@ -626,6 +626,41 @@ def _board_card(row: dict[str, Any], now: datetime, stale_after: timedelta) -> d
     }
 
 
+# Board layers are declared once and shared by the JSON endpoint and the page, so
+# a layer's badge can never disagree with the count printed beside it. Each layer
+# is a plain predicate over the same card list -- a layer is a filter, not a
+# second aggregation, which is why the numbers always reconcile.
+BOARD_LAYERS: tuple[tuple[str, str, str], ...] = (
+    ("all", "全部", "该部门下所有未完成工作项"),
+    ("blocked", "阻塞", "状态为阻塞，必须写明卡在哪"),
+    ("decision", "待决策", "已被标记需要管理层拍板"),
+    ("agent", "AI 代笔", "最新一条进度由 AI 代笔提交"),
+    ("silent", "沉默", "从没报过，或超过阈值没更新"),
+)
+
+# "blocked" is not really a stage on the way to done -- it is in_progress that got
+# stuck. Management still needs it as its own lane, so it sits in the flow as a
+# marked branch instead of pretending work marches through it in sequence.
+FLOW_STAGES: tuple[tuple[str, str], ...] = (
+    ("planned", "未开始"),
+    ("in_progress", "进行中"),
+    ("blocked", "阻塞"),
+    ("done", "已完成"),
+)
+
+
+def layer_matches(layer_id: str, card: dict[str, Any]) -> bool:
+    if layer_id == "blocked":
+        return card["status"] == "blocked"
+    if layer_id == "decision":
+        return bool(card["needs_decision"])
+    if layer_id == "agent":
+        return card["reported"] and card["latest_report"]["submitted_via"] == "agent"
+    if layer_id == "silent":
+        return not card["reported"] or card["overdue"]
+    return True
+
+
 def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
     """The one board aggregation. Both the JSON endpoint and the HTML board render
     from this, so the page can never drift from the API it is supposed to show."""
@@ -656,6 +691,28 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
         bucket["items"].append(card)
 
     channel = Counter(card["latest_report"]["submitted_via"] for card in cards if card["reported"])
+
+    layers = [{"id": layer_id, "label": label, "hint": hint,
+               "count": sum(1 for card in cards if layer_matches(layer_id, card))}
+              for layer_id, label, hint in BOARD_LAYERS]
+
+    # "done" is deliberately a count and not a lane of cards. The board exists to
+    # show what is still open, and widening BOARD_QUERY to include finished work
+    # would silently redefine every other number on the page. Counting it keeps
+    # the exit of the flow visible; the detail lives in the work item list.
+    finished = conn.execute(
+        """SELECT count(*) AS n FROM workhub.work_items
+           WHERE org_unit_id = %s AND status IN ('done', 'cancelled')""",
+        (org_unit_id,),
+    ).fetchone()["n"]
+    flow = []
+    for stage_id, label in FLOW_STAGES:
+        if stage_id == "done":
+            flow.append({"id": stage_id, "label": label, "count": finished, "cards": []})
+            continue
+        stage_cards = [card for card in cards if card["status"] == stage_id]
+        flow.append({"id": stage_id, "label": label, "count": len(stage_cards), "cards": stage_cards})
+
     return {
         "org_unit": org_unit,
         "generated_at": now,
@@ -671,6 +728,9 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7) -> dict[str, Any]:
             # if this stays all-human, AI dictation was not adopted in practice.
             "latest_report_by_channel": {"human": channel["human"], "agent": channel["agent"]},
         },
+        "cards": cards,
+        "layers": layers,
+        "flow": flow,
         "sections": {
             "blocked": [card for card in cards if card["status"] == "blocked"],
             "needs_decision": [card for card in cards if card["needs_decision"] and card["status"] != "blocked"],

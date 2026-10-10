@@ -1,3 +1,11 @@
+{% macro card_badges(card) %}
+  <span class="badge {{ 'blocked' if card.status == 'blocked' }}">{{ status_labels[card.status] }}</span>
+  {% if card.needs_decision %}<span class="badge decision">待决策</span>{% endif %}
+  <span class="badge">{{ card.position.title }}</span>
+  {% if card.position.holder_count == 0 %}<span class="badge vacant">岗位空缺</span>{% endif %}
+  {% if card.overdue %}<span class="badge vacant">已逾期</span>{% endif %}
+{% endmacro %}
+
 {% macro report_line(card) %}
   {% if card.reported %}
     <div class="meta">
@@ -14,17 +22,29 @@
   {% else %}
     <div class="meta">
       <span class="badge">从未申报</span>
-      {% if card.status != 'planned' %}<span>已 {{ (card.updated_at | dt) }} 起没有进度</span>{% endif %}
+      {% if card.status != 'planned' %}<span>{{ (card.updated_at | dt) }} 起没有进度</span>{% endif %}
     </div>
   {% endif %}
 {% endmacro %}
 
-{% macro card_badges(card) %}
-  <span class="badge {{ 'blocked' if card.status == 'blocked' }}">{{ status_labels[card.status] }}</span>
-  {% if card.needs_decision %}<span class="badge decision">待决策</span>{% endif %}
-  <span class="badge">{{ card.position.title }}</span>
-  {% if card.position.holder_count == 0 %}<span class="badge vacant">岗位空缺</span>{% endif %}
-  {% if card.overdue %}<span class="badge vacant">已逾期</span>{% endif %}
+{% macro lane_card(card) %}
+  <div class="mini {{ card.status }}">
+    <span class="t">{{ card.title }}</span>
+    <div class="tags">
+      {% if card.reported %}
+        <span class="badge {{ 'agent' if card.latest_report.submitted_via == 'agent' else 'human' }}">
+          {{ channel_labels[card.latest_report.submitted_via] }}</span>
+      {% else %}<span class="badge">未申报</span>{% endif %}
+      {% if card.needs_decision %}<span class="badge decision">待决策</span>{% endif %}
+      {% if card.overdue %}<span class="badge vacant">逾期</span>{% endif %}
+      {% if card.position.holder_count == 0 %}<span class="badge vacant">空缺</span>{% endif %}
+    </div>
+    {% if card.reported and card.latest_report.progress_value is not none %}
+      <div class="bar"><span style="width: {{ card.latest_report.progress_value }}%"></span></div>
+    {% endif %}
+    <div class="who">{{ card.position.title }}</div>
+    {% if card.blocked_reason %}<div class="why">卡在：{{ card.blocked_reason }}</div>{% endif %}
+  </div>
 {% endmacro %}
 
 <div class="grid">
@@ -43,47 +63,53 @@
     <div class="k">当前状态下 AI 代笔占比</div></div>
 </div>
 
-<h2>阻塞项{% if board.sections.blocked %}<span class="sub">（最该先看这里）</span>{% endif %}</h2>
-{% if board.sections.blocked %}
+{% set active = board.layers | selectattr('id', 'equalto', layer) | list | first %}
+<div class="tabs layers">
+  {% for l in board.layers %}
+    <a class="{% if l.id == layer %}on{% endif %}" title="{{ l.hint }}"
+       href="/board?org={{ selected_id }}&layer={{ l.id }}&stale_days={{ stale_days }}"
+       hx-get="/board/body?org={{ selected_id }}&layer={{ l.id }}&stale_days={{ stale_days }}"
+       hx-target="#board-body"
+       hx-push-url="/board?org={{ selected_id }}&layer={{ l.id }}&stale_days={{ stale_days }}">
+      {{ l.label }}<span class="cnt">{{ l.count }}</span>
+    </a>
+  {% endfor %}
+</div>
+<p class="sub">当前图层：{{ active.label }} — {{ active.hint }}</p>
+
+<h2>工作流转</h2>
+<div class="flow">
+  {% for stage in board.flow %}
+    <section class="lane {{ stage.id }}">
+      {% if stage.id == 'done' %}
+        <header><span>{{ stage.label }}</span><span class="cnt">{{ stage.count }}</span></header>
+        <p class="empty">已完成与已取消合计{{ stage.count }}项，明细见工作项列表。</p>
+      {% else %}
+        {% set shown = [] %}
+        {% for card in stage.cards if in_layer(layer, card) %}
+          {% set _ = shown.append(card) %}
+        {% endfor %}
+        <header><span>{{ stage.label }}{% if stage.id == 'blocked' %}<em>分支</em>{% endif %}</span>
+          <span class="cnt">{{ shown | length }}</span></header>
+        {% for card in shown %}
+          {{ lane_card(card) }}
+        {% else %}
+          <p class="empty">该图层下这一阶段没有内容。</p>
+        {% endfor %}
+      {% endif %}
+    </section>
+  {% endfor %}
+</div>
+
+<h2>{{ active.label }} · 明细</h2>
 <ul class="items">
-  {% for card in board.sections.blocked %}
-  <li class="blocked">
+  {% for card in board.cards if in_layer(layer, card) %}
+  <li class="{{ card.status }}">
     <div class="row1"><span class="title">{{ card.title }}</span>{{ card_badges(card) }}</div>
-    <div class="meta">卡在：{{ card.blocked_reason }}</div>
+    {% if card.blocked_reason %}<div class="meta">卡在：{{ card.blocked_reason }}</div>{% endif %}
     {{ report_line(card) }}
   </li>
+  {% else %}
+  <li><p class="empty">这一层现在是空的。</p></li>
   {% endfor %}
 </ul>
-{% else %}<p class="empty">没有阻塞项。</p>{% endif %}
-
-<h2>待决策</h2>
-{% if board.sections.needs_decision %}
-<ul class="items">
-  {% for card in board.sections.needs_decision %}
-  <li>
-    <div class="row1"><span class="title">{{ card.title }}</span>{{ card_badges(card) }}</div>
-    {{ report_line(card) }}
-  </li>
-  {% endfor %}
-</ul>
-{% else %}<p class="empty">没有待决策项。</p>{% endif %}
-
-<h2>按岗位</h2>
-{% for group in board.sections.by_position %}
-  <div class="card" style="margin-bottom:12px">
-    <div class="row1" style="margin-bottom:8px">
-      <span class="title">{{ group.position.title }}</span>
-      <span class="badge mono">{{ group.position.position_code }}</span>
-      {% if group.position.holder_count == 0 %}<span class="badge vacant">无人任职</span>{% endif %}
-    </div>
-    <ul class="items">
-      {% for card in group['items'] %}
-      <li class="{{ card.status }}">
-        <div class="row1"><span class="title">{{ card.title }}</span>{{ card_badges(card) }}</div>
-        {% if card.blocked_reason %}<div class="meta">卡在：{{ card.blocked_reason }}</div>{% endif %}
-        {{ report_line(card) }}
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-{% endfor %}
