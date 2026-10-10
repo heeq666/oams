@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from psycopg.types.json import Jsonb
 
 from workhub.config import settings
 from workhub.db import connection
@@ -35,8 +36,8 @@ def issue_session(member_id: str, provider: str = "administrator-issued") -> tup
             (member_id, digest_token(token), member["token_version"], expires_at, provider),
         )
         conn.execute(
-            "INSERT INTO workhub.workforce_audit_events (event_type, subject_type, subject_id, reason, metadata) VALUES ('session.issued', 'member', %s, %s, jsonb_build_object('provider', %s))",
-            (member_id, "session issued through trusted operator CLI", provider),
+            "INSERT INTO workhub.workforce_audit_events (event_type, subject_type, subject_id, reason, metadata) VALUES ('session.issued', 'member', %s, %s, %s)",
+            (member_id, "session issued through trusted operator CLI", Jsonb({"provider": provider})),
         )
     return token, expires_at
 
