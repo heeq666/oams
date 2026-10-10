@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}办公室布置 · Workhub{% endblock %}
+{% block content %}
+<h1>办公室布置</h1>
+<p class="sub">位置按真实工位填：区域左上角是 <span class="mono">x,y</span>，宽高是 <span class="mono">w,h</span>，全部在 0-1000 的网格上。
+工位的坐标是<b>该部门区域内部</b>的相对网格，所以挪动房间不会把所有座位打乱。<b>没校准的位置系统一律画成虚线。</b></p>
+
+{% if saved %}<p class="flash">已保存。</p>{% endif %}
+{% if error == 'geometry' %}<p class="flash error">坐标不合法：必须落在 0-1000 画布内，且宽高大于 0。</p>{% endif %}
+{% if error == 'department' %}<p class="flash error">工位必须属于本部门的岗位。</p>{% endif %}
+
+{% if can_manage %}
+  <form method="post" action="/admin/spaces" class="stack">
+    <h2>区域（每个部门一块）</h2>
+    <input type="hidden" name="kind" value="zone">
+    <div class="form-row">
+      <label class="field">部门
+        <select name="org_unit_id">{% for u in org_units %}<option value="{{ u.org_unit_id }}">{{ u.org_code }} · {{ u.name }}</option>{% endfor %}</select>
+      </label>
+      <label class="field">备注<textarea name="label" rows="1" cols="18"></textarea></label>
+      <label class="field">x<input name="x" type="number" min="0" max="999" value="40"></label>
+      <label class="field">y<input name="y" type="number" min="0" max="999" value="40"></label>
+      <label class="field">w<input name="w" type="number" min="1" max="1000" value="300"></label>
+      <label class="field">h<input name="h" type="number" min="1" max="1000" value="180"></label>
+      <label class="field check"><input name="calibrated" type="checkbox"> 已按真实位置校准</label>
+      <button type="submit">保存区域</button>
+    </div>
+  </form>
+
+  <form method="post" action="/admin/spaces" class="stack">
+    <h2>工位（每个岗位一张，坐标在该区域内部）</h2>
+    <input type="hidden" name="kind" value="desk">
+    <div class="form-row">
+      <label class="field">岗位
+        <select name="position_id">{% for p in positions %}<option value="{{ p.position_id }}">{{ p.org_code }} · {{ p.title }}</option>{% endfor %}</select>
+      </label>
+      <label class="field">x<input name="x" type="number" min="0" max="999" value="60"></label>
+      <label class="field">y<input name="y" type="number" min="0" max="999" value="60"></label>
+      <label class="field">w<input name="w" type="number" min="1" max="1000" value="220"></label>
+      <label class="field">h<input name="h" type="number" min="1" max="1000" value="120"></label>
+      <label class="field check"><input name="calibrated" type="checkbox"> 已按真实位置校准</label>
+      <button type="submit">保存工位</button>
+    </div>
+  </form>
+{% else %}
+  <p class="empty">你的账号没有 workforce.positions/manage 权限，只能查看布置，不能改。</p>
+{% endif %}
+
+<h2>当前布置</h2>
+{% if not spaces %}
+  <p class="empty">一条都没有。</p>
+{% else %}
+  <table>
+    <thead><tr><th>类型</th><th>对象</th><th>坐标</th><th>校准</th><th>备注</th><th></th></tr></thead>
+    <tbody>
+      {% for s in spaces %}
+        <tr>
+          <td>{{ '区域' if s.kind == 'zone' else '工位' }}</td>
+          <td>{% if s.kind == 'zone' %}{{ s.org_name }}{% else %}{{ s.position_title }}{% endif %}</td>
+          <td class="mono">{{ s.x }},{{ s.y }} {{ s.w }}×{{ s.h }}</td>
+          <td>{% if s.calibrated %}已校准{% else %}<span class="badge vacant">未校准</span>{% endif %}</td>
+          <td>{{ s.label or '' }}</td>
+          <td>
+            {% if can_manage %}
+              <form method="post" action="/admin/spaces/{{ s.space_id }}/remove" class="inline">
+                <button type="submit" class="link">删除</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+{% endblock %}

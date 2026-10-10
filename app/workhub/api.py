@@ -12,7 +12,7 @@ import json
 from workhub.db import connection
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
-                             WorkItemCreate, WorkItemUpdate)
+                             SpaceUpsert, WorkItemCreate, WorkItemUpdate)
 from workhub.security import current_principal, require_permission, revoke_session
 
 app = FastAPI(title="Company Workhub API", version="0.1.0")
@@ -654,6 +654,177 @@ FLOW_STAGES: tuple[tuple[str, str], ...] = (
 # it as a stage could only ever answer with "these zero cards".
 SELECTABLE_STAGES: tuple[str, ...] = ("planned", "in_progress", "blocked")
 
+# The floor plan is drawn on this 0-1000 grid. Zone coordinates are absolute;
+# desk coordinates are local 0-1000 inside their own zone, so a department can be
+# moved across the floor without anybody re-entering every desk by hand.
+FLOOR_CANVAS = {"w": 1000, "h": 1000}
+
+SPACE_SELECT = """s.space_id, s.org_unit_id, s.kind, s.position_id, s.label,
+                  s.x, s.y, s.w, s.h, s.calibrated, s.sort_order"""
+
+ZONE_QUERY = f"""SELECT {SPACE_SELECT}, o.org_code, o.name AS org_name, o.unit_type
+                   FROM workhub.spaces s
+                   JOIN workhub.org_units o ON o.org_unit_id = s.org_unit_id
+                  WHERE s.kind = 'zone' AND o.status = 'active'
+                  ORDER BY s.sort_order, s.x, s.y"""
+
+DESK_QUERY = f"""SELECT {SPACE_SELECT},
+                        p.position_code, p.title AS position_title, p.status AS position_status,
+                        (SELECT count(*) FROM workhub.position_assignments a
+                          WHERE a.position_id = p.position_id
+                            AND a.status IN ('active', 'scheduled')
+                            AND a.starts_at <= now()
+                            AND (a.ends_at IS NULL OR now() < a.ends_at)) AS holder_count
+                   FROM workhub.spaces s
+                   JOIN workhub.positions p ON p.position_id = s.position_id
+                  WHERE s.kind = 'desk'
+                  ORDER BY s.sort_order, s.x, s.y"""
+
+
+def zone_heat(summary: dict[str, Any]) -> str:
+    """One colour per zone, answering 'does this room need me today'. Blocked is
+    red because it stops work; everything else that needs attention is amber; a
+    room quietly finishing its work gets nothing at all."""
+    if summary["blocked"]:
+        return "alert"
+    if summary["needs_decision"] or summary["overdue"] or summary["never_reported"]:
+        return "warn"
+    return "ok"
+
+
+def build_office(conn, stale_days: int = 7) -> dict[str, Any]:
+    """The floor plan: one zone per department, desks inside it, and enough of the
+    board behind each zone that clicking one is worth doing."""
+    stale_days = min(max(stale_days, 1), 365)
+    zones = conn.execute(ZONE_QUERY).fetchall()
+    desks = conn.execute(DESK_QUERY).fetchall()
+    desks_by_org: dict[UUID, list[dict[str, Any]]] = {}
+    for desk in desks:
+        desks_by_org.setdefault(desk["org_unit_id"], []).append(desk)
+
+    units = []
+    for zone in zones:
+        board = build_board(conn, zone["org_unit_id"], stale_days)
+        open_by_position: dict[UUID, list[dict[str, Any]]] = {}
+        for card in board["cards"]:
+            open_by_position.setdefault(card["position"]["position_id"], []).append(card)
+
+        seated = desks_by_org.get(zone["org_unit_id"], [])
+        seat_ids = {desk["position_id"] for desk in seated}
+        desk_rows = []
+        for desk in seated:
+            cards = open_by_position.get(desk["position_id"], [])
+            desk_rows.append({
+                "space_id": desk["space_id"],
+                "position": {
+                    "position_id": desk["position_id"],
+                    "position_code": desk["position_code"],
+                    "title": desk["position_title"],
+                    "status": desk["position_status"],
+                    "holder_count": desk["holder_count"],
+                },
+                "label": desk["label"],
+                "x": desk["x"], "y": desk["y"], "w": desk["w"], "h": desk["h"],
+                "calibrated": desk["calibrated"],
+                "open_items": len(cards),
+                "blocked": sum(1 for card in cards if card["status"] == "blocked"),
+                "needs_decision": sum(1 for card in cards if card["needs_decision"]),
+                "silent": sum(1 for card in cards if not card["reported"] or card["overdue"]),
+                "vacant": desk["holder_count"] == 0,
+            })
+        # A post inside the room but not on the plan is worth naming: otherwise the
+        # picture quietly claims the department has fewer seats than it has posts.
+        unseated = [
+            {"position_id": bucket["position"]["position_id"],
+             "position_code": bucket["position"]["position_code"],
+             "title": bucket["position"]["title"],
+             "open_items": len(bucket["items"])}
+            for bucket in board["sections"]["by_position"]
+            if bucket["position"]["position_id"] not in seat_ids
+        ]
+        units.append({
+            "org_unit_id": zone["org_unit_id"],
+            "org_code": zone["org_code"],
+            "org_name": zone["org_name"],
+            "unit_type": zone["unit_type"],
+            "zone": {key: zone[key] for key in
+                     ("space_id", "x", "y", "w", "h", "calibrated", "label")},
+            "desks": desk_rows,
+            "unseated": unseated,
+            "heat": zone_heat(board["summary"]),
+            "summary": board["summary"],
+            "flow": board["flow"],
+            "top_cards": board["cards"][:5],
+        })
+
+    placed = {zone["org_unit_id"] for zone in zones}
+    unplaced_units = [
+        {"org_unit_id": row["org_unit_id"], "org_code": row["org_code"],
+         "name": row["name"], "unit_type": row["unit_type"]}
+        for row in conn.execute(
+            """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+                WHERE status = 'active' ORDER BY unit_type DESC, org_code""").fetchall()
+        if row["org_unit_id"] not in placed
+    ]
+    return {"canvas": FLOOR_CANVAS, "units": units, "unplaced": unplaced_units}
+
+
+def upsert_space(conn, payload: SpaceUpsert, actor_member_id: Any) -> dict[str, Any]:
+    """One entry point for both kinds, so nobody can create a zone for an org unit
+    or a desk for a position that is not theirs through some other route."""
+    org_unit = conn.execute(
+        "SELECT org_unit_id, name FROM workhub.org_units WHERE org_unit_id = %s",
+        (payload.org_unit_id,)).fetchone()
+    if not org_unit:
+        raise HTTPException(status_code=404, detail="org unit not found")
+    if payload.kind == "desk":
+        if payload.position_id is None:
+            raise HTTPException(status_code=422, detail="a desk needs a position")
+        position = conn.execute(
+            "SELECT position_id, org_unit_id, title, status FROM workhub.positions WHERE position_id = %s",
+            (payload.position_id,)).fetchone()
+        if not position:
+            raise HTTPException(status_code=404, detail="position not found")
+        if position["org_unit_id"] != payload.org_unit_id:
+            raise HTTPException(status_code=409,
+                                detail="a desk must sit inside its own position's department")
+    columns = "org_unit_id, kind, position_id, label, x, y, w, h, calibrated, sort_order"
+    values = (payload.org_unit_id, payload.kind, payload.position_id, payload.label,
+              payload.x, payload.y, payload.w, payload.h, payload.calibrated, payload.sort_order)
+    # Each kind has its own partial unique index, so each has its own conflict
+    # target: one zone per department, one desk per position. Upsert is the whole
+    # interface -- editing a room re-uses the row instead of orphaning the old one.
+    target = "(org_unit_id) WHERE kind = 'zone'" if payload.kind == "zone" else "(position_id) WHERE kind = 'desk'"
+    before = conn.execute(
+        f"SELECT space_id, x, y, w, h, calibrated, label FROM workhub.spaces WHERE {'org_unit_id = %s AND kind = %s' if payload.kind == 'zone' else 'position_id = %s AND kind = %s'}",
+        (payload.org_unit_id, payload.kind) if payload.kind == "zone" else (payload.position_id, payload.kind),
+    ).fetchone()
+    row = conn.execute(
+        f"""INSERT INTO workhub.spaces ({columns})
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT {target} DO UPDATE
+               SET label = EXCLUDED.label, x = EXCLUDED.x, y = EXCLUDED.y, w = EXCLUDED.w,
+                   h = EXCLUDED.h, calibrated = EXCLUDED.calibrated,
+                   sort_order = EXCLUDED.sort_order, position_id = EXCLUDED.position_id
+            RETURNING space_id, {columns}""",
+        values,
+    ).fetchone()
+    audit(conn, actor_member_id, "space.updated" if before else "space.created",
+          "space", row["space_id"], f"floor plan {payload.kind} for {org_unit['name']}",
+          row, before)
+    return row
+
+
+def remove_space(conn, space_id: UUID, actor_member_id: Any) -> dict[str, Any]:
+    row = conn.execute(
+        f"SELECT {SPACE_SELECT} FROM workhub.spaces s WHERE s.space_id = %s", (space_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="space not found")
+    conn.execute("DELETE FROM workhub.spaces WHERE space_id = %s", (space_id,))
+    audit(conn, actor_member_id, "space.removed", "space", space_id,
+          f"removed {row['kind']} from the floor plan", None, row)
+    return row
+
 
 def layer_matches(layer_id: str, card: dict[str, Any]) -> bool:
     if layer_id == "blocked":
@@ -788,6 +959,27 @@ def board_for_org_unit(org_unit_id: UUID, stale_days: int = 7, layer: str = "all
                        _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
     with connection() as conn:
         return build_board(conn, org_unit_id, stale_days, layer, stage)
+
+
+@app.get("/v1/office")
+def office(stale_days: int = 7,
+           _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
+    with connection() as conn:
+        return build_office(conn, stale_days)
+
+
+@app.post("/v1/spaces", status_code=status.HTTP_201_CREATED)
+def put_space(payload: SpaceUpsert,
+              _actor: dict = Depends(require_permission("workforce.positions", "manage"))):
+    with connection() as conn:
+        return upsert_space(conn, payload, _actor["member_id"])
+
+
+@app.delete("/v1/spaces/{space_id}")
+def delete_space(space_id: UUID,
+                 _actor: dict = Depends(require_permission("workforce.positions", "manage"))):
+    with connection() as conn:
+        return remove_space(conn, space_id, _actor["member_id"])
 
 
 def insert_work_item(conn, payload: WorkItemCreate, actor_member_id: Any) -> dict[str, Any]:
