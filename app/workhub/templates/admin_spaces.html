@@ -69,73 +69,82 @@
             <circle class="handle" cx="{{ z.w }}" cy="{{ z.h }}" r="18"></circle>
           </g>
         {% else %}
-          <text class="floor-hint" x="40" y="70">楼层上还没有任何区域 —— 下面选一个部门放上来。</text>
+          <text class="floor-hint" x="40" y="70">楼层上还没有任何区域 —— 右边选一个部门放上来。</text>
         {% endfor %}
       </svg>
     {% endif %}
     <p class="sub">键盘也能用：Tab 选中方块，方向键微调（按住 Shift 迈大步）。</p>
   </div>
 
-  <aside class="card inspector" data-inspector>
-    <p class="empty" data-hint>在图上点一个方块开始编辑。</p>
-    <div data-fields hidden>
-      <h2 data-name style="margin-top:0"></h2>
-      <p class="sub mono" data-coords></p>
-      {% if can_manage %}
-        <label class="field">备注<input name="label" type="text" maxlength="80"></label>
-        <label class="field check"><input name="calibrated" type="checkbox"> 已按真实位置校准</label>
-        <p><a class="btn" data-room-link href="#">排这个部门的工位 →</a></p>
-        <form data-delete method="post" action="">
-          <button type="submit" class="link danger">删除这个方块</button>
-        </form>
-      {% else %}
-        <p class="empty">你的账号没有 workforce.positions/manage 权限，只能查看。</p>
-      {% endif %}
+  <aside class="editor-side">
+    <div class="card inspector" data-inspector>
+      <p class="empty" data-hint>在图上点一个方块开始编辑。</p>
+      <div data-fields hidden>
+        <h2 data-name style="margin-top:0"></h2>
+        <p class="sub mono" data-coords></p>
+        {% if can_manage %}
+          <label class="field">备注<input name="label" type="text" maxlength="80"></label>
+          <label class="field check"><input name="calibrated" type="checkbox"> 已按真实位置校准</label>
+          <p><a class="btn" data-room-link href="#">排这个部门的工位 →</a></p>
+          <form data-delete method="post" action="">
+            <button type="submit" class="link danger">删除这个方块</button>
+          </form>
+        {% else %}
+          <p class="empty">你的账号没有 workforce.positions/manage 权限，只能查看。</p>
+        {% endif %}
+      </div>
     </div>
+
+    {% if can_manage %}
+      {% if selected %}
+        <div class="card">
+          <h2 style="margin-top:0">把岗位排到座位上</h2>
+          {% set org_positions = positions | selectattr('org_unit_id', 'equalto', selected.org_unit_id) | list %}
+          {% set unseated = org_positions | rejectattr('position_id', 'in', seated) | list %}
+          {% if not org_positions %}
+            <p class="empty" style="margin-bottom:0">这个部门还没有任何岗位。</p>
+          {% elif not unseated %}
+            <p class="empty" style="margin-bottom:0">岗位全部有座位了。</p>
+          {% else %}
+            <ul class="seatlist">
+              {% for p in unseated %}
+                <li>
+                  <span>{{ p.title }}</span>
+                  <form method="post" action="/admin/spaces" class="inline">
+                    <input type="hidden" name="kind" value="desk">
+                    <input type="hidden" name="org_unit_id" value="{{ selected.org_unit_id }}">
+                    <input type="hidden" name="position_id" value="{{ p.position_id }}">
+                    <input type="hidden" name="x" value="0"><input type="hidden" name="y" value="0">
+                    <input type="hidden" name="w" value="260"><input type="hidden" name="h" value="160">
+                    <button type="button" data-add data-add-w="260" data-add-h="160">放上来</button>
+                  </form>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          <p class="sub" style="margin:8px 0 0"><a href="/admin/spaces">← 回到楼层</a></p>
+        </div>
+      {% else %}
+        <div class="card">
+          <h2 style="margin-top:0">给部门一块区域</h2>
+          {% if unplaced %}
+            <form method="post" action="/admin/spaces" class="stack" style="margin-bottom:0">
+              <input type="hidden" name="kind" value="zone">
+              <input type="hidden" name="x" value="0"><input type="hidden" name="y" value="0">
+              <input type="hidden" name="w" value="420"><input type="hidden" name="h" value="320">
+              <label class="field">部门
+                <select name="org_unit_id">{% for u in unplaced %}<option value="{{ u.org_unit_id }}">{{ u.org_code }} · {{ u.name }}</option>{% endfor %}</select>
+              </label>
+              <button type="button" data-add data-add-w="420" data-add-h="320">放到楼层上</button>
+            </form>
+          {% else %}
+            <p class="empty" style="margin-bottom:0">所有部门都已经有区域了。要加新区域，先去建一个新部门。</p>
+          {% endif %}
+        </div>
+      {% endif %}
+    {% endif %}
   </aside>
 </div>
-
-{% if can_manage %}
-  {% if selected %}
-    <h2>把岗位排到座位上</h2>
-    {% set has_unseated = false %}
-    <ul class="seatlist">
-      {% for p in positions %}
-        {% if p.org_unit_id == selected.org_unit_id and p.position_id not in seated %}
-          {% set has_unseated = true %}
-          <li>
-            <span>{{ p.title }}<span class="mono"> · {{ p.position_code }}</span></span>
-            <form method="post" action="/admin/spaces" class="inline">
-              <input type="hidden" name="kind" value="desk">
-              <input type="hidden" name="org_unit_id" value="{{ selected.org_unit_id }}">
-              <input type="hidden" name="position_id" value="{{ p.position_id }}">
-              <input type="hidden" name="x" value="0"><input type="hidden" name="y" value="0">
-              <input type="hidden" name="w" value="260"><input type="hidden" name="h" value="160">
-              <button type="button" data-add data-add-w="260" data-add-h="160">放到图上</button>
-            </form>
-          </li>
-        {% endif %}
-      {% endfor %}
-      {% if not has_unseated %}<li class="empty">这个部门的岗位全部有座位了。</li>{% endif %}
-    </ul>
-    <p class="sub"><a href="/admin/spaces">← 回到楼层</a></p>
-  {% else %}
-    <h2>给部门一块区域</h2>
-    {% if unplaced %}
-      <form method="post" action="/admin/spaces" class="form-row">
-        <input type="hidden" name="kind" value="zone">
-        <input type="hidden" name="x" value="0"><input type="hidden" name="y" value="0">
-        <input type="hidden" name="w" value="420"><input type="hidden" name="h" value="320">
-        <label class="field">部门
-          <select name="org_unit_id">{% for u in unplaced %}<option value="{{ u.org_unit_id }}">{{ u.org_code }} · {{ u.name }}</option>{% endfor %}</select>
-        </label>
-        <button type="button" data-add data-add-w="420" data-add-h="320">放到楼层上</button>
-      </form>
-    {% else %}
-      <p class="empty">所有部门都已经有区域了。</p>
-    {% endif %}
-  {% endif %}
-{% endif %}
 
 <h2>当前布置</h2>
 {% if not spaces %}

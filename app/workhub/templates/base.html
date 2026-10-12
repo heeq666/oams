@@ -186,18 +186,16 @@
   .editor .item .handle { fill: #fff; stroke: var(--accent); stroke-width: 3; opacity: 0; cursor: nwse-resize; }
   .editor .item:hover .handle, .editor .item.selected .handle,
   .editor .item:focus-visible .handle { opacity: 1; }
-  .inspector { position: sticky; top: 16px; }
+  .editor-side { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 16px; }
   .inspector h2 { font-size: 15px; }
   .inspector .field { display: block; margin-bottom: 10px; }
   .inspector .field.check { display: flex; align-items: center; gap: 6px; }
   .btn { display: inline-block; padding: 7px 12px; border-radius: 8px; background: var(--accent);
          color: #fff; text-decoration: none; font-size: 14px; }
   .link.danger { color: var(--blocked); }
-  .seatlist { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 8px;
-              grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .seatlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .seatlist li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-                 background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
-  .seatlist li.empty { display: block; color: var(--muted); background: transparent; border-style: dashed; }
+                 background: #fafbfc; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
   .stack { margin-bottom: 20px; }
   .form-row .check { flex-direction: row; align-items: center; gap: 6px; }
   .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
