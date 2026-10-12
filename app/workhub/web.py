@@ -269,7 +269,8 @@ def office_zoom(request: Request, org: UUID, stale_days: int = Query(default=7, 
 
 
 @router.get("/admin/spaces", response_class=HTMLResponse)
-def admin_spaces(request: Request, saved: str | None = None, error: str | None = None):
+def admin_spaces(request: Request, org: UUID | None = None,
+                 saved: str | None = None, error: str | None = None):
     try:
         principal = _require(request, "workforce.positions", "read")
     except _NotSignedIn:
@@ -292,8 +293,19 @@ def admin_spaces(request: Request, saved: str | None = None, error: str | None =
                  JOIN workhub.org_units o USING (org_unit_id)
                  LEFT JOIN workhub.positions p ON p.position_id = s.position_id
                 ORDER BY s.kind, o.org_code, s.position_id""").fetchall()
+        # Two levels of the same canvas: the floor holds department zones, and ?org=
+        # drops into one department where desks are laid out in coordinates local to
+        # that room -- so moving a room never drags its furniture along.
+        selected = None
+        if org is not None:
+            selected = conn.execute(
+                """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+                    WHERE org_unit_id = %s AND status = 'active'""", (org,)).fetchone()
+    placed = {row["org_unit_id"] for row in spaces if row["kind"] == "zone"}
+    unplaced = [u for u in org_units if u["org_unit_id"] not in placed]
     return TEMPLATES.TemplateResponse(request, "admin_spaces.html", {
         "org_units": org_units, "positions": positions, "spaces": spaces,
+        "selected": selected, "unplaced": unplaced,
         "can_manage": can_manage, "saved": saved, "error": error, "member": _member(request)})
 
 
