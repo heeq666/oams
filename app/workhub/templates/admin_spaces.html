@@ -1,49 +1,140 @@
 {% extends "base.html" %}
 {% block title %}办公室布置 · Workhub{% endblock %}
 {% block content %}
+{% set zones = spaces | selectattr('kind', 'equalto', 'zone') | list %}
+{% set desks = spaces | selectattr('kind', 'equalto', 'desk') | list %}
+{% if selected %}
+  {% set room_desks = desks | selectattr('org_unit_id', 'equalto', selected.org_unit_id) | list %}
+  {% set seated = room_desks | map(attribute='position_id') | list %}
+{% endif %}
+
 <h1>办公室布置</h1>
-<p class="sub">位置按真实工位填：区域左上角是 <span class="mono">x,y</span>，宽高是 <span class="mono">w,h</span>，全部在 0-1000 的网格上。
-工位的坐标是<b>该部门区域内部</b>的相对网格，所以挪动房间不会把所有座位打乱。<b>没校准的位置系统一律画成虚线。</b></p>
+<p class="sub">在图上直接摆：<b>拖方块挪位置</b>，<b>拖右下角的圆点改大小</b>，选中后右侧改备注和校准状态。
+没校准的一律画虚线，校准后变实线 —— 虚线就是在提醒"这个位置还没人对过真实工位"。</p>
 
 {% if saved %}<p class="flash">已保存。</p>{% endif %}
-{% if error == 'geometry' %}<p class="flash error">坐标不合法：必须落在 0-1000 画布内，且宽高大于 0。</p>{% endif %}
+{% if error == 'geometry' %}<p class="flash error">坐标不合法：必须落在画布内，且宽高大于 0。</p>{% endif %}
 {% if error == 'department' %}<p class="flash error">工位必须属于本部门的岗位。</p>{% endif %}
+<p class="flash" data-editor-flash hidden></p>
+
+<nav class="crumbs">
+  <a href="/admin/spaces">楼层</a>
+  {% if selected %}<span aria-hidden="true">›</span><span aria-current="page">{{ selected.name }}</span>{% endif %}
+</nav>
+
+<div class="editor" data-office-editor{% if not can_manage %} data-readonly{% endif %}>
+  <div class="editor-canvas">
+    {% if selected %}
+      {% set z = zones | selectattr('org_unit_id', 'equalto', selected.org_unit_id) | first %}
+      <svg class="room" viewBox="0 0 1000 1000" data-w="1000" data-h="1000" data-grid="20"
+           role="group" aria-label="{{ selected.name }} 内部工位，共 {{ room_desks | length }} 张"
+           {% if z %}style="aspect-ratio: {{ z.w }} / {{ z.h }}"{% endif %}>
+        <rect class="floor-bg" x="0" y="0" width="1000" height="1000"></rect>
+        {% for d in room_desks %}
+          <g class="item desk{% if not d.calibrated %} uncalibrated{% endif %}"
+             data-space="{{ d.space_id }}" data-kind="desk" data-org="{{ d.org_unit_id }}"
+             data-position="{{ d.position_id }}" data-name="{{ d.position_title }}"
+             data-label="{{ d.label or '' }}"
+             data-x="{{ d.x }}" data-y="{{ d.y }}" data-w="{{ d.w }}" data-h="{{ d.h }}"
+             data-calibrated="{{ 'true' if d.calibrated else 'false' }}"
+             transform="translate({{ d.x }} {{ d.y }})" tabindex="0" role="button"
+             aria-label="{{ d.position_title }}，{{ d.x }},{{ d.y }}，{{ d.w }}×{{ d.h }}">
+            <rect width="{{ d.w }}" height="{{ d.h }}" rx="10"
+                  {% if not d.calibrated %}stroke-dasharray="14 10"{% endif %}></rect>
+            <text class="desk-name" x="20" y="46">{{ d.position_title }}</text>
+            <text class="desk-num" x="20" y="82">{{ d.position_code }}</text>
+            <circle class="handle" cx="{{ d.w }}" cy="{{ d.h }}" r="18"></circle>
+          </g>
+        {% else %}
+          <text class="floor-hint" x="40" y="70">这间房还是空的 —— 右边选一个岗位放上来。</text>
+        {% endfor %}
+      </svg>
+    {% else %}
+      <svg class="plan" viewBox="0 0 1000 1000" data-w="1000" data-h="1000" data-grid="20"
+           role="group" aria-label="楼层平面图，共 {{ zones | length }} 个区域">
+        <rect class="floor-bg" x="0" y="0" width="1000" height="1000"></rect>
+        {% for z in zones %}
+          <g class="item zone{% if not z.calibrated %} uncalibrated{% endif %}"
+             data-space="{{ z.space_id }}" data-kind="zone" data-org="{{ z.org_unit_id }}"
+             data-name="{{ z.org_name }}" data-label="{{ z.label or '' }}"
+             data-x="{{ z.x }}" data-y="{{ z.y }}" data-w="{{ z.w }}" data-h="{{ z.h }}"
+             data-calibrated="{{ 'true' if z.calibrated else 'false' }}"
+             data-room="/admin/spaces?org={{ z.org_unit_id }}"
+             transform="translate({{ z.x }} {{ z.y }})" tabindex="0" role="button"
+             aria-label="{{ z.org_name }}，{{ z.x }},{{ z.y }}，{{ z.w }}×{{ z.h }}">
+            <rect width="{{ z.w }}" height="{{ z.h }}" rx="14"
+                  {% if not z.calibrated %}stroke-dasharray="18 12"{% endif %}></rect>
+            <text class="zone-name" x="26" y="48">{{ z.org_name }}</text>
+            {% if z.label %}<text class="zone-calib" x="26" y="84">{{ z.label }}</text>{% endif %}
+            <circle class="handle" cx="{{ z.w }}" cy="{{ z.h }}" r="18"></circle>
+          </g>
+        {% else %}
+          <text class="floor-hint" x="40" y="70">楼层上还没有任何区域 —— 下面选一个部门放上来。</text>
+        {% endfor %}
+      </svg>
+    {% endif %}
+    <p class="sub">键盘也能用：Tab 选中方块，方向键微调（按住 Shift 迈大步）。</p>
+  </div>
+
+  <aside class="card inspector" data-inspector>
+    <p class="empty" data-hint>在图上点一个方块开始编辑。</p>
+    <div data-fields hidden>
+      <h2 data-name style="margin-top:0"></h2>
+      <p class="sub mono" data-coords></p>
+      {% if can_manage %}
+        <label class="field">备注<input name="label" type="text" maxlength="80"></label>
+        <label class="field check"><input name="calibrated" type="checkbox"> 已按真实位置校准</label>
+        <p><a class="btn" data-room-link href="#">排这个部门的工位 →</a></p>
+        <form data-delete method="post" action="">
+          <button type="submit" class="link danger">删除这个方块</button>
+        </form>
+      {% else %}
+        <p class="empty">你的账号没有 workforce.positions/manage 权限，只能查看。</p>
+      {% endif %}
+    </div>
+  </aside>
+</div>
 
 {% if can_manage %}
-  <form method="post" action="/admin/spaces" class="stack">
-    <h2>区域（每个部门一块）</h2>
-    <input type="hidden" name="kind" value="zone">
-    <div class="form-row">
-      <label class="field">部门
-        <select name="org_unit_id">{% for u in org_units %}<option value="{{ u.org_unit_id }}">{{ u.org_code }} · {{ u.name }}</option>{% endfor %}</select>
-      </label>
-      <label class="field">备注<textarea name="label" rows="1" cols="18"></textarea></label>
-      <label class="field">x<input name="x" type="number" min="0" max="999" value="40"></label>
-      <label class="field">y<input name="y" type="number" min="0" max="999" value="40"></label>
-      <label class="field">w<input name="w" type="number" min="1" max="1000" value="300"></label>
-      <label class="field">h<input name="h" type="number" min="1" max="1000" value="180"></label>
-      <label class="field check"><input name="calibrated" type="checkbox"> 已按真实位置校准</label>
-      <button type="submit">保存区域</button>
-    </div>
-  </form>
-
-  <form method="post" action="/admin/spaces" class="stack">
-    <h2>工位（每个岗位一张，坐标在该区域内部）</h2>
-    <input type="hidden" name="kind" value="desk">
-    <div class="form-row">
-      <label class="field">岗位
-        <select name="position_id">{% for p in positions %}<option value="{{ p.position_id }}">{{ p.org_code }} · {{ p.title }}</option>{% endfor %}</select>
-      </label>
-      <label class="field">x<input name="x" type="number" min="0" max="999" value="60"></label>
-      <label class="field">y<input name="y" type="number" min="0" max="999" value="60"></label>
-      <label class="field">w<input name="w" type="number" min="1" max="1000" value="220"></label>
-      <label class="field">h<input name="h" type="number" min="1" max="1000" value="120"></label>
-      <label class="field check"><input name="calibrated" type="checkbox"> 已按真实位置校准</label>
-      <button type="submit">保存工位</button>
-    </div>
-  </form>
-{% else %}
-  <p class="empty">你的账号没有 workforce.positions/manage 权限，只能查看布置，不能改。</p>
+  {% if selected %}
+    <h2>把岗位排到座位上</h2>
+    {% set has_unseated = false %}
+    <ul class="seatlist">
+      {% for p in positions %}
+        {% if p.org_unit_id == selected.org_unit_id and p.position_id not in seated %}
+          {% set has_unseated = true %}
+          <li>
+            <span>{{ p.title }}<span class="mono"> · {{ p.position_code }}</span></span>
+            <form method="post" action="/admin/spaces" class="inline">
+              <input type="hidden" name="kind" value="desk">
+              <input type="hidden" name="org_unit_id" value="{{ selected.org_unit_id }}">
+              <input type="hidden" name="position_id" value="{{ p.position_id }}">
+              <input type="hidden" name="x" value="0"><input type="hidden" name="y" value="0">
+              <input type="hidden" name="w" value="260"><input type="hidden" name="h" value="160">
+              <button type="button" data-add data-add-w="260" data-add-h="160">放到图上</button>
+            </form>
+          </li>
+        {% endif %}
+      {% endfor %}
+      {% if not has_unseated %}<li class="empty">这个部门的岗位全部有座位了。</li>{% endif %}
+    </ul>
+    <p class="sub"><a href="/admin/spaces">← 回到楼层</a></p>
+  {% else %}
+    <h2>给部门一块区域</h2>
+    {% if unplaced %}
+      <form method="post" action="/admin/spaces" class="form-row">
+        <input type="hidden" name="kind" value="zone">
+        <input type="hidden" name="x" value="0"><input type="hidden" name="y" value="0">
+        <input type="hidden" name="w" value="420"><input type="hidden" name="h" value="320">
+        <label class="field">部门
+          <select name="org_unit_id">{% for u in unplaced %}<option value="{{ u.org_unit_id }}">{{ u.org_code }} · {{ u.name }}</option>{% endfor %}</select>
+        </label>
+        <button type="button" data-add data-add-w="420" data-add-h="320">放到楼层上</button>
+      </form>
+    {% else %}
+      <p class="empty">所有部门都已经有区域了。</p>
+    {% endif %}
+  {% endif %}
 {% endif %}
 
 <h2>当前布置</h2>
@@ -72,4 +163,6 @@
     </tbody>
   </table>
 {% endif %}
+{% if not can_manage %}<noscript><p class="empty">编辑需要 JavaScript；没有它这页只能看。</p></noscript>{% endif %}
 {% endblock %}
+{% block tail %}<script src="/static/office-editor.js" defer></script>{% endblock %}

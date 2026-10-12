@@ -166,6 +166,38 @@
   .desk-name { font-size: 26px; font-weight: 600; fill: var(--ink); }
   .desk-num { font-size: 22px; fill: var(--muted); }
   .desk-flag { font-size: 20px; fill: var(--blocked); font-weight: 500; }
+  /* Floor plan editor: the canvas is a view, the data attributes are the truth.
+     Handles stay invisible until hover or selection so the plan reads as a plan
+     first and as a set of controls second. */
+  .crumbs { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 14px; }
+  .crumbs a { color: var(--muted); text-decoration: none; }
+  .crumbs a:hover { color: var(--ink); text-decoration: underline; }
+  .crumbs [aria-current] { font-weight: 600; }
+  .editor { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .editor { grid-template-columns: minmax(0, 1fr); } }
+  .editor-canvas svg { width: 100%; height: auto; background: #fff;
+                       border: 1px solid var(--line); border-radius: 12px; display: block; }
+  .floor-bg { fill: #fbfcfd; }
+  .floor-hint { font-size: 22px; fill: var(--muted); }
+  .editor .item { cursor: grab; outline: none; }
+  .editor .item rect { fill: #eef2ef; stroke: #cbd5cf; stroke-width: 2; }
+  .editor .item.uncalibrated rect { fill: #f7f8f9; stroke: #b8bec4; }
+  .editor .item.selected rect, .editor .item:focus-visible rect { stroke: var(--accent); stroke-width: 3; }
+  .editor .item .handle { fill: #fff; stroke: var(--accent); stroke-width: 3; opacity: 0; cursor: nwse-resize; }
+  .editor .item:hover .handle, .editor .item.selected .handle,
+  .editor .item:focus-visible .handle { opacity: 1; }
+  .inspector { position: sticky; top: 16px; }
+  .inspector h2 { font-size: 15px; }
+  .inspector .field { display: block; margin-bottom: 10px; }
+  .inspector .field.check { display: flex; align-items: center; gap: 6px; }
+  .btn { display: inline-block; padding: 7px 12px; border-radius: 8px; background: var(--accent);
+         color: #fff; text-decoration: none; font-size: 14px; }
+  .link.danger { color: var(--blocked); }
+  .seatlist { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 8px;
+              grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .seatlist li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                 background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+  .seatlist li.empty { display: block; color: var(--muted); background: transparent; border-style: dashed; }
   .stack { margin-bottom: 20px; }
   .form-row .check { flex-direction: row; align-items: center; gap: 6px; }
   .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
@@ -198,5 +230,6 @@
 <main>
 {% block content %}{% endblock %}
 </main>
+{% block tail %}{% endblock %}
 </body>
 </html>

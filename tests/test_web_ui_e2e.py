@@ -326,6 +326,35 @@ try:
     check("a department with no zone cannot be zoomed into",
           call("/office/zoom?org=00000000-0000-0000-0000-000000000000")[0] == 404, "")
 
+    # --- the layout editor: drag on the plan, not numbers in a form ----------
+    # Coordinates typed into inputs are how a plan ends up describing an office
+    # nobody has walked through. Dragging keeps the geometry honest because the
+    # person laying it out is looking at a picture of the room while doing it.
+    code, editor, _ = call("/admin/spaces")
+    # Hidden coordinate inputs are fine -- the add button fills them from a free
+    # spot on the grid. What must be gone is the numeric field a human had to type
+    # a room's position into.
+    check("the layout page is an editable canvas, not a coordinate form",
+          code == 200 and 'data-office-editor' in editor and 'g class="item ' in editor
+          and 'name="x" type="number"' not in editor, str(code))
+    check("every zone on the floor is draggable and carries its own geometry",
+          editor.count('g class="item ') == 1 and editor.count('circle class="handle"') == 1
+          and f'data-org="{real_org}"' in editor, str(editor.count('g class="item ')))
+    check("the editor ships as plain vendored script, no build step",
+          "office-editor.js" in editor, "")
+
+    code, room, _ = call(f"/admin/spaces?org={real_org}")
+    check("a department opens into its own room canvas",
+          code == 200 and 'class="room"' in room, str(code))
+    seats_drawn = room.count('g class="item ')
+    check("the room lists every seat as its own draggable item",
+          seats_drawn == len(seated_titles) and all(title in room for title in seated_titles),
+          f"drawn={seats_drawn} expected={seated_titles}")
+    check("an uncalibrated desk is drawn dashed like an uncalibrated zone",
+          "uncalibrated" in room and "stroke-dasharray" in room, "")
+    check("the room canvas knows which department it is editing",
+          f'data-org="{real_org}"' in room, "")
+
     # --- the specialist: allowed on the board, refused on audit -------------
     opener2 = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect,
                                           urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
