@@ -3,6 +3,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str
+    # Migrations change the schema, and the runtime role is deliberately not
+    # allowed to do that. Point this at a role that owns the database
+    # (workhub_migrator). When it is unset migrations fall back to database_url,
+    # which is what a development database with a single role wants.
+    migrator_url: str | None = None
     session_ttl_hours: int = 8
     bind_host: str = "127.0.0.1"
     bind_port: int = 8000

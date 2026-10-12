@@ -3,11 +3,12 @@ import json
 from pathlib import Path
 from uuid import UUID
 
+import psycopg
 import uvicorn
 from psycopg.types.json import Jsonb
 
 from workhub.config import settings
-from workhub.db import connection
+from workhub.db import connection, migration_connection
 from workhub.security import issue_session
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
@@ -20,14 +21,22 @@ def migrate():
     for migration in migrations:
         sql = migration.read_text(encoding="utf-8")
         version = migration.name
-        with connection() as conn:
-            # The table does not exist until the first migration creates it.
-            has_table = conn.execute("SELECT to_regclass('workhub.schema_migrations') AS table_name").fetchone()["table_name"]
-            if has_table and conn.execute("SELECT 1 FROM workhub.schema_migrations WHERE version = %s", (version,)).fetchone():
-                print(f"Already applied {version}")
-                continue
-            conn.execute(sql)
-            conn.execute("INSERT INTO workhub.schema_migrations (version) VALUES (%s)", (version,))
+        try:
+            with migration_connection() as conn:
+                # The table does not exist until the first migration creates it.
+                has_table = conn.execute("SELECT to_regclass('workhub.schema_migrations') AS table_name").fetchone()["table_name"]
+                if has_table and conn.execute("SELECT 1 FROM workhub.schema_migrations WHERE version = %s", (version,)).fetchone():
+                    print(f"Already applied {version}")
+                    continue
+                conn.execute(sql)
+                conn.execute("INSERT INTO workhub.schema_migrations (version) VALUES (%s)", (version,))
+        except psycopg.errors.InsufficientPrivilege:
+            raise SystemExit(
+                "Migrations ran as a role that cannot change the schema (it is "
+                + ("WORKHUB_MIGRATOR_URL" if settings.migrator_url else "the runtime role in WORKHUB_DATABASE_URL, which is deliberately not allowed to")
+                + "). Set WORKHUB_MIGRATOR_URL in .env to a role that owns the database "
+                "and run migrate again."
+            )
         print(f"Applied {version}")
 
 
