@@ -1,0 +1,30 @@
+{#- Input: a small detail table. Columns are declared by the descriptor; cells bind to fields. -#}
+{% set p = params_of(module) %}
+{% set cols = as_list(p.get('columns')) %}
+<section class="wh-m wh-input wh-table-module" data-type="table">
+  {{ preview_tag(module, spec) }}
+  {% if cols %}
+  <table class="wh-table">
+    <thead>
+      <tr>
+        {% for col in cols %}<th>{{ col.get('label') or col.get('key') }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in range(as_int(p.get('rows'), 1, low=1, high=5)) %}
+      <tr>
+        {% for col in cols %}
+        <td>
+          {% set key = col.get('key') %}
+          {% if mode == 'edit' %}{{ input_for_key(key) or static_for(key) }}{% else %}{{ static_for(key) }}{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="wh-empty">这个明细表还没有配置列。</p>
+  {% endif %}
+  {{ private_note(module, spec) }}
+</section>

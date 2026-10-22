@@ -76,6 +76,13 @@
     say._timer = setTimeout(function () { flash.hidden = true; }, 2600);
   }
 
+  function csrfValue() {
+    // The editor posts from script, so the server-side form token has to travel
+    // with it; without this the drag-to-save gesture would be rejected as forged.
+    var holder = document.querySelector("[data-csrf]");
+    return holder ? holder.getAttribute("data-csrf") : "";
+  }
+
   function save(item) {
     if (!writable) return Promise.resolve();
     var body = new FormData();
@@ -88,6 +95,7 @@
     body.set("w", item.getAttribute("data-w"));
     body.set("h", item.getAttribute("data-h"));
     body.set("calibrated", item.getAttribute("data-calibrated") === "true" ? "on" : "");
+    body.set("csrf", csrfValue());
     return fetch("/admin/spaces", { method: "POST", body: body, redirect: "follow" })
       .then(function (r) { say(r.ok ? "已保存" : "保存失败，请重试", !r.ok); })
       .catch(function () { say("保存失败，网络不通", true); });

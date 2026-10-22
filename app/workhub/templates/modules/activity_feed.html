@@ -1,0 +1,19 @@
+{#- Display: recent activity, newest first. -#}
+{% set p = params_of(module) %}
+{% set items = activity_items(p.get('limit')) %}
+<section class="wh-m wh-display wh-activity-feed" data-type="activity_feed">
+  {{ preview_tag(module, spec) }}
+  {% if items %}
+  <ul class="wh-feed">
+    {% for item in items %}
+    <li>
+      <span class="wh-feed-when">{{ item.when }}</span>
+      <span class="wh-feed-what">{{ item.what }}</span>
+      <span class="wh-feed-who">{{ item.who }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="wh-empty">暂无动态。</p>
+  {% endif %}
+</section>

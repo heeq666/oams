@@ -108,6 +108,33 @@ def has_permission(conn, member_id: Any, resource: str, action: str) -> bool:
     return not any(grant["effect"] == "deny" for grant in grants)
 
 
+def active_org_unit_ids(conn, member_id: Any) -> set[Any]:
+    """Departments reached through the member's currently effective positions."""
+    rows = conn.execute(
+        """SELECT DISTINCT p.org_unit_id FROM workhub.position_assignments a
+           JOIN workhub.positions p USING (position_id)
+           WHERE a.member_id = %s AND a.status IN ('active', 'scheduled')
+             AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)
+             AND p.status = 'active'""",
+        (member_id,),
+    ).fetchall()
+    return {row["org_unit_id"] for row in rows}
+
+
+def has_company_scope(conn, member_id: Any) -> bool:
+    """Company-wide operational visibility is reserved for security administrators."""
+    return has_permission(conn, member_id, "workforce.grants", "manage")
+
+
+def can_access_org_unit(conn, member_id: Any, org_unit_id: Any) -> bool:
+    return has_company_scope(conn, member_id) or org_unit_id in active_org_unit_ids(conn, member_id)
+
+
+def require_org_unit_access(conn, member_id: Any, org_unit_id: Any) -> None:
+    if not can_access_org_unit(conn, member_id, org_unit_id):
+        raise HTTPException(status_code=403, detail="org unit is outside the member assignment scope")
+
+
 def revoke_session(conn, session_id: Any, member_id: Any) -> None:
     """Logout and operator revocation share this, so both leave the same audit trail."""
     conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE session_id = %s", (session_id,))

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}部门汇报 · Workhub{% endblock %}
+{% block content %}
+<div class="pagehead"><div><h1>部门进度汇报</h1><p class="sub">选择自己负责的事项，说明进展和依据；提交后可在进度中心查看。</p></div><a class="btn" href="/board">查看进度中心 →</a></div>
+{% if saved %}<div class="flash">汇报已保存，进度中心已更新。</div>{% endif %}
+{% if error %}<div class="flash error">请检查进度（0–100）和依据；已完成事项不能再汇报。</div>{% endif %}
+{% if departments %}
+<nav class="orgnav" aria-label="选择汇报部门">
+{% for department_id, name in departments %}<a href="/reports?org={{ department_id }}" class="{% if department_id == selected %}on{% endif %}" {% if department_id == selected %}aria-current="page"{% endif %}>{{ name }}</a>{% endfor %}
+</nav>
+<h2>待汇报事项 · {{ items|length }}</h2>
+{% for item in items %}
+<section class="card report-item">
+  <div class="row1"><strong>{{ item.title }}</strong><span class="badge {% if item.status == 'blocked' %}blocked{% endif %}">{{ status_labels[item.status] }}</span><span class="pos">{{ item.position_title }}</span></div>
+  {% if item.reported_at %}<p class="meta">上次更新 {{ item.reported_at|dt }} · {{ channel_labels[item.submitted_via] }}{% if item.progress_value is not none %} · {{ item.progress_value }}%{% endif %}</p><p class="note">{{ item.note or '无进展说明' }}</p><p class="evidence">依据：{{ item.evidence }}</p>{% else %}<p class="meta">还没有进度汇报</p>{% endif %}
+  <form method="post" action="/reports/{{ item.work_item_id }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="field"><label for="note-{{ item.work_item_id }}">这次做了什么？</label><textarea id="note-{{ item.work_item_id }}" name="note" rows="2" maxlength="4000" placeholder="例如：已确认本周的交付计划"></textarea></div>
+    <div class="form-row"><div class="field"><label for="progress-{{ item.work_item_id }}">完成进度（可不填）</label><input id="progress-{{ item.work_item_id }}" name="progress_value" type="number" min="0" max="100" placeholder="0–100"></div></div>
+    <div class="field"><label for="evidence-{{ item.work_item_id }}">依据（必填）</label><textarea id="evidence-{{ item.work_item_id }}" name="evidence" rows="2" maxlength="4000" required placeholder="例如：会议纪要、已确认的交付物或负责人反馈"></textarea></div>
+    <p class="sub">AI 助手可以先帮你整理文字；请核对事实和依据后再提交。此页面提交会标记为人工提交。</p>
+    <button type="submit">提交这次汇报</button>
+  </form>
+</section>
+{% else %}<p class="empty">这个部门还没有开放中的工作项。</p>{% endfor %}
+{% else %}<p class="empty">你目前没有可汇报的工作项。请先由管理员建立工作项，并把岗位分配给你。</p>{% endif %}
+{% endblock %}

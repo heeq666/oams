@@ -1,0 +1,15 @@
+{#- Display: N metrics in a grid. -#}
+{% set p = params_of(module) %}
+{% set keys = as_list(p.get('metric_keys')) %}
+<section class="wh-m wh-display wh-metric-grid wh-columns-{{ as_int(p.get('columns'), 3) }} wh-gap-md"
+         data-type="metric_grid">
+  {{ preview_tag(module, spec) }}
+  {% for key in keys %}
+  <div class="wh-metric-cell" data-metric="{{ key }}">
+    <span class="wh-metric-label">{{ metric_name(key) }}</span>
+    <span class="wh-metric-value">{{ aggregate(key, with_unit=False) }}</span>
+    {% if metric_unit(key) %}<span class="wh-metric-unit">{{ metric_unit(key) }}</span>{% endif %}
+  </div>
+  {% endfor %}
+  {% if not keys %}<p class="wh-empty">还没有绑定指标。</p>{% endif %}
+</section>

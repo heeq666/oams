@@ -1,0 +1,19 @@
+{#- Input: evidence links. Never aggregated -- the links leave the building. -#}
+<section class="wh-m wh-input wh-evidence-gallery" data-type="evidence_gallery">
+  {{ preview_tag(module, spec) }}
+  {% if mode == 'edit' %}
+  {{ input_for('title') }}
+  {{ input_for('evidence_url') }}
+  {{ input_for('note', textarea=True) }}
+  {% else %}
+  <div class="wh-row">
+    <span class="wh-title">{{ value_of('title') or '证据' }}</span>
+  </div>
+  {% if value_of('note') %}<p class="wh-note">{{ value_of('note') }}</p>{% endif %}
+  {% endif %}
+  {% set url = safe_url(value_of('evidence_url')) %}
+  {% if url %}
+  <a class="wh-link" href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ value_of('evidence') or url }}</a>
+  {% endif %}
+  {{ private_note(module, spec) }}
+</section>

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}试用设置 · Workhub{% endblock %}
+{% block content %}
+<h1>试用设置</h1>
+<p class="sub">按 1 → 4 的顺序准备一个部门：先建部门，再建岗位，然后建成员并分配岗位。完成后把登录链接私发给本人。</p>
+
+{% if saved == 'pilot' and login_token %}
+<div class="flash">
+  <p><b>成员已建立，登录链接已生成。</b>有效期至 {{ login_expires }}。请立即复制并私发本人，离开本页后不再显示。</p>
+  <p><a class="btn" href="/login?token={{ login_token }}&next=/reports">打开该成员的汇报页</a></p>
+  <p class="sub">复制这个链接发给本人：<code>/login?token={{ login_token }}&amp;next=/reports</code></p>
+</div>
+{% elif saved == 'org' %}<div class="flash">部门已创建。</div>
+{% elif saved == 'position' %}<div class="flash">岗位已创建。</div>
+{% endif %}
+{% if error == 'org-duplicate' %}<div class="flash error">这个部门代码已经存在。</div>
+{% elif error == 'position-duplicate' %}<div class="flash error">这个岗位代码已经存在。</div>
+{% elif error == 'pilot-duplicate' %}<div class="flash error">这个员工编号已经存在，换一个再试。</div>
+{% elif error %}<div class="flash error">填写内容不完整或格式不对，请检查名称、代码和所属部门。</div>
+{% endif %}
+
+<section class="card">
+  <h2 style="margin-top:0">1. 建部门</h2>
+  <form method="post" action="/setup/org-units" class="form-row">
+    <input type="hidden" name="csrf" value="{{ csrf_org }}">
+    <div class="field"><label for="org_code">部门代码</label><input id="org_code" name="org_code" required maxlength="80" placeholder="如 HR"></div>
+    <div class="field"><label for="org_name">部门名称</label><input id="org_name" name="name" required maxlength="200" placeholder="如 人事部"></div>
+    <div class="field"><label for="org_parent">上级组织</label>
+      <select id="org_parent" name="parent_org_unit_id">
+        <option value="">（无，作为顶层）</option>
+        {% for u in org_units %}<option value="{{ u.org_unit_id }}">{{ u.name }}（{{ u.org_code }}）</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label for="org_type">类型</label>
+      <select id="org_type" name="unit_type">
+        <option value="department">部门</option>
+        <option value="team">小组</option>
+        <option value="group">群组</option>
+        <option value="company">公司</option>
+      </select>
+    </div>
+    <button type="submit">创建部门</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0">2. 建岗位</h2>
+  <p class="sub">工作项和权限挂在岗位上，不挂在人上。换人时工作自动跟着岗位走。</p>
+  <form method="post" action="/setup/positions" class="form-row">
+    <input type="hidden" name="csrf" value="{{ csrf_position }}">
+    <div class="field"><label for="position_code">岗位代码</label><input id="position_code" name="position_code" required maxlength="80" placeholder="如 HR_MANAGER"></div>
+    <div class="field"><label for="position_title">岗位名称</label><input id="position_title" name="title" required maxlength="200" placeholder="如 人事经理"></div>
+    <div class="field"><label for="position_org">所属部门</label>
+      <select id="position_org" name="org_unit_id" required>
+        {% for u in org_units %}<option value="{{ u.org_unit_id }}">{{ u.name }}（{{ u.org_code }}）</option>{% endfor %}
+      </select>
+    </div>
+    <button type="submit">创建岗位</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0">3. 建成员并分配岗位</h2>
+  <p class="sub">这一步会同时完成：建立在职成员、分配到所选岗位、授予该岗位的汇报权限，并生成一次性的登录链接。</p>
+  <form method="post" action="/setup/pilot" class="form-row">
+    <input type="hidden" name="csrf" value="{{ csrf_pilot }}">
+    <div class="field"><label for="member_name">姓名</label><input id="member_name" name="display_name" required maxlength="200"></div>
+    <div class="field"><label for="member_code">员工编号（可留空）</label><input id="member_code" name="employee_code" maxlength="80"></div>
+    <div class="field"><label for="member_position">担任岗位</label>
+      <select id="member_position" name="position_id" required>
+        {% for p in positions %}<option value="{{ p.position_id }}">{{ p.org_name }} · {{ p.title }}（{{ p.position_code }}）</option>{% endfor %}
+      </select>
+    </div>
+    <button type="submit">建立成员并生成登录链接</button>
+  </form>
+  {% if not positions %}<p class="empty">还没有岗位，请先完成第 2 步。</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0">现有成员</h2>
+  <table>
+    <thead><tr><th>姓名</th><th>员工编号</th><th>状态</th></tr></thead>
+    <tbody>
+      {% for m in members %}
+      <tr><td>{{ m.display_name }}</td><td class="mono">{{ m.employee_code or '—' }}</td><td>{{ m.employment_status }}</td></tr>
+      {% else %}<tr><td colspan="3" class="empty">还没有成员。</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="sub" style="margin-bottom:0"><a href="/admin/work-items">去建这个岗位的工作项 →</a></p>
+</section>
+{% endblock %}

@@ -8,5 +8,12 @@ build/
 dist/
 *.egg-info/
 
+# Local design/verification scratch: exports and measurements belong to the
+# machine that produced them, not to the repository.
+.artifacts/
+.design-kit/
+.figma/
+
 # Real department seed data may contain employee names; keep it out of git.
 data/*.local.json
+data/live-design-*.json

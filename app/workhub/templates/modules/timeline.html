@@ -1,0 +1,31 @@
+{#- Input: milestones. Fixed items come from params; the next one is filled in here. -#}
+{% set p = params_of(module) %}
+{% set items = as_list(p.get('items')) %}
+<section class="wh-m wh-input wh-timeline" data-type="timeline">
+  {{ preview_tag(module, spec) }}
+  {% if items %}
+  <ol class="wh-timeline-list">
+    {% for item in items %}
+    <li class="wh-timeline-item">
+      <span class="wh-dot wh-dot-{{ status_tone(item.get('status')) }}"></span>
+      <span class="wh-timeline-text">{{ item.get('text') }}</span>
+      {% if item.get('due') %}<span class="wh-meta">{{ item.get('due') }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+  {% if mode == 'edit' %}
+  <div class="wh-grid-3">
+    {{ input_for('title') }}
+    {{ input_for('due_at') }}
+    {{ input_for('status') }}
+  </div>
+  {% else %}
+  <div class="wh-row">
+    <span class="wh-title">{{ value_of('title') or '未填写里程碑' }}</span>
+    {{ status_badge() }}
+    <span class="wh-meta">{{ value_of('due_at') or '未排期' }}</span>
+  </div>
+  {% endif %}
+  {{ private_note(module, spec) }}
+</section>

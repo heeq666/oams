@@ -31,7 +31,7 @@
 {% endmacro %}
 
 <div class="pagehead">
-  <h1>进度看板</h1>
+  <h1>部门进度看板</h1>
   <nav class="orgnav" aria-label="选择部门">
     {% for unit in org_units %}
       <a class="{% if unit.org_unit_id|string == selected_id %}on{% endif %}"
@@ -43,6 +43,27 @@
     {% endfor %}
   </nav>
 </div>
+
+{# Company metrics: the product funnel, not this department's work items. It is a
+   separate panel for that reason -- "已下单 29 款" and "未完成工作项 12" count
+   different things and must never share a row of cards. #}
+{% if company_metrics and company_metrics.available %}
+<h2 style="margin-top:0">公司指标{% if company_metrics.wave %} <span class="sub" style="display:inline;margin:0">{{ company_metrics.wave }}</span>{% endif %}</h2>
+<div class="grid">
+  {% for metric in company_metrics.metrics %}
+    <div class="metric">
+      <div class="n">{{ metric.formatted }}</div>
+      <div class="k">{{ metric.label }}{% if metric.key == 'funnel.roi' %} {{ metric.unit }}{% endif %}</div>
+    </div>
+  {% endfor %}
+</div>
+{% else %}
+<h2 style="margin-top:0">公司指标</h2>
+<div class="card">
+  <p class="empty" style="margin:0">{{ metrics_unavailable_prefix | default('指标暂不可用') }}：{{ company_metrics.reason if company_metrics else '指标服务未初始化' }}</p>
+  <p class="sub" style="margin:8px 0 0">这是外部商品数据中心的取数失败，与下面的部门数据无关。原始数据可查 <a href="/metrics/home.json">/metrics/home.json</a>。</p>
+</div>
+{% endif %}
 
 <div class="grid">
   <div class="metric"><div class="n">{{ board.summary.open_items }}</div><div class="k">未完成工作项</div></div>

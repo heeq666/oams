@@ -11,6 +11,7 @@
 {% if can_manage %}
 <h2>新建岗位</h2>
 <form method="post" action="/admin/positions" class="card" style="margin-bottom:24px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
   <div class="form-row">
     <div class="field">
       <label for="org_unit_id">所属组织</label>
