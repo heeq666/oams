@@ -1,0 +1,640 @@
+/* Workhub module styles -- the interface renderer's own layer.
+ *
+ * Scope: ONLY markup produced by app/workhub/render.py (roots at .wh-interface).
+ * Everything is namespaced wh-* so it can never fight the shell's global .card /
+ * table / input rules in base.html. No inline styles anywhere in the markup, so
+ * every value that varies (column count, bar width, status tone) is a class here.
+ *
+ * Visual language: shadcn/ui -- neutral greys, 8px radius, hairline borders,
+ * one accent, no shadows on surfaces, numbers in tabular figures.
+ */
+
+.wh-interface {
+  --wh-radius: 8px;
+  --wh-line: #e5e7eb;
+  --wh-line-strong: #d4d4d8;
+  --wh-bg: #ffffff;
+  --wh-bg-muted: #fafafa;
+  --wh-ink: #18181b;
+  --wh-muted: #71717a;
+  --wh-accent: #18181b;
+  --wh-blocked: #b91c1c;
+  --wh-decision: #b45309;
+  --wh-done: #15803d;
+  --wh-gap: 12px;
+  color: var(--wh-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.wh-interface-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--wh-ink);
+}
+
+.wh-interface-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wh-gap);
+}
+
+/* --- modules: one shared surface, then per-type refinements --- */
+
+.wh-m {
+  position: relative;
+  min-width: 0;
+}
+
+.wh-container,
+.wh-input,
+.wh-display {
+  background: var(--wh-bg);
+  border: 1px solid var(--wh-line);
+  border-radius: var(--wh-radius);
+  padding: 14px 16px;
+}
+
+.wh-container {
+  background: var(--wh-bg-muted);
+  padding: 12px;
+}
+
+.wh-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+.wh-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* --- gaps --- */
+.wh-gap-none { gap: 0; }
+.wh-gap-sm { gap: 8px; }
+.wh-gap-md { gap: 12px; }
+.wh-gap-lg { gap: 20px; }
+
+/* --- containers --- */
+.wh-columns,
+.wh-grid {
+  display: grid;
+  align-items: start;
+}
+
+.wh-columns-1 { grid-template-columns: minmax(0, 1fr); }
+.wh-columns-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wh-columns-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wh-columns-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.wh-columns-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.wh-columns-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+@media (max-width: 900px) {
+  .wh-columns-2,
+  .wh-columns-3,
+  .wh-columns-4,
+  .wh-columns-5,
+  .wh-columns-6 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.wh-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.wh-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wh-cell > .wh-m {
+  flex: 1;
+}
+
+/* tabs: a segmented strip, panels collapse so long pages stay readable */
+.wh-tabbar {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.wh-tab {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--wh-line);
+  background: var(--wh-bg);
+  color: var(--wh-muted);
+}
+
+.wh-tab.on {
+  background: var(--wh-accent);
+  border-color: var(--wh-accent);
+  color: #fff;
+}
+
+.wh-tabpanel {
+  border: 1px solid var(--wh-line);
+  border-radius: var(--wh-radius);
+  padding: 10px 12px;
+  background: var(--wh-bg);
+  margin-top: 8px;
+}
+
+.wh-tabpanel > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--wh-muted);
+  list-style: none;
+}
+
+.wh-tabpanel[open] > summary {
+  color: var(--wh-ink);
+  margin-bottom: 8px;
+}
+
+/* divider / spacer */
+.wh-divider {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.wh-divider-label {
+  display: block;
+  font-size: 12px;
+  color: var(--wh-muted);
+  margin-bottom: 6px;
+}
+
+.wh-hr {
+  border: 0;
+  border-top: 1px solid var(--wh-line);
+  margin: 0;
+}
+
+.wh-spacer {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.wh-spacer-sm { height: 8px; }
+.wh-spacer-md { height: 16px; }
+.wh-spacer-lg { height: 32px; }
+
+/* --- shared row / text primitives --- */
+.wh-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.wh-inline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.wh-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.wh-num {
+  margin-left: auto;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.wh-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--wh-ink);
+}
+
+.wh-evidence,
+.wh-meta {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--wh-muted);
+}
+
+.wh-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--wh-muted);
+}
+
+.wh-unit {
+  font-size: 12px;
+  color: var(--wh-muted);
+}
+
+.wh-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: #2563eb;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.wh-link:hover { text-decoration: underline; }
+
+/* --- form widgets (edit mode only) --- */
+.wh-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wh-field-label {
+  font-size: 12px;
+  color: var(--wh-muted);
+}
+
+.wh-field-value {
+  font-size: 13px;
+  color: var(--wh-ink);
+  overflow-wrap: anywhere;
+}
+
+.wh-field-static {
+  padding: 2px 0;
+}
+
+.wh-input {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--wh-ink);
+  background: var(--wh-bg);
+  border: 1px solid var(--wh-line-strong);
+  border-radius: 6px;
+}
+
+.wh-input:focus-visible {
+  outline: 2px solid var(--wh-accent);
+  outline-offset: 1px;
+}
+
+.wh-grid-2,
+.wh-grid-3 {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.wh-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wh-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+@media (max-width: 720px) {
+  .wh-grid-2,
+  .wh-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --- status --- */
+.wh-badge {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--wh-line);
+  color: var(--wh-muted);
+  background: var(--wh-bg-muted);
+  white-space: nowrap;
+}
+
+.wh-badge-progress { color: #1d4ed8; border-color: #bfdbfe; background: #eff6ff; }
+.wh-badge-done { color: var(--wh-done); border-color: #bbf7d0; background: #f0fdf4; }
+.wh-badge-blocked { color: var(--wh-blocked); border-color: #fecaca; background: #fef2f2; }
+.wh-badge-planned { color: var(--wh-muted); }
+.wh-badge-empty { color: var(--wh-muted); }
+
+/* progress bar: width comes from a p0..p100 class, never an inline style */
+.wh-bar {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--wh-line);
+  overflow: hidden;
+}
+
+.wh-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--wh-accent);
+  border-radius: 999px;
+}
+
+.wh-bar-p0 > span { width: 0; }
+.wh-bar-p10 > span { width: 10%; }
+.wh-bar-p20 > span { width: 20%; }
+.wh-bar-p30 > span { width: 30%; }
+.wh-bar-p40 > span { width: 40%; }
+.wh-bar-p50 > span { width: 50%; }
+.wh-bar-p60 > span { width: 60%; }
+.wh-bar-p70 > span { width: 70%; }
+.wh-bar-p80 > span { width: 80%; }
+.wh-bar-p90 > span { width: 90%; }
+.wh-bar-p100 > span { width: 100%; }
+
+/* --- table --- */
+.wh-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.wh-table th,
+.wh-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--wh-line);
+  vertical-align: top;
+}
+
+.wh-table th {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wh-muted);
+  background: var(--wh-bg-muted);
+}
+
+.wh-table tr:last-child td { border-bottom: 0; }
+
+/* the module wrapper scrolls sideways rather than shoving the page wide */
+.wh-table-module {
+  overflow-x: auto;
+}
+
+/* --- timeline --- */
+.wh-timeline-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0 0 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wh-timeline-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.wh-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wh-line-strong);
+  flex: 0 0 auto;
+}
+
+.wh-dot-done { background: var(--wh-done); }
+.wh-dot-blocked { background: var(--wh-blocked); }
+.wh-dot-progress { background: #2563eb; }
+.wh-dot-planned { background: var(--wh-line-strong); }
+
+.wh-timeline-text { flex: 1; }
+
+/* --- display modules --- */
+.wh-metric-card,
+.wh-metric-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wh-metric-label {
+  font-size: 12px;
+  color: var(--wh-muted);
+}
+
+.wh-metric-value {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.wh-metric-unit {
+  font-size: 12px;
+  color: var(--wh-muted);
+}
+
+.wh-span-1 { grid-column: span 1; }
+.wh-span-2 { grid-column: span 2; }
+.wh-span-3 { grid-column: span 3; }
+.wh-span-4 { grid-column: span 4; }
+
+.wh-metric-grid {
+  display: grid;
+  align-items: start;
+}
+
+.wh-flow-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wh-arrow {
+  color: var(--wh-muted);
+  font-size: 13px;
+}
+
+.wh-stage {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--wh-line);
+  border-radius: 999px;
+  background: var(--wh-bg);
+}
+
+.wh-stage-label {
+  font-size: 12px;
+  color: var(--wh-muted);
+}
+
+.wh-stage-value {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.wh-status-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.wh-status-row:last-child { margin-bottom: 0; }
+
+.wh-status-label { color: var(--wh-muted); }
+
+.wh-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #f4f4f5;
+  overflow: hidden;
+}
+
+.wh-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--wh-line-strong);
+}
+
+.wh-fill-done { background: var(--wh-done); }
+.wh-fill-blocked { background: var(--wh-blocked); }
+.wh-fill-in_progress { background: #2563eb; }
+.wh-fill-planned { background: var(--wh-line-strong); }
+
+/* an aggregate key with no standard mapping still gets a neutral bar */
+.wh-fill-plain { background: var(--wh-line-strong); }
+
+.wh-status-value {
+  text-align: right;
+  font-weight: 600;
+}
+
+.wh-rank-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.wh-rank-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wh-rank-rows > li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.wh-rank-no {
+  width: 18px;
+  color: var(--wh-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.wh-rank-label { flex: 1; }
+
+.wh-rank-value { font-weight: 600; }
+
+.wh-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wh-feed > li {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--wh-line);
+}
+
+.wh-feed > li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.wh-feed-when,
+.wh-feed-who {
+  color: var(--wh-muted);
+  font-size: 12px;
+}
+
+.wh-feed-what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.wh-note-block {
+  background: var(--wh-bg-muted);
+}
+
+.wh-note-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--wh-ink);
+  white-space: pre-wrap;
+}
+
+/* --- preview tags (review viewpoint only) --- */
+.wh-tag {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 0 var(--wh-radius) 0 var(--wh-radius);
+  border-left: 1px solid var(--wh-line);
+  border-bottom: 1px solid var(--wh-line);
+}
+
+.wh-tag-on {
+  background: #f0fdf4;
+  color: var(--wh-done);
+}
+
+.wh-tag-off {
+  background: #fef2f2;
+  color: var(--wh-blocked);
+}
+
+/* Preview mode is a review artefact: the tag needs room, so give every block a
+ * little top padding and a dashed outline that says "this is not live". */
+.wh-interface-preview .wh-container,
+.wh-interface-preview .wh-input,
+.wh-interface-preview .wh-display {
+  padding-top: 18px;
+  outline: 1px dashed var(--wh-line-strong);
+  outline-offset: -1px;
+}
+
+/* Readonly is the manager view: no widgets at all, so no widget affordances. */
+.wh-interface-readonly .wh-input-role { display: none; }
+
+@media print {
+  .wh-container { background: none; }
+  .wh-tag { display: none; }
+}

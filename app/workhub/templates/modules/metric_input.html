@@ -1,0 +1,19 @@
+{#- Input: one number with a unit, feeding a department metric. -#}
+{% set p = params_of(module) %}
+{% set unit = p.get('unit') or '' %}
+<section class="wh-m wh-input wh-metric-input" data-type="metric_input">
+  {{ preview_tag(module, spec) }}
+  {% if mode == 'edit' %}
+  {{ input_for('title') }}
+  <div class="wh-inline">
+    {{ input_for('metric_value') }}
+    {% if unit %}<span class="wh-unit">{{ unit }}</span>{% endif %}
+  </div>
+  {% else %}
+  <div class="wh-row">
+    <span class="wh-title">{{ value_of('title') or '数值录入' }}</span>
+    <span class="wh-num">{{ format_number(value_of('metric_value'), unit) }}</span>
+  </div>
+  {% endif %}
+  {{ private_note(module, spec) }}
+</section>

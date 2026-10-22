@@ -1,0 +1,1 @@
+../../app/workhub/migrations/0005_department_interfaces.sql

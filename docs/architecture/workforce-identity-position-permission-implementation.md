@@ -1,6 +1,6 @@
 # 身份、岗位与权限底座：首期实现契约
 
-状态：首版服务代码与数据库迁移已实现，尚未部署到服务器或连接真实数据库。企业微信接入仍未开始。迁移只适用于 Company Workhub 专用 PostgreSQL 数据库。
+状态：首版服务代码与数据库迁移已实现，尚未部署到服务器或连接真实数据库。独立账号中心接入仍未开始。迁移只适用于 Company Workhub 专用 PostgreSQL 数据库。
 
 ## 1. 已实现的代码
 
@@ -9,15 +9,15 @@
 - `app/workhub/cli.py`：迁移、一次性首管理员引导、受控运维令牌签发和 API 服务命令。SQL 迁移作为 Python 包数据随发布包分发。
 - `db/migrations/0001_workforce_identity_position_permission.sql`：专用 Workhub schema 的首个迁移。
 
-首管理员从可信运维 shell 建立，OAuth 未接入前不允许伪造企业微信登录。当前管理 API 仅通过 `scope_type = 'all'` 授权；`org_unit`、`selected_positions` 等范围尚未接入请求级行过滤，不能把这些策略当成已经生效。
+首管理员从可信运维 shell 建立，账号中心未接入前不允许伪造外部账号登录。当前管理 API 仅通过 `scope_type = 'all'` 授权；工作项/看板/汇报路径已按有效任职做范围过滤，其他管理资源仍不能向普通成员开放。
 
 ## 2. 数据模型
 
 迁移 `db/migrations/0001_workforce_identity_position_permission.sql` 建立 `workhub` schema，包含：
 
 - `workforce_members`：内部稳定员工 ID、雇佣状态和会话版本号。离职时停用并递增 `token_version`，不删除员工。
-- `member_external_identities`：外部登录主体映射，唯一键为提供方、租户和主体 ID。企业微信 `userid` 应连同 `corp_id` 保存为 `tenant_id + subject_id`；只允许一个有效映射自然键，解绑采用撤销标记并保留历史。
-- `org_units` / `org_unit_external_refs`：内部组织目录及企微部门映射。外部同步仅提供建议数据，不据此授予业务权限。
+- `member_external_identities`：外部登录主体映射，唯一键为账号中心提供方、租户和主体 ID；只允许一个有效映射自然键，解绑采用撤销标记并保留历史。
+- `org_units` / `org_unit_external_refs`：内部组织目录及账号中心组织映射。外部同步仅提供建议数据，不据此授予业务权限。
 - `positions`：稳定岗位身份，组织变化或换人不改变岗位 ID。
 - `position_assignments`：成员与岗位的有始有终任职；代理必须有截止时间。数据库排斥约束禁止同一成员对同一岗位存在重叠有效任期。
 - `position_config_versions`：岗位职责/工作流 JSON 配置的版本记录。有效窗口不可重叠；服务层必须禁止更新已审批或已生效版本，变更通过插入下一版本完成。
@@ -48,7 +48,7 @@
 
 ## 5. 本迁移的边界
 
-当前 DDL 建立身份与权限底座；CLI 可在专用数据库中引导第一个管理员，但不创建真实员工或企业微信应用。它不包含招聘工作项表、OAuth 回调、审批 UI、RLS 策略或商品中心 API 客户端。商品中心仍通过独立只读 API 接入，不复用其数据库账号或表。
+当前 DDL 建立身份与权限底座；CLI 可在专用数据库中引导第一个管理员，但不创建真实员工或账号中心应用。它不包含招聘工作项表、账号中心回调适配层、审批 UI、RLS 策略或商品中心 API 客户端。商品中心仍通过独立只读 API 接入，不复用其数据库账号或表。
 
 部署前需在专用数据库验证迁移，并按服务运行账号拆分 schema 所有者和运行时权限；运行时账号不应有 DDL、删除历史记录或绕过审计的权限。数据库备份、恢复演练、内网端口和 TLS/代理策略属于 Windows 服务器部署阶段。
 

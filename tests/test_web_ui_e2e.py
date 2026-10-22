@@ -20,19 +20,22 @@ no audit grant -- is refused the audit page rather than shown a thinner version
 of it.
 """
 import http.cookiejar
+import hashlib
+import hmac
 import json
 import os
 import re
-import socket
-import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 
+import pytest
+
 ROOT = str(__import__("pathlib").Path(__file__).resolve().parents[1])
-PORT = 8128
-BASE = f"http://127.0.0.1:{PORT}"
+# The conftest fixture serves the app on a free port and points WORKHUB_BASE at
+# it; BASE is rebound per test inside _script().
+BASE = os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000")
 results = []
 
 
@@ -100,33 +103,48 @@ def call(path, method="GET", body=None, form=None):
         return exc.code, exc.read().decode(), dict(exc.headers)
 
 
-sys.path.insert(0, ROOT + "/app")
-os.environ.setdefault("WORKHUB_DATABASE_URL", os.environ["WORKHUB_DATABASE_URL"])
-from workhub.security import issue_session  # noqa: E402
-import psycopg  # noqa: E402
-from psycopg.rows import dict_row  # noqa: E402
+def page_token(path, field="csrf"):
+    """The form token a page hands out; admin POSTs are refused without it."""
 
-import urllib.parse  # noqa: E402
+    code, body, _ = call(path)
+    assert code == 200, (path, code)
+    found = re.search('name="' + field + '" value="([^"]+)"', body)
+    assert found, f"no {field} on {path}"
+    return found.group(1)
 
-with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-    people = {row["employee_code"]: row["member_id"]
-              for row in conn.execute("SELECT employee_code, member_id FROM workhub.workforce_members").fetchall()}
+def session_form_token(purpose="workhub:form:v1"):
+    """The form token for whatever account the opener is signed in as.
 
-proc = subprocess.Popen(
-    [sys.executable, "-m", "uvicorn", "workhub.api:app", "--host", "127.0.0.1", "--port", str(PORT)],
-    cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-try:
-    ready = False
-    for _ in range(120):
-        try:
-            with socket.create_connection(("127.0.0.1", PORT), timeout=1):
-                ready = True
-                break
-        except OSError:
-            if proc.poll() is not None:
-                break
-            time.sleep(0.25)
-    check("service ready", ready)
+    An account without the manage grant never sees the form, so the token cannot
+    be read off a page -- yet a request carrying a *valid* token is exactly what
+    proves the refusal comes from the grant and not from a missing field.
+    """
+
+    jar = next(h.cookiejar for h in opener.handlers if hasattr(h, "cookiejar"))
+    cookie = next((c for c in jar if c.name == "workhub_session"), None)
+    assert cookie is not None and cookie.value, (
+        "the opener is not signed in, so no form token can be derived; "
+        f"cookies={[c.name for c in jar]}"
+    )
+    return hmac.new(cookie.value.encode(), purpose.encode(), hashlib.sha256).hexdigest()
+
+pytestmark = pytest.mark.db  # needs a live PostgreSQL and a served app
+
+
+def _script(base: str) -> None:
+    """Body of the original standalone script, against a served seed-hr database."""
+
+    global BASE, admin_token, opener
+    BASE = base
+    sys.path.insert(0, ROOT + "/app")
+    from workhub.security import issue_session  # noqa: E402
+    import psycopg  # noqa: E402
+    from psycopg.rows import dict_row  # noqa: E402
+
+    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+        people = {row["employee_code"]: row["member_id"]
+                  for row in conn.execute("SELECT employee_code, member_id FROM workhub.workforce_members").fetchall()}
+
 
     code, body, headers = call("/board")
     check("board without cookie redirects to login",
@@ -167,12 +185,14 @@ try:
         real_pos = conn.execute("SELECT position_id FROM workhub.positions WHERE org_unit_id = %s LIMIT 1",
                                 (real_org,)).fetchone()["position_id"]
     code, body, headers = call("/admin/work-items", method="POST", form={
+        "csrf": page_token("/admin/work-items"),
         "position_id": real_pos, "title": "界面创建的测试项", "kind": "routine", "status": "in_progress",
         "blocked_reason": "", "needs_decision": ""})
     check("work item created through the page", code == 303, str(code))
     code, body, _ = call("/admin/work-items")
     check("created item shows in the list", "界面创建的测试项" in body, str(code))
     code, body, headers = call("/admin/work-items", method="POST", form={
+        "csrf": page_token("/admin/work-items"),
         "position_id": real_pos, "title": "缺原因的阻塞项", "status": "blocked", "blocked_reason": ""})
     check("page refuses a blocked item without a reason",
           code in (303, 422) and ("blocked" in (hdr(headers, "Location") or "") or code == 422),
@@ -291,17 +311,18 @@ try:
     check("with no zone configured the plan refuses to invent a floor",
           "还没有任何部门被画到平面图上" in body and 'class="zone' not in body, "")
 
+    space_token = page_token("/admin/spaces")
     code, _, headers = call("/admin/spaces", method="POST", form={
-        "kind": "zone", "org_unit_id": real_org, "x": "40", "y": "40",
+        "csrf": space_token, "kind": "zone", "org_unit_id": real_org, "x": "40", "y": "40",
         "w": "420", "h": "260", "label": ""})
     check("a zone can be configured from the page", code == 303, str(code))
     code, _, headers = call("/admin/spaces", method="POST", form={
-        "kind": "zone", "org_unit_id": real_org, "x": "900", "y": "900",
+        "csrf": space_token, "kind": "zone", "org_unit_id": real_org, "x": "900", "y": "900",
         "w": "420", "h": "260", "label": ""})
     check("a zone off the canvas is refused", code == 303 and "geometry" in (hdr(headers, "Location") or ""),
           f"{code} {hdr(headers, 'Location')}")
     code, _, headers = call("/admin/spaces", method="POST", form={
-        "kind": "desk", "org_unit_id": real_org, "position_id": real_pos,
+        "csrf": space_token, "kind": "desk", "org_unit_id": real_org, "position_id": real_pos,
         "x": "60", "y": "60", "w": "160", "h": "120", "label": ""})
     check("a desk can be configured for a position", code == 303, str(code))
 
@@ -367,19 +388,24 @@ try:
     check("specialist sees the board", code == 200 and "进度看板" in body, str(code))
     code, body, _ = call("/admin/audit")
     check("specialist is refused the audit page", code == 403 and "没有权限" in body, str(code))
+    # A well-formed form with the specialist's own token: the refusal has to come
+    # from the missing grant, not from a validation error about a missing field.
     code, body, _ = call("/admin/positions", method="POST", form={
+        "csrf": session_form_token("workhub:position-form:v1"),
         "position_code": "HACK", "title": "hack", "org_unit_id": real_org})
     check("specialist cannot create a position", code == 403 and "没有权限" in body, str(code))
     code, body, _ = call("/admin/spaces")
     check("specialist can look at the floor plan setup", code == 200 and "办公室布置" in body, str(code))
     code, body, _ = call("/admin/spaces", method="POST", form={
+        "csrf": session_form_token("workhub:space-form:v1"),
         "kind": "zone", "org_unit_id": real_org, "x": "10", "y": "10", "w": "100", "h": "100"})
     check("specialist cannot reconfigure the floor plan", code == 403 and "没有权限" in body, str(code))
     opener = global_opener
 
     # Removing the zone must empty the plan, not leave a stale rectangle behind.
     space_id = api_json("/v1/office")["units"][0]["zone"]["space_id"]
-    code, _, _ = call(f"/admin/spaces/{space_id}/remove", method="POST", form={})
+    code, _, _ = call(f"/admin/spaces/{space_id}/remove", method="POST",
+                      form={"csrf": page_token("/admin/spaces")})
     check("a zone can be removed from the plan", code == 303, str(code))
     code, emptied, _ = call("/office")
     check("an emptied plan says so instead of guessing a position",
@@ -393,8 +419,11 @@ try:
           code == 302 and "/login" in hdr(headers, "Location") or "", str(code))
 
     failed = [r for r in results if not r[1]]
-    print(f"\n{len(results) - len(failed)}/{len(results)} passed")
-    sys.exit(1 if failed else 0)
-finally:
-    proc.terminate()
-    proc.wait(timeout=10)
+    assert not failed, f"{len(results) - len(failed)}/{len(results)} checks passed; failed: {failed}"
+
+
+def test_web_ui_e2e(hr_site) -> None:
+    """Run the original standalone script as a pytest test."""
+
+    results.clear()
+    _script(hr_site["base"])

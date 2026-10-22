@@ -1,0 +1,21 @@
+{#- Display: ranked rows for one metric, highest first. -#}
+{% set p = params_of(module) %}
+{% set key = p.get('metric_key') or '' %}
+{% set rows = rank_rows(key)[:as_int(p.get('limit'), 5, low=1, high=20)] %}
+<section class="wh-m wh-display wh-rank-list" data-type="rank_list">
+  {{ preview_tag(module, spec) }}
+  <h4 class="wh-rank-title">{{ metric_name(key) }} 排行</h4>
+  {% if rows %}
+  <ol class="wh-rank-rows">
+    {% for row in rows %}
+    <li>
+      <span class="wh-rank-no">{{ loop.index }}</span>
+      <span class="wh-rank-label">{{ row.label }}</span>
+      <span class="wh-rank-value">{{ row.display }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="wh-empty">暂无排行数据。</p>
+  {% endif %}
+</section>

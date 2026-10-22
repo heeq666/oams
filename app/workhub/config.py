@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # plain http and a Secure cookie would simply never be sent back.
     web_session_cookie: str = "workhub_session"
 
+    # Which product wave the company home page reports on. Unset (the normal
+    # case) means "the data centre's first wave": a hard-coded wave would go
+    # stale the moment the season rolls over, and reporting on every wave at once
+    # would mix a live season with last year's leftovers.
+    default_wave: str | None = None
+
     model_config = SettingsConfigDict(env_prefix="WORKHUB_", env_file=".env", extra="ignore")
 
 

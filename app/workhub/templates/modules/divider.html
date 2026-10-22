@@ -1,0 +1,8 @@
+{#- Container: a horizontal rule with an optional label. -#}
+{% set p = params_of(module) %}
+{% set label = p.get('label') %}
+<div class="wh-m wh-container wh-divider" data-type="divider">
+  {{ preview_tag(module, spec) }}
+  {% if label %}<span class="wh-divider-label">{{ label }}</span>{% endif %}
+  <hr class="wh-hr">
+</div>

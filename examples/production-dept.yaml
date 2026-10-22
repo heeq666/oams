@@ -1,0 +1,178 @@
+# 生产部 · 插件示例（竖切用的第一个真实插件）
+# 用法：
+#   workhub plugin check examples/production-dept.yaml
+#   workhub plugin preview examples/production-dept.yaml
+#
+# 三个容易踩的点，这个示例已经踩过了：
+#   1. source_fields 写的是**本插件 fields[].key**，不是标准字段名。
+#   2. 必须有字段 map_to 到 title / status / evidence 三件套，否则公司汇总读不出一行。
+#   3. 容器最多两层：columns(1) > card(2) > 叶子。grid 套在 card 里就是第三层，会被拒。
+schema_version: "0.2"
+interface_id: production-sampling
+name: 生产部打样进度
+org_unit_code: PRODUCTION
+position_codes:
+  - PRODUCTION_LEAD
+
+capabilities:
+  - entries:write
+  - entries:read:dept
+  - aggregate:read:dept
+  - entries:link:work_item
+
+modules:
+  - key: board
+    type: columns
+    order: 1
+    params:
+      columns: 2
+      gap: md
+    children:
+      - key: left
+        type: card
+        order: 1
+        params:
+          title: 本周打样
+        children:
+          - key: rows
+            type: progress_row
+            order: 1
+            module_version: "^1.0"
+            source_fields: [style_no, stage, percent_done, remark, sample_sheet]
+            aggregatable: true
+          - key: blockers
+            type: blocker_list
+            order: 2
+            module_version: "^1.0"
+            source_fields: [style_no, blocker, decision_owner]
+            aggregatable: true
+      - key: right
+        type: card
+        order: 2
+        params:
+          title: 汇总
+        children:
+          - key: summary
+            type: metric_grid
+            order: 1
+            module_version: "^1.0"
+            params:
+              columns: 2
+              metric_keys:
+                - funnel.sample_done
+                - funnel.sample_open
+          - key: flow
+            type: flow_strip
+            order: 2
+            module_version: "^1.0"
+            params:
+              metrics:
+                - funnel.sample_done
+                - funnel.sample_open
+                - funnel.ordered
+              labels:
+                - 已出样
+                - 打样未完成
+                - 已下单
+          - key: private
+            type: note_block
+            order: 3
+            module_version: "^1.0"
+            params:
+              text: 本区仅本部门可见
+
+fields:
+  - key: style_no
+    label: 款号
+    type: text
+    required: true
+    map_to: title
+    aggregatable: true
+    example: NBCK26151
+  - key: style_ref
+    label: 商品中心款号
+    type: text
+    required: false
+    map_to: style_code
+    aggregatable: true
+    example: NBCK26151
+  - key: stage
+    label: 当前阶段
+    type: enum
+    required: true
+    map_to: status
+    aggregatable: true
+    example: 打样中
+    options: [待排产, 打样中, 等面料, 已完成]
+  - key: percent_done
+    label: 完成度
+    type: percent
+    required: false
+    map_to: progress_value
+    aggregatable: true
+    example: "60"
+  - key: blocker
+    label: 卡在哪
+    type: text
+    required: false
+    map_to: blocked_reason
+    aggregatable: true
+    example: 等面料到仓
+  - key: decision_owner
+    label: 需要谁决定
+    type: text
+    required: false
+    map_to: needs_decision
+    aggregatable: true
+    example: 是否换面料
+  - key: remark
+    label: 备注
+    type: text
+    required: false
+    map_to: note
+    aggregatable: true
+    example: 客户要求提前三天
+  - key: sample_sheet
+    label: 打样单号
+    type: text
+    required: true
+    map_to: evidence
+    aggregatable: true
+    example: SY-2410
+  - key: fabric_note
+    label: 面料备注（部门私有）
+    type: text
+    required: false
+    map_to: display_only
+    aggregatable: false
+    example: 待补货
+
+status_map:
+  待排产: planned
+  打样中: in_progress
+  等面料: blocked
+  已完成: done
+
+metrics:
+  - metric_key: funnel.sample_done
+    mode: display
+  - metric_key: funnel.sample_open
+    mode: display
+  - metric_key: funnel.ordered
+    mode: display
+  - metric_key: dept.PRODUCTION.blocked_count
+    mode: emit
+    agg: count
+    from_field: stage
+    where_status: blocked
+
+rules:
+  evidence_required: true
+  blocked_requires_reason: true
+
+meta:
+  author_position_code: PRODUCTION_LEAD
+  version: 1
+  visibility: department
+  review:
+    status: draft

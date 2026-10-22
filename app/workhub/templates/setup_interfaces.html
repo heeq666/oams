@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}界面制作 · Workhub{% endblock %}
+{% block content %}
+<h1>界面制作</h1>
+<p class="sub">把 AI 按公司规则产出的「界面描述」贴进来。底座会先校验映射和安全性，通过后才会启用；不通过会直接告诉你要改哪里。</p>
+
+{% if saved %}<div class="flash">界面已启用。部门负责人现在可以打开填写。</div>{% endif %}
+{% if error == 'json' %}<div class="flash error">描述不是合法的 JSON，请检查括号和引号。</div>
+{% elif error %}<div class="flash error">描述未通过校验：{{ error }}</div>{% endif %}
+
+<section class="card">
+  <h2 style="margin-top:0">启用一个部门界面</h2>
+  <form method="post" action="/setup/interfaces">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="form-row">
+      <div class="field"><label for="org_unit_id">所属部门</label>
+        <select id="org_unit_id" name="org_unit_id" required>
+          {% for u in org_units %}<option value="{{ u.org_unit_id }}">{{ u.name }}（{{ u.org_code }}）</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label for="slug">界面标识</label><input id="slug" name="slug" required maxlength="80" placeholder="如 design-sampling"></div>
+      <div class="field"><label for="name">界面名称</label><input id="name" name="name" required maxlength="200" placeholder="如 设计部打样进度"></div>
+      <div class="field"><label for="position_id">填写岗位（可留空）</label>
+        <select id="position_id" name="position_id">
+          <option value="">（不限制）</option>
+          {% for p in positions %}<option value="{{ p.position_id }}">{{ p.org_name }} · {{ p.title }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="field"><label for="descriptor_text">界面描述（JSON）</label>
+      <textarea id="descriptor_text" name="descriptor_text" rows="14" required placeholder='{"schema_version":"0.1","interface_id":"design-sampling","name":"设计部打样进度","org_unit_code":"DESIGN","position_codes":["DESIGN_LEAD"],"modules":[...],"fields":[...],"status_map":{...},"rules":{},"meta":{...}}'></textarea>
+    </div>
+    <button type="submit">校验并启用</button>
+  </form>
+  <p class="sub" style="margin-bottom:0">规则见 <a href="/static">docs/architecture/interface-rules-and-modules.md</a>；没有映射到标准字段的描述会被拒绝。</p>
+</section>
+
+<h2>已建立的界面</h2>
+{% if existing %}
+<table>
+  <thead><tr><th>名称</th><th>部门</th><th>状态</th><th>可见范围</th><th>版本</th><th></th></tr></thead>
+  <tbody>
+  {% for i in existing %}
+    <tr>
+      <td>{{ i.name }}<div class="meta mono">{{ i.slug }}</div></td>
+      <td>{{ i.org_name }}</td>
+      <td>{{ i.status }}</td>
+      <td>{{ '公共模板' if i.visibility == 'public' else '仅本部门' }}</td>
+      <td>v{{ i.version_no }}</td>
+      <td><a href="/interfaces/{{ i.interface_id }}">打开 →</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty">还没有建立任何界面。</p>{% endif %}
+{% endblock %}

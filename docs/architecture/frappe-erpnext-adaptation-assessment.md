@@ -54,7 +54,7 @@ Frappe HR + ERPNext 在 MariaDB 上能安装，Employee Transfer 的上游测试
 | 部门/角色访问控制 | Frappe 有角色权限、User Permissions 和文档级访问限制 | 可复用权限框架；岗位范围与“员工任职岗位”的授权联动仍需实现 |
 | 部门工作任务 | ERPNext Task 支持状态、进度、模板、依赖、负责人/多人分配和 Owner Department | 适合作为通用任务试点；公司级跨部门看板的组织口径需配置验证 |
 | REST API | Frappe 自动提供 DocType REST API 与自定义 RPC | 可用于外部系统集成；商品中心只读适配仍需编写并验证 |
-| 企业微信身份 | 本轮查到的官方资料未证明能直接完成企业微信 OAuth 登录和身份映射 | 需单独验证或编写认证适配层 |
+| 独立账号中心身份 | Frappe 未提供与后续账号中心的既定集成 | 需按账号中心契约单独编写认证适配层 |
 | 稳定岗位 ID、多人兼岗、代理到期、岗位交接、职责配置版本 | 未找到可直接满足的标准能力 | 预计需要自定义 DocType / 应用，这是 Workhub 的核心差异层 |
 
 ## 目标服务器适配
@@ -75,7 +75,7 @@ Frappe 官方安装说明支持 Debian/Ubuntu，Windows 使用者可通过 WSL�
 - 行级 User Permission 的服务端过滤与 REST API 越权拒绝。
 - 多人兼岗、限期代理/到期回收、稳定岗位 ID 和岗位配置版本。
 - ERPNext Task 的负责人/多人分配、部门范围和跨部门 Project 汇总。
-- 企业微信 OAuth 身份映射、商品中心只读 API，以及目标 Windows 主机部署、备份/恢复和重启恢复。
+- 独立账号中心身份映射、商品中心只读 API，以及目标 Windows 主机部署、备份/恢复和重启恢复。
 
 ## 当前建议
 

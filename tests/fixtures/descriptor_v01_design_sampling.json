@@ -1,0 +1,135 @@
+{
+  "meta": {
+    "review": {
+      "status": "draft"
+    },
+    "version": 1,
+    "visibility": "department",
+    "author_position_code": "DESIGN_LEAD"
+  },
+  "name": "设计部打样进度",
+  "rules": {
+    "progress_range": [
+      0,
+      100
+    ],
+    "evidence_required": true
+  },
+  "fields": [
+    {
+      "key": "title",
+      "type": "text",
+      "label": "款号",
+      "map_to": "title",
+      "example": "AW24-001",
+      "required": true,
+      "aggregatable": true
+    },
+    {
+      "key": "sample_done",
+      "type": "number",
+      "label": "完成打样数",
+      "map_to": "progress_value",
+      "example": "12",
+      "required": true,
+      "aggregatable": true
+    },
+    {
+      "key": "evidence_ref",
+      "type": "text",
+      "label": "打样单号",
+      "map_to": "evidence",
+      "example": "SY-2410",
+      "required": true,
+      "aggregatable": true
+    },
+    {
+      "key": "state_word",
+      "type": "enum",
+      "label": "打样状态",
+      "map_to": "status",
+      "example": "打样中",
+      "options": [
+        "待打样",
+        "打样中",
+        "等面料",
+        "已完成"
+      ],
+      "required": true,
+      "aggregatable": true
+    },
+    {
+      "key": "fabric_note",
+      "type": "text",
+      "label": "面料备注",
+      "map_to": "display_only",
+      "example": "待补货",
+      "required": false,
+      "aggregatable": false
+    }
+  ],
+  "modules": [
+    {
+      "key": "item",
+      "type": "item_card",
+      "order": 1,
+      "title": "事项",
+      "aggregatable": true,
+      "source_fields": [
+        "title"
+      ]
+    },
+    {
+      "key": "progress",
+      "type": "progress_bar",
+      "order": 2,
+      "title": "打样进度",
+      "aggregatable": true,
+      "source_fields": [
+        "sample_done"
+      ]
+    },
+    {
+      "key": "evidence",
+      "type": "evidence_input",
+      "order": 3,
+      "title": "依据",
+      "aggregatable": true,
+      "source_fields": [
+        "evidence_ref"
+      ]
+    },
+    {
+      "key": "state",
+      "type": "metric_card",
+      "order": 4,
+      "title": "状态",
+      "aggregatable": true,
+      "source_fields": [
+        "state_word"
+      ]
+    },
+    {
+      "key": "private",
+      "type": "list_block",
+      "order": 5,
+      "title": "面料备注",
+      "aggregatable": false,
+      "source_fields": [
+        "fabric_note"
+      ]
+    }
+  ],
+  "status_map": {
+    "已完成": "done",
+    "待打样": "planned",
+    "打样中": "in_progress",
+    "等面料": "blocked"
+  },
+  "interface_id": "design-sampling",
+  "org_unit_code": "DESIGN",
+  "position_codes": [
+    "DESIGN_LEAD"
+  ],
+  "schema_version": "0.1"
+}

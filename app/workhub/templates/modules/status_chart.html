@@ -1,0 +1,15 @@
+{#- Display: status distribution as proportional bars (width classes, no inline styles). -#}
+{% set rows = status_counts() %}
+{% set total = rows | sum(attribute='value') %}
+<section class="wh-m wh-display wh-status-chart" data-type="status_chart">
+  {{ preview_tag(module, spec) }}
+  {% for row in rows %}
+  <div class="wh-status-row">
+    <span class="wh-status-label">{{ row.label }}</span>
+    <span class="wh-track">
+      <span class="wh-fill wh-fill-{{ row.standard or 'plain' }} wh-bar-{{ bucket(row.value, total) }}"></span>
+    </span>
+    <span class="wh-status-value">{{ format_number(row.value) }}</span>
+  </div>
+  {% endfor %}
+</section>

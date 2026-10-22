@@ -14,13 +14,14 @@ Exit code 0 means every assertion passed.
 """
 import json
 import os
-import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
+
+import pytest
 
 sys.path.insert(0, "app")
 os.environ.setdefault("WORKHUB_DATABASE_URL", "postgresql://postgres:change-me@localhost:55433/workhub_test")
@@ -136,7 +137,15 @@ def seed(conn) -> dict:
     return {"company": company, "dept": dept, "positions": positions, "members": members, "items": items}
 
 
-def main() -> None:
+pytestmark = pytest.mark.db  # needs a live PostgreSQL and a served app
+
+
+def _script(base: str, url: str) -> None:
+    """Run every assertion against a freshly migrated database served at *base*."""
+
+    global BASE, DATABASE_URL
+    BASE = base
+    DATABASE_URL = url
     boot = subprocess.run(
         [sys.executable, "-m", "workhub.cli", "bootstrap-admin", "--name", "example-user", "--employee-code", "9999",
          "--org-code", "example-co", "--org-name", "example-co"],
@@ -194,142 +203,121 @@ def main() -> None:
 
     token, _ = issue_session(admin_id)
 
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "workhub.api:app", "--host", "127.0.0.1", "--port", str(PORT)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        env={**os.environ, "PYTHONPATH": "app"},
-    )
-    try:
-        ready = False
-        for _ in range(80):
-            try:
-                with socket.create_connection(("127.0.0.1", PORT), timeout=1):
-                    ready = True
-                    break
-            except OSError:
-                if proc.poll() is not None:
-                    break
-                time.sleep(0.25)
-        check("service became ready", ready, "")
+    check("service became ready", True, base)
 
-        # --- writes -------------------------------------------------------
-        code, body = api("POST", "/v1/work-items", {
-            "position_id": fixtures["positions"]["HRMGR"], "title": "  ", "kind": "project"}, token)
-        check("blank title rejected", code == 422, str(code))
+    # --- writes -------------------------------------------------------
+    code, body = api("POST", "/v1/work-items", {
+        "position_id": fixtures["positions"]["HRMGR"], "title": "  ", "kind": "project"}, token)
+    check("blank title rejected", code == 422, str(code))
 
-        code, body = api("POST", "/v1/work-items", {
-            "position_id": fixtures["positions"]["HRMGR"], "title": "无原因阻塞", "status": "blocked"}, token)
-        check("blocked without reason rejected", code == 422, str(code))
+    code, body = api("POST", "/v1/work-items", {
+        "position_id": fixtures["positions"]["HRMGR"], "title": "无原因阻塞", "status": "blocked"}, token)
+    check("blocked without reason rejected", code == 422, str(code))
 
-        code, body = api("POST", "/v1/work-items", {
-            "position_id": str(uuid.uuid4()), "title": "孤儿工作项"}, token)
-        check("unknown position rejected", code == 404, str(code))
+    code, body = api("POST", "/v1/work-items", {
+        "position_id": str(uuid.uuid4()), "title": "孤儿工作项"}, token)
+    check("unknown position rejected", code == 404, str(code))
 
-        code, created = api("POST", "/v1/work-items", {
-            "position_id": fixtures["positions"]["HRMGR"], "title": "招聘渠道复盘",
-            "kind": "project", "status": "blocked", "blocked_reason": "缺渠道投放数据",
-            "needs_decision": True}, token)
-        check("create work item", code == 201 and created.get("org_unit_id") == str(fixtures["dept"]),
-              f"{code} derived={created.get('org_unit_id')} expected={fixtures['dept']}")
+    code, created = api("POST", "/v1/work-items", {
+        "position_id": fixtures["positions"]["HRMGR"], "title": "招聘渠道复盘",
+        "kind": "project", "status": "blocked", "blocked_reason": "缺渠道投放数据",
+        "needs_decision": True}, token)
+    check("create work item", code == 201 and created.get("org_unit_id") == str(fixtures["dept"]),
+          f"{code} derived={created.get('org_unit_id')} expected={fixtures['dept']}")
 
-        new_item = created["work_item_id"] if code == 201 else None
+    new_item = created["work_item_id"] if code == 201 else None
 
-        code, body = api("POST", f"/v1/work-items/{fixtures['items']['done']}/reports",
-                         {"submitted_via": "human", "evidence": "x"}, token)
-        check("report on closed item rejected", code == 409, str(code))
+    code, body = api("POST", f"/v1/work-items/{fixtures['items']['done']}/reports",
+                     {"submitted_via": "human", "evidence": "x"}, token)
+    check("report on closed item rejected", code == 409, str(code))
 
-        code, body = api("POST", f"/v1/work-items/{new_item}/reports",
-                         {"submitted_via": "human", "evidence": "   "}, token)
-        check("blank evidence rejected", code == 422, str(code))
+    code, body = api("POST", f"/v1/work-items/{new_item}/reports",
+                     {"submitted_via": "human", "evidence": "   "}, token)
+    check("blank evidence rejected", code == 422, str(code))
 
-        code, body = api("POST", f"/v1/work-items/{new_item}/reports",
-                         {"submitted_via": "agent", "progress_value": 120, "evidence": "x"}, token)
-        check("progress 120 rejected", code == 422, str(code))
+    code, body = api("POST", f"/v1/work-items/{new_item}/reports",
+                     {"submitted_via": "agent", "progress_value": 120, "evidence": "x"}, token)
+    check("progress 120 rejected", code == 422, str(code))
 
-        code, first = api("POST", f"/v1/work-items/{new_item}/reports",
-                          {"submitted_via": "human", "progress_value": 20, "note": "起步", "evidence": "会议记录"}, token)
-        check("submit report", code == 201 and isinstance(first, dict) and first.get("submitted_via") == "human", f"{code} {first if not isinstance(first, dict) else ''}")
+    code, first = api("POST", f"/v1/work-items/{new_item}/reports",
+                      {"submitted_via": "human", "progress_value": 20, "note": "起步", "evidence": "会议记录"}, token)
+    check("submit report", code == 201 and isinstance(first, dict) and first.get("submitted_via") == "human", f"{code} {first if not isinstance(first, dict) else ''}")
 
-        code, second = api("POST", f"/v1/work-items/{new_item}/reports",
-                           {"submitted_via": "agent", "progress_value": 50, "note": "AI 汇总", "evidence": "邮箱导出"}, token)
-        if not isinstance(second, dict):
-            check("submit agent report", False, f"{code} {str(second)[:400]}")
-            raise SystemExit(1)
-        check("submit agent report", code == 201 and second["submitted_via"] == "agent", str(code))
+    code, second = api("POST", f"/v1/work-items/{new_item}/reports",
+                       {"submitted_via": "agent", "progress_value": 50, "note": "AI 汇总", "evidence": "邮箱导出"}, token)
+    if not isinstance(second, dict):
+        check("submit agent report", False, f"{code} {str(second)[:400]}")
+        failed = [item for item in results if not item[1]]
+        assert not failed, f"{len(failed)}/{len(results)} checks failed: {failed}"
+    check("submit agent report", code == 201 and second["submitted_via"] == "agent", str(code))
 
-        code, board_before = api("GET", f"/v1/board/org-units/{fixtures['dept']}", token=token)
-        check("board responds", code == 200, str(code))
+    code, board_before = api("GET", f"/v1/board/org-units/{fixtures['dept']}", token=token)
+    check("board responds", code == 200, str(code))
 
-        # --- retraction ---------------------------------------------------
-        code, retracted = api("POST", f"/v1/reports/{second['report_id']}/retract", {"reason": "AI 填错了"}, token)
-        check("retract own report", code == 200 and retracted["status"] == "retracted", str(code))
+    # --- retraction ---------------------------------------------------
+    code, retracted = api("POST", f"/v1/reports/{second['report_id']}/retract", {"reason": "AI 填错了"}, token)
+    check("retract own report", code == 200 and retracted["status"] == "retracted", str(code))
 
-        code, body = api("POST", f"/v1/reports/{second['report_id']}/retract", {"reason": "again"}, token)
-        check("double retraction rejected", code == 409, str(code))
+    code, body = api("POST", f"/v1/reports/{second['report_id']}/retract", {"reason": "again"}, token)
+    check("double retraction rejected", code == 409, str(code))
 
-        # --- updates ------------------------------------------------------
-        # An item that was never blocked has no reason to inherit, so the API has to
-        # reject this instead of letting the database raise.
-        code, body = api("PATCH", f"/v1/work-items/{fixtures['items']['silent']}", {"status": "blocked"}, token)
-        check("patch to blocked without reason rejected", code == 422, str(code))
+    # --- updates ------------------------------------------------------
+    # An item that was never blocked has no reason to inherit, so the API has to
+    # reject this instead of letting the database raise.
+    code, body = api("PATCH", f"/v1/work-items/{fixtures['items']['silent']}", {"status": "blocked"}, token)
+    check("patch to blocked without reason rejected", code == 422, str(code))
 
-        code, body = api("PATCH", f"/v1/work-items/{fixtures['items']['silent']}",
-                         {"status": "blocked", "blocked_reason": "缺考勤数据"}, token)
-        check("patch to blocked with reason allowed", code == 200, str(code))
+    code, body = api("PATCH", f"/v1/work-items/{fixtures['items']['silent']}",
+                     {"status": "blocked", "blocked_reason": "缺考勤数据"}, token)
+    check("patch to blocked with reason allowed", code == 200, str(code))
 
-        code, body = api("PATCH", f"/v1/work-items/{fixtures['items']['silent']}",
-                         {"status": "in_progress", "blocked_reason": None}, token)
-        check("patch back to in_progress", code == 200, str(code))
+    code, body = api("PATCH", f"/v1/work-items/{fixtures['items']['silent']}",
+                     {"status": "in_progress", "blocked_reason": None}, token)
+    check("patch back to in_progress", code == 200, str(code))
 
-        # --- board --------------------------------------------------------
-        code, board = api("GET", f"/v1/board/org-units/{fixtures['dept']}", token=token)
-        summary = board["summary"]
-        check("board hides closed items",
-              all(card["work_item_id"] != fixtures["items"]["done"]
-                  for group in board["sections"]["by_position"] for card in group["items"]), "")
-        check("board counts open items", summary["open_items"] == 4, json.dumps(summary["open_items"]))
-        check("blocked surfaced first", len(board["sections"]["blocked"]) == 2, str(len(board["sections"]["blocked"])))
-        check("needs_decision section", len(board["sections"]["needs_decision"]) == 0,
-              str(len(board["sections"]["needs_decision"])))
-        # The blocked item and the routine item both exist but nobody filed anything.
-        check("silence counted", summary["never_reported"] == 2, str(summary["never_reported"]))
-        check("human/agent split", summary["latest_report_by_channel"] == {"human": 1, "agent": 1},
-              json.dumps(summary["latest_report_by_channel"]))
-        retracted_fallback = next(
-            card for group in board["sections"]["by_position"] for card in group["items"]
-            if card["work_item_id"] == new_item)
-        check("retraction falls back to previous report",
-              retracted_fallback["latest_report"]["report_id"] == first["report_id"],
-              str(retracted_fallback["latest_report"]["report_id"]))
-        check("responsibility shown as position, not member",
-              set(retracted_fallback["position"]) == {"position_id", "position_code", "title", "holder_count"},
-              str(list(retracted_fallback["position"])))
-        check("no_member_names_on_board",
-              "李经理" not in json.dumps(board, ensure_ascii=False) and "王专员" not in json.dumps(board, ensure_ascii=False),
-              "")
-        check("overdue detected", summary["overdue"] >= 1, str(summary["overdue"]))
+    # --- board --------------------------------------------------------
+    code, board = api("GET", f"/v1/board/org-units/{fixtures['dept']}", token=token)
+    summary = board["summary"]
+    check("board hides closed items",
+          all(card["work_item_id"] != fixtures["items"]["done"]
+              for group in board["sections"]["by_position"] for card in group["items"]), "")
+    check("board counts open items", summary["open_items"] == 4, json.dumps(summary["open_items"]))
+    check("blocked surfaced first", len(board["sections"]["blocked"]) == 2, str(len(board["sections"]["blocked"])))
+    check("needs_decision section", len(board["sections"]["needs_decision"]) == 0,
+          str(len(board["sections"]["needs_decision"])))
+    # The blocked item and the routine item both exist but nobody filed anything.
+    check("silence counted", summary["never_reported"] == 2, str(summary["never_reported"]))
+    check("human/agent split", summary["latest_report_by_channel"] == {"human": 1, "agent": 1},
+          json.dumps(summary["latest_report_by_channel"]))
+    retracted_fallback = next(
+        card for group in board["sections"]["by_position"] for card in group["items"]
+        if card["work_item_id"] == new_item)
+    check("retraction falls back to previous report",
+          retracted_fallback["latest_report"]["report_id"] == first["report_id"],
+          str(retracted_fallback["latest_report"]["report_id"]))
+    check("responsibility shown as position, not member",
+          set(retracted_fallback["position"]) == {"position_id", "position_code", "title", "holder_count"},
+          str(list(retracted_fallback["position"])))
+    check("no_member_names_on_board",
+          "李经理" not in json.dumps(board, ensure_ascii=False) and "王专员" not in json.dumps(board, ensure_ascii=False),
+          "")
+    check("overdue detected", summary["overdue"] >= 1, str(summary["overdue"]))
 
-        # --- auth ---------------------------------------------------------
-        code, body = api("GET", f"/v1/board/org-units/{fixtures['dept']}")
-        check("board requires session", code == 401, str(code))
+    # --- auth ---------------------------------------------------------
+    code, body = api("GET", f"/v1/board/org-units/{fixtures['dept']}")
+    check("board requires session", code == 401, str(code))
 
-        code, body = api("GET", f"/v1/work-items/{new_item}/reports", token=token)
-        check("report history visible", code == 200 and len(body) == 2 and body[0]["status"] == "retracted",
-              str(code) + " " + str(len(body) if code == 200 else body))
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+    code, body = api("GET", f"/v1/work-items/{new_item}/reports", token=token)
+    check("report history visible", code == 200 and len(body) == 2 and body[0]["status"] == "retracted",
+          str(code) + " " + str(len(body) if code == 200 else body))
 
     failed = [item for item in results if not item[1]]
     for label, passed, detail in results:
         print(f"{'PASS' if passed else 'FAIL'}  {label}" + (f"  <- {detail}" if detail else ""))
     print(f"\n{len(results) - len(failed)}/{len(results)} passed")
-    if failed:
-        sys.exit(1)
+    assert not failed, f"{len(failed)}/{len(results)} checks failed: {failed}"
 
 
-if __name__ == "__main__":
-    main()
+def test_board_and_reports_e2e(migrated_site) -> None:
+    results.clear()
+    _script(migrated_site["base"], migrated_site["url"])

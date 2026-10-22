@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}部门界面 · Workhub{% endblock %}
+{% block content %}
+<h1>部门界面</h1>
+<p class="sub">这些界面由各部门用 AI 按公司规则制作。每个界面只有本部门（或管理层）能填写，数据会自动汇进公司进度中心。</p>
+
+{% if saved %}<div class="flash">已提交。管理层在进度中心可以看到这次汇报。</div>{% endif %}
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+{% if interfaces %}
+<table>
+  <thead><tr><th>界面</th><th>部门</th><th>责任岗位</th><th>可见范围</th><th>版本</th><th>已提交</th><th></th></tr></thead>
+  <tbody>
+  {% for i in interfaces %}
+    <tr>
+      <td>{{ i.name }}<div class="meta mono">{{ i.slug }}</div></td>
+      <td>{{ i.org_name }}</td>
+      <td>{{ i.position_title or '—' }}</td>
+      <td>{{ '全公司公共模板' if i.visibility == 'public' else '仅本部门' }}</td>
+      <td>v{{ i.version_no }}</td>
+      <td>{{ i.entry_count }}</td>
+      <td><a href="/interfaces/{{ i.interface_id }}">打开填写 →</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">你所在的部门还没有启用任何界面。请让部门负责人用 AI 按公司规则制作一个，或由管理员在「界面制作」页导入描述。</p>
+{% endif %}
+{% endblock %}

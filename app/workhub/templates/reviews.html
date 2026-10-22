@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}页面审核 · Workhub{% endblock %}
+{% block content %}
+<h1>部门页面审核</h1>
+<p class="sub">部门做完页面后会提交到这里。通过后它成为该部门的正式页面，填写的正式数据进入公司汇总；退回时部门保留已经试填的内容。</p>
+
+{% if saved == 'approved' %}<div class="flash">已通过。该页面现在正式使用，数据进入公司汇总。</div>
+{% elif saved == 'rejected' %}<div class="flash">已退回，部门会看到退回原因。</div>{% endif %}
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+<h2>待审核 · {{ pending | length }}</h2>
+{% if pending %}
+{% for p in pending %}
+<section class="card" style="margin-bottom:12px">
+  <div class="row1">
+    <strong>{{ p.org_name }} · {{ p.name }}</strong>
+    <span class="badge vacant">待审核</span>
+    <span class="pos mono">{{ p.slug }} v{{ p.version_no }}</span>
+  </div>
+  <p class="meta">
+    提交人：{{ p.author or '—' }} · 提交时间：{{ p.updated_at | dt }}
+    {% if p.position_title %} · 填写岗位：{{ p.position_title }}{% endif %}
+    · 可见范围：{{ '公共模板' if p.visibility == 'public' else '仅本部门' }}
+  </p>
+  <p class="sub" style="margin:10px 0 6px">
+    <a href="/interfaces/{{ p.interface_id }}">预览与试填 →</a>
+  </p>
+  <div class="form-row" style="align-items:flex-end; gap:12px">
+    <form method="post" action="/reviews/{{ p.interface_id }}/approve" style="flex:1">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="field"><label for="note-a-{{ p.interface_id }}">通过备注（可留空）</label>
+        <input id="note-a-{{ p.interface_id }}" name="note" maxlength="500" style="width:100%"></div>
+      <button type="submit">通过并启用</button>
+    </form>
+    <form method="post" action="/reviews/{{ p.interface_id }}/reject" style="flex:1">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="field"><label for="note-r-{{ p.interface_id }}">退回原因（必填）</label>
+        <input id="note-r-{{ p.interface_id }}" name="note" required maxlength="500" style="width:100%"></div>
+      <button type="submit" class="link" style="color:var(--blocked)">退回部门</button>
+    </form>
+  </div>
+</section>
+{% endfor %}
+{% else %}
+<p class="empty">没有待审核的页面。</p>
+{% endif %}
+
+<h2>最近决定</h2>
+{% if decided %}
+<table>
+  <thead><tr><th>部门 / 页面</th><th>结果</th><th>审核人</th><th>备注</th><th>时间</th></tr></thead>
+  <tbody>
+  {% for d in decided %}
+    <tr>
+      <td>{{ d.org_name }} · {{ d.name }}</td>
+      <td>{% if d.status == 'active' %}已通过{% elif d.status == 'draft' %}已退回{% else %}{{ d.status }}{% endif %}</td>
+      <td>{{ d.reviewer or '—' }}</td>
+      <td>{{ d.review_note or '—' }}</td>
+      <td>{{ d.reviewed_at | dt }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">还没有审核记录。</p>
+{% endif %}
+{% endblock %}

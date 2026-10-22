@@ -10,6 +10,7 @@
 {% if can_manage %}
 <h2>新建工作项</h2>
 <form method="post" action="/admin/work-items" class="card" style="margin-bottom:24px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
   <div class="form-row">
     <div class="field">
       <label for="position_id">挂到岗位</label>

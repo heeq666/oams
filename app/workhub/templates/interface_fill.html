@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ interface.name }} · Workhub{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>{{ interface.name }}</h1>
+    <p class="sub">{{ interface.org_name }} · 版本 v{{ interface.version_no }} · {{ '全公司公共模板' if interface.visibility == 'public' else '仅本部门' }}</p>
+  </div>
+  <a class="btn" href="/interfaces">← 返回界面列表</a>
+</div>
+
+{% if saved %}<div class="flash">已提交。标准字段已进入公司进度中心；只有本部门可见的字段不会参与汇总。</div>{% endif %}
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+{% if latest %}
+<p class="meta">上次提交：{{ latest.reported_at | dt }}</p>
+{% else %}
+<p class="meta">这个界面还没有提交过。第一次填写会作为首条记录。</p>
+{% endif %}
+
+<form method="post" action="/interfaces/{{ interface.interface_id }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="card">
+    {{ rendered | safe }}
+  </div>
+  <p class="sub">提交后负责人要对内容负责；如果是 AI 帮你整理的文字，请先核对事实。</p>
+  <button type="submit">提交这次汇报</button>
+</form>
+{% endblock %}

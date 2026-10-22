@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}{{ unit.name }} · Workhub{% endblock %}
+{% block content %}
+{% if pages %}
+{# The department's own pages, as tabs. The department list lives in the shell. #}
+<nav class="page-tabs" aria-label="部门内页面">
+  {% for p in pages %}
+    <a href="/departments/{{ unit.org_unit_id }}/{{ p.interface_id }}"
+       class="page-tab{% if current and p.interface_id == current.interface_id %} on{% endif %}"
+       {% if current and p.interface_id == current.interface_id %}aria-current="page"{% endif %}>
+      {{ p.name }}
+      {% if p.status == 'pending' %}<span class="badge decision">审核中</span>
+      {% elif p.status != 'active' %}<span class="badge vacant">待提交</span>{% endif %}
+    </a>
+  {% endfor %}
+  <a class="page-tab add" href="/departments/{{ unit.org_unit_id }}/new">＋ 新页面</a>
+</nav>
+{% endif %}
+
+    {% if page and page.status != 'active' %}
+      <div class="flash">当前页面<b>{{ page_status_label }}</b>。这里填的内容只存在测试区，不会进入公司汇总。</div>
+    {% endif %}
+    {% if saved == 'withdrawn' %}<div class="flash">已撤回提交，页面回到待提交审核状态。试填内容都保留着。</div>
+    {% elif saved == 'review' %}<div class="flash">已提交审核。公司审核通过后，这个页面就会正式使用并进入公司汇总。</div>
+    {% elif saved %}<div class="flash">已保存到{{ '测试区' if draft_mode else '公司汇总' }}。</div>{% endif %}
+    {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+    {# The funnel this department feeds, same five stages as the company page and
+       the same numbers: a department reads its own contribution rather than
+       retyping it. Company-wide for now -- the data centre carries no department
+       dimension on a style, so filtering would be an invention. #}
+    {% if funnel_chain and funnel_chain.available %}
+    <div style="margin-bottom:14px">
+      <div class="sub" style="margin-bottom:8px">
+        公司产品漏斗{% if funnel_chain.wave %} · {{ funnel_chain.wave }}{% endif %}
+        <span>（全公司口径）</span>
+      </div>
+      <div class="flowstrip">
+        {% for stage in funnel_chain.stages %}
+          <span class="stage{{ ' terminal zero' if stage.count == 0 and loop.last else (' terminal' if loop.last else '') }}"
+                title="{{ stage.label }}">
+            {{ stage.label }}<span class="cnt">{{ stage.count }}</span></span>
+          {% if not loop.last %}<span class="arrow" aria-hidden="true">▸</span>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% elif funnel_chain %}
+    <div class="card" style="margin-bottom:14px">
+      <p class="empty" style="margin:0">公司产品漏斗暂不可用：{{ funnel_chain.reason }}</p>
+      <p class="sub" style="margin:8px 0 0">取数来自外部商品数据中心，与下面这个部门的数据无关。</p>
+    </div>
+    {% endif %}
+
+    {% if page %}
+      {% if page.status != 'active' %}
+      <div class="card" style="margin-bottom:12px">
+        <div class="row1">
+          <strong>{{ page.name }}</strong>
+          <span class="badge {% if page.status == 'pending' %}decision{% else %}vacant{% endif %}">{{ page_status_label }}</span>
+          <span class="pos">本部门可见 · 试填不进汇总</span>
+        </div>
+        {% if page.review_note %}
+          <p class="meta">公司审核意见：{{ page.review_note }}</p>
+        {% endif %}
+        {% if page.status == 'pending' %}
+          <p class="meta">当前版本 v{{ page.version_no }}。已在等公司审核；审核期间仍可继续试填。</p>
+          {% if not page.reviewed_at %}
+          <form method="post" action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/withdraw-review" style="margin-top:10px">
+            <input type="hidden" name="review_csrf" value="{{ review_csrf }}">
+            <button type="submit" class="link" style="color:var(--muted)">撤回提交</button>
+          </form>
+          {% endif %}
+        {% else %}
+          <p class="meta">当前版本 v{{ page.version_no }}。试填满意后提交公司审核，通过后正式启用并进入公司汇总。</p>
+          <form method="post" action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/submit-review" style="margin-top:10px">
+            <input type="hidden" name="review_csrf" value="{{ review_csrf }}">
+            <button type="submit">提交审核</button>
+          </form>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <form method="post" action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="card">{{ rendered | safe }}</div>
+        <p class="sub">提交后由填写的岗位负责；AI 帮你整理的文字请先核对事实。</p>
+        <button type="submit">{{ '保存试填' if page.status != 'active' else '提交汇报' }}</button>
+      </form>
+
+      {% if recent %}
+      <h2>最近{{ '试填' if page.status != 'active' else '汇报' }}记录</h2>
+      {# Every entry says whether it feeds the company number, and why if it does not. #}
+      <ul class="items">
+        {% for e in recent %}
+        <li class="{{ e.status or '' }}">
+          <div class="row1">
+            <strong>{{ e.title or '（未填事项）' }}</strong>
+            {% if e.status %}<span class="badge {% if e.status == 'blocked' %}blocked{% endif %}">{{ status_labels.get(e.status, e.status) }}</span>{% endif %}
+            <span class="badge {{ e.rollup_badge or '' }}">{{ e.rollup_label }}</span>
+            <span class="pos">{{ e.reported_at | dt }}</span>
+          </div>
+          {% if e.note %}<p class="note">{{ e.note }}</p>{% endif %}
+          {% if e.evidence %}<p class="evidence">依据：{{ e.evidence }}</p>{% endif %}
+          {% if e.rollup_blocker %}<p class="meta">{{ e.rollup_blocker }}</p>{% endif %}
+          {% if e.rollup_state != 'rolled' %}
+          {# The link form: the only thing that moves an entry into the company number. #}
+          <form method="post"
+                action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/entries/{{ e.entry_id }}/link"
+                class="field" style="margin-top:8px">
+            <input type="hidden" name="csrf" value="{{ link_csrf }}">
+            <label for="link-{{ e.entry_id }}">关联到工作项</label>
+            <select id="link-{{ e.entry_id }}" name="work_item_id">
+              <option value="">— 不关联 —</option>
+              {% for item in link_items %}
+              <option value="{{ item.work_item_id }}">{{ item.title }}（{{ item.status }}）</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="link">保存关联</button>
+            {% if not link_items %}
+            <span class="pos">本部门还没有未完结的工作项，先在下面建一个。</span>
+            {% endif %}
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      {# The department's own numbers, with the count of what is not in them. A
+         department that only sees a total cannot tell whether it did the work. #}
+      {% if rollup and rollup.available %}
+      <div class="card" style="margin-top:14px">
+        <div class="row1">
+          <strong>{{ unit.name }}的汇总</strong>
+          <span class="pos">{{ rollup_counts.rolled or 0 }} 条进汇总 / {{ rollup_counts.unlinked or 0 }} 条未关联 / {{ rollup_counts.draft or 0 }} 条草稿</span>
+        </div>
+        {% if rollup.metrics %}
+        <ul class="items">
+          {% for m in rollup.metrics %}
+          <li>
+            <div class="row1">
+              <strong>{{ m.label }}</strong>
+              <span class="metric"><span class="n">{{ m.formatted }}</span>
+                <span class="k">{{ m.entry_count }} 条{{ '·' + m.where_status if m.where_status else '' }}</span></span>
+            </div>
+            <p class="meta">
+              口径 {{ m.agg }} · 字段 {{ m.from_field or '—' }}
+              {% if m.available %}
+              · <a href="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/entries.json?metric_key={{ m.metric_key }}">看是哪几条</a>
+              {% else %}· {{ m.reason }}{% endif %}
+            </p>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty" style="margin:0">这个页面还没有声明指标。在 descriptor 的 metrics 里加一条 emit，这里就会出现数字。</p>
+        {% endif %}
+      </div>
+      {% elif rollup %}
+      <div class="card" style="margin-top:14px">
+        <p class="empty" style="margin:0">汇总暂不可用：{{ rollup.reason }}</p>
+      </div>
+      {% endif %}
+
+      {% if can_manage_work_items %}
+      {# Without a work item there is nothing to link to, so the department page
+         also carries the creation form -- otherwise the chain is uncompletable. #}
+      <div class="card" style="margin-top:14px">
+        <div class="row1">
+          <strong>新建工作项</strong>
+          <span class="pos">先有工作项，条目才能进公司汇总</span>
+        </div>
+        <form method="post" action="/admin/work-items" class="field">
+          <input type="hidden" name="csrf" value="{{ work_item_csrf }}">
+          <label for="new-wi-title">事项名称</label>
+          <input id="new-wi-title" name="title" maxlength="300" required
+                 placeholder="例如 AW24 针织外套打样">
+          <label for="new-wi-position">负责岗位</label>
+          <select id="new-wi-position" name="position_id">
+            {% for pos in link_positions %}
+            <option value="{{ pos.position_id }}">{{ pos.position_code }} · {{ pos.title }}</option>
+            {% endfor %}
+          </select>
+          <label for="new-wi-kind">类型</label>
+          <select id="new-wi-kind" name="kind">
+            <option value="project">project</option>
+            <option value="routine">routine</option>
+            <option value="adhoc">adhoc</option>
+          </select>
+          <button type="submit">新建</button>
+          {% if not link_positions %}<span class="pos">这个部门还没有岗位，先在 /admin/positions 建。</span>{% endif %}
+        </form>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="card">
+        <h2 style="margin-top:0">{{ unit.name }}</h2>
+        <p class="sub">这个部门还没有页面。用 AI 按公司规则做一个，再导入。</p>
+        <p><a class="btn" href="/departments/{{ unit.org_unit_id }}/new">＋ 新建页面</a></p>
+      </div>
+    {% endif %}
+{% endblock %}

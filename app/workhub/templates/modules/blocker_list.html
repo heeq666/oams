@@ -1,0 +1,20 @@
+{#- Input: the blocked items that need a decision, and who has to make it. -#}
+<section class="wh-m wh-input wh-blocker-list" data-type="blocker_list">
+  {{ preview_tag(module, spec) }}
+  {% if mode == 'edit' %}
+  {{ input_for('title') }}
+  {{ input_for('blocked_reason', textarea=True) }}
+  {{ input_for('needs_decision') }}
+  {{ input_for('status') }}
+  {% else %}
+  <div class="wh-row">
+    <span class="wh-title">{{ value_of('title') or '阻塞事项' }}</span>
+    {{ status_badge() }}
+  </div>
+  <p class="wh-note">{{ value_of('blocked_reason') or '当前没有阻塞。' }}</p>
+  {% if value_of('needs_decision') %}
+  <p class="wh-evidence">需要决策：{{ value_of('needs_decision') }}</p>
+  {% endif %}
+  {% endif %}
+  {{ private_note(module, spec) }}
+</section>

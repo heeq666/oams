@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}进度中心 · Workhub{% endblock %}
+{% block content %}
+<div class="pagehead"><div><h1>公司进度中心</h1><p class="sub">部门汇报汇聚在这里。先看风险，再进入部门看每项工作的进度和依据。</p></div><a class="btn" href="/reports">去汇报进度 →</a></div>
+<div class="grid" aria-label="公司进度概览">
+  <div class="metric"><div class="n">{{ totals.open_items }}</div><div class="k">未完成事项</div></div>
+  <div class="metric {% if totals.blocked %}alert{% endif %}"><div class="n">{{ totals.blocked }}</div><div class="k">卡住的事项</div></div>
+  <div class="metric {% if totals.needs_decision %}warn{% endif %}"><div class="n">{{ totals.needs_decision }}</div><div class="k">需要拍板</div></div>
+  <div class="metric"><div class="n">{{ totals.never_reported }}</div><div class="k">还没汇报</div></div>
+  <div class="metric"><div class="n">{{ totals.overdue }}</div><div class="k">超过 {{ stale_days }} 天未更新</div></div>
+</div>
+<h2>各部门进度</h2>
+{% for entry in departments %}
+{% set summary = entry.board.summary %}
+<section class="card progress-department">
+ <div class="pagehead"><h2>{{ entry.unit.name }}</h2><a href="/board?org={{ entry.unit.org_unit_id }}">查看全部事项与依据 →</a></div>
+ <p class="meta">{{ summary.open_items }} 件未完成 · {{ summary.blocked }} 件阻塞 · {{ summary.needs_decision }} 件待决策 · {{ summary.never_reported }} 件未汇报</p>
+ {% set important = entry.board.sections.blocked + entry.board.sections.needs_decision %}
+ {% if important %}<ul class="items">
+ {% for card in important[:3] %}<li class="{{ card.status }}"><div class="row1"><strong>{{ card.title }}</strong><span class="badge {% if card.status == 'blocked' %}blocked{% else %}decision{% endif %}">{{ '阻塞' if card.status == 'blocked' else '待决策' }}</span><span class="pos">{{ card.position.title }}</span></div>
+ {% if card.blocked_reason %}<p class="meta">卡在：{{ card.blocked_reason }}</p>{% endif %}
+ {% if card.reported %}<p class="note">{{ card.latest_report.note or '无进度说明' }}</p><p class="evidence">依据：{{ card.latest_report.evidence }} · 更新于 {{ card.latest_report.reported_at|dt }}</p>{% else %}<p class="meta">还没有进度汇报</p>{% endif %}
+ </li>{% endfor %}</ul>{% else %}<p class="meta">当前没有标记阻塞或待决策的事项。</p>{% endif %}
+ {% set recent = entry.board.cards | selectattr("reported") | list | sort(attribute="latest_report.reported_at", reverse=true) %}
+ {% if recent %}<h3>最近汇报</h3><ul class="items">
+ {% for card in recent[:2] %}<li><div class="row1"><strong>{{ card.title }}</strong><span class="pos">{{ card.position.title }}</span></div>
+ <p class="note">{{ card.latest_report.note or "无进度说明" }}</p>
+ <p class="evidence">依据：{{ card.latest_report.evidence }} · {{ card.latest_report.reported_at|dt }}</p></li>{% endfor %}
+ </ul>{% endif %}
+</section>
+{% else %}<p class="empty">暂无部门工作项。管理员创建岗位和事项后，这里会自动显示进展。</p>{% endfor %}
+{% endblock %}

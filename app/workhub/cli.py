@@ -71,6 +71,7 @@ def bootstrap_admin(args):
             ("workforce.grants", "read"), ("workforce.grants", "manage"),
             ("workforce.work_items", "read"), ("workforce.work_items", "manage"),
             ("workforce.reports", "read"), ("workforce.reports", "submit"),
+            ("workforce.interfaces", "read"), ("workforce.interfaces", "review"),
             ("workforce.audit", "read"),
         ]
         for resource, action in resources:
@@ -98,6 +99,13 @@ def serve():
     uvicorn.run("workhub.api:app", host=settings.bind_host, port=settings.bind_port)
 
 
+def _run_plugin(args):
+    """Delegate to workhub.plugin_cli so the offline tool has no database import."""
+    from workhub.plugin_cli import main as plugin_main
+
+    return plugin_main(args.plugin_args)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="workhub")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -113,8 +121,13 @@ def main():
     token.add_argument("--member-id", required=True)
     token.set_defaults(func=issue)
     commands.add_parser("serve", help="run the API").set_defaults(func=lambda _: serve())
+    plugin = commands.add_parser("plugin", help="validate and preview a department plugin offline")
+    plugin.add_argument("plugin_args", nargs=argparse.REMAINDER)
+    plugin.set_defaults(func=lambda _: _run_plugin(_))
     args = parser.parse_args()
-    args.func(args)
+    exit_code = args.func(args)
+    if isinstance(exit_code, int) and exit_code != 0:
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}设置 · Workhub{% endblock %}
+{% block content %}
+<h1>设置</h1>
+<p class="sub">管理员专用。日常填报请回到「部门」。</p>
+
+<h2>组织与人员</h2>
+<div class="grid">
+  <a class="metric" href="/setup" style="text-decoration:none;color:inherit">
+    <div class="n">试用设置</div>
+    <div class="k">建部门、岗位、成员，生成登录链接</div>
+  </a>
+  <a class="metric" href="/admin/positions" style="text-decoration:none;color:inherit">
+    <div class="n">岗位</div>
+    <div class="k">岗位目录与在职人数</div>
+  </a>
+  <a class="metric" href="/admin/work-items" style="text-decoration:none;color:inherit">
+    <div class="n">工作项</div>
+    <div class="k">挂在岗位上的事项</div>
+  </a>
+</div>
+
+<h2>页面与视图</h2>
+<div class="grid">
+  <a class="metric" href="/setup/interfaces" style="text-decoration:none;color:inherit">
+    <div class="n">界面制作</div>
+    <div class="k">导入界面描述、查看全部页面</div>
+  </a>
+  <a class="metric" href="/interfaces" style="text-decoration:none;color:inherit">
+    <div class="n">部门界面</div>
+    <div class="k">按界面填写</div>
+  </a>
+  <a class="metric" href="/board" style="text-decoration:none;color:inherit">
+    <div class="n">部门看板</div>
+    <div class="k">按部门看进度与依据</div>
+  </a>
+  <a class="metric" href="/office" style="text-decoration:none;color:inherit">
+    <div class="n">办公室</div>
+    <div class="k">平面图与工位</div>
+  </a>
+</div>
+
+<h2>运维</h2>
+<div class="grid">
+  <a class="metric" href="/admin/spaces" style="text-decoration:none;color:inherit">
+    <div class="n">布置</div>
+    <div class="k">部门区域与工位坐标</div>
+  </a>
+  <a class="metric" href="/admin/audit" style="text-decoration:none;color:inherit">
+    <div class="n">审计</div>
+    <div class="k">谁在什么时候改了什么</div>
+  </a>
+</div>
+{% endblock %}

@@ -22,7 +22,7 @@
   {% if selected %}<span aria-hidden="true">›</span><span aria-current="page">{{ selected.name }}</span>{% endif %}
 </nav>
 
-<div class="editor" data-office-editor{% if not can_manage %} data-readonly{% endif %}>
+<div class="editor" data-office-editor data-csrf="{{ csrf }}"{% if not can_manage %} data-readonly{% endif %}>
   <div class="editor-canvas">
     {% if selected %}
       {% set z = zones | selectattr('org_unit_id', 'equalto', selected.org_unit_id) | first %}
@@ -111,6 +111,7 @@
                 <li>
                   <span>{{ p.title }}</span>
                   <form method="post" action="/admin/spaces" class="inline">
+                    <input type="hidden" name="csrf" value="{{ csrf }}">
                     <input type="hidden" name="kind" value="desk">
                     <input type="hidden" name="org_unit_id" value="{{ selected.org_unit_id }}">
                     <input type="hidden" name="position_id" value="{{ p.position_id }}">
@@ -129,6 +130,7 @@
           <h2 style="margin-top:0">给部门一块区域</h2>
           {% if unplaced %}
             <form method="post" action="/admin/spaces" class="stack" style="margin-bottom:0">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
               <input type="hidden" name="kind" value="zone">
               <input type="hidden" name="x" value="0"><input type="hidden" name="y" value="0">
               <input type="hidden" name="w" value="420"><input type="hidden" name="h" value="320">
@@ -163,6 +165,7 @@
           <td>
             {% if can_manage %}
               <form method="post" action="/admin/spaces/{{ s.space_id }}/remove" class="inline">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
                 <button type="submit" class="link">删除</button>
               </form>
             {% endif %}

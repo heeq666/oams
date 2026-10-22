@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}新建页面 · {{ unit.name }}{% endblock %}
+{% block content %}
+<nav class="page-tabs" aria-label="部门内页面">
+  {% for p in pages %}
+    <a href="/departments/{{ unit.org_unit_id }}/{{ p.interface_id }}" class="page-tab">
+      {{ p.name }}
+      {% if p.status == 'pending' %}<span class="badge decision">审核中</span>
+      {% elif p.status != 'active' %}<span class="badge vacant">待提交</span>{% endif %}
+    </a>
+  {% endfor %}
+  <a class="page-tab add on" href="/departments/{{ unit.org_unit_id }}/new">＋ 新页面</a>
+</nav>
+
+<h1>在 {{ unit.name }} 里新建页面</h1>
+<p class="sub">把 AI 按公司规则产出的页面描述贴进来。新页面会先作为<b>待提交审核</b>存在，本部门可以立刻预览和试填；试填内容不会进入公司汇总。</p>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/departments/{{ unit.org_unit_id }}/new">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <section class="card" style="margin-bottom:12px">
+    <div class="form-row">
+      <div class="field"><label for="name">页面名称</label>
+        <input id="name" name="name" required maxlength="200" placeholder="如 设计部打样周进度"></div>
+      <div class="field"><label for="slug">页面标识</label>
+        <input id="slug" name="slug" required maxlength="80" placeholder="如 design-weekly-sampling"></div>
+      <div class="field"><label for="position_id">填写岗位（可留空）</label>
+        <select id="position_id" name="position_id">
+          <option value="">（不限制）</option>
+          {% for p in positions %}<option value="{{ p.position_id }}">{{ p.title }}（{{ p.position_code }}）</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="field"><label for="descriptor_text">页面描述（JSON）</label>
+      <textarea id="descriptor_text" name="descriptor_text" rows="16" required
+        placeholder='粘贴 AI 产出的界面描述。字段必须映射到标准字段，状态词要能对上标准状态，否则会被拒绝并告诉你原因。'></textarea>
+    </div>
+  </section>
+  <button type="submit">保存并预览</button>
+</form>
+
+<p class="sub" style="margin-top:14px">规则见项目里的 <code>docs/architecture/interface-rules-and-modules.md</code> 与 <code>interface-descriptor-schema.md</code>。</p>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}部门汇报汇总 · Workhub{% endblock %}
+{% block content %}
+<h1>部门汇报汇总</h1>
+<p class="sub">每个部门用自己的界面汇报，这里按部门显示最近一次的标准字段。仅本部门可见的字段不会出现在这里。</p>
+
+{% if rows %}
+<table>
+  <thead><tr><th>部门 / 界面</th><th>事项</th><th>状态</th><th>卡在哪</th><th>进度</th><th>依据</th><th>更新</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.org_name }}<div class="meta">{{ r.name }}{% if r.position_title %} · {{ r.position_title }}{% endif %}</div></td>
+      <td>{{ r.title or '—' }}{% if r.needs_decision %} <span class="badge decision">待决策</span>{% endif %}</td>
+      <td>{% if r.status %}<span class="badge {% if r.status == 'blocked' %}blocked{% endif %}">{{ status_labels.get(r.status, r.status) }}</span>{% else %}—{% endif %}</td>
+      <td>{{ r.blocked_reason or '—' }}</td>
+      <td>{% if r.progress_value is not none %}{{ r.progress_value }}%{% else %}—{% endif %}</td>
+      <td>{{ r.evidence or '—' }}</td>
+      <td>{% if r.reported_at %}{{ r.reported_at | dt }}<div class="meta">{{ r.reporter or '' }}</div>{% else %}<span class="badge vacant">还没汇报</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">还没有启用任何部门界面。部门负责人用 AI 制作并启用后，这里会出现他们的汇报。</p>
+{% endif %}
+
+<p class="sub"><a href="/progress">← 回到公司进度中心</a></p>
+{% endblock %}

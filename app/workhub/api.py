@@ -13,7 +13,8 @@ from workhub.db import connection
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
                              SpaceUpsert, WorkItemCreate, WorkItemUpdate)
-from workhub.security import current_principal, require_permission, revoke_session
+from workhub.security import (active_org_unit_ids, current_principal, has_company_scope,
+                              has_permission, require_org_unit_access, require_permission, revoke_session)
 
 app = FastAPI(title="Company Workhub API", version="0.1.0")
 
@@ -62,22 +63,88 @@ def list_org_units(_actor: dict = Depends(require_permission("workforce.org_unit
         return conn.execute("SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status FROM workhub.org_units ORDER BY org_code").fetchall()
 
 
-@app.post("/v1/org-units", status_code=status.HTTP_201_CREATED)
-def create_org_unit(payload: OrgUnitCreate, actor: dict = Depends(require_permission("workforce.org_units", "manage"))):
+def insert_org_unit(conn, payload: OrgUnitCreate, actor_member_id: Any) -> dict[str, Any]:
+    """Shared department creation for the JSON API and the setup page."""
     try:
-        with connection() as conn:
-            row = conn.execute(
-                """INSERT INTO workhub.org_units (org_code, name, parent_org_unit_id, unit_type)
-                   VALUES (%s, %s, %s, %s)
-                   RETURNING org_unit_id, parent_org_unit_id, org_code, name, unit_type, status""",
-                (payload.org_code, payload.name, payload.parent_org_unit_id, payload.unit_type),
-            ).fetchone()
-            audit(conn, actor["member_id"], "org_unit.created", "org_unit", row["org_unit_id"], "created through management API", row)
-            return row
+        row = conn.execute(
+            """INSERT INTO workhub.org_units (org_code, name, parent_org_unit_id, unit_type)
+               VALUES (%s, %s, %s, %s)
+               RETURNING org_unit_id, parent_org_unit_id, org_code, name, unit_type, status""",
+            (payload.org_code, payload.name, payload.parent_org_unit_id, payload.unit_type),
+        ).fetchone()
+        audit(conn, actor_member_id, "org_unit.created", "org_unit", row["org_unit_id"], "created through management API", row)
+        return row
     except UniqueViolation:
         raise HTTPException(status_code=409, detail="org_code already exists")
     except ForeignKeyViolation:
         raise HTTPException(status_code=422, detail="parent org unit does not exist")
+
+
+def insert_assignment(conn, payload: AssignmentCreate, actor_member_id: Any) -> dict[str, Any]:
+    """Shared position assignment for the JSON API and the setup page."""
+    if payload.ends_at and payload.ends_at <= payload.starts_at:
+        raise HTTPException(status_code=422, detail="ends_at must be after starts_at")
+    state = "active" if payload.starts_at <= datetime.now(timezone.utc) else "scheduled"
+    try:
+        eligibility = conn.execute(
+            """SELECT m.employment_status, p.status AS position_status
+                 FROM workhub.workforce_members m CROSS JOIN workhub.positions p
+                WHERE m.member_id = %s AND p.position_id = %s""",
+            (payload.member_id, payload.position_id),
+        ).fetchone()
+        if not eligibility:
+            raise HTTPException(status_code=422, detail="member or position does not exist")
+        if eligibility["employment_status"] != "active" or eligibility["position_status"] != "active":
+            raise HTTPException(status_code=409, detail="member and position must be active")
+        row = conn.execute(
+            """INSERT INTO workhub.position_assignments
+                  (member_id, position_id, assignment_type, status, starts_at, ends_at, approved_by,
+                   approved_at, reason, created_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, now(), %s, %s)
+               RETURNING assignment_id, member_id, position_id, assignment_type, status, starts_at, ends_at""",
+            (payload.member_id, payload.position_id, payload.assignment_type, state, payload.starts_at,
+             payload.ends_at, actor_member_id, payload.reason, actor_member_id),
+        ).fetchone()
+        conn.execute("UPDATE workhub.workforce_members SET token_version = token_version + 1, updated_at = now() WHERE member_id = %s", (payload.member_id,))
+        conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (payload.member_id,))
+        audit(conn, actor_member_id, "assignment.created", "assignment", row["assignment_id"], payload.reason, row)
+        return row
+    except UniqueViolation:
+        raise HTTPException(status_code=409, detail="assignment conflicts with existing data")
+    except ExclusionViolation:
+        raise HTTPException(status_code=409, detail="overlapping assignment for this member and position")
+    except ForeignKeyViolation:
+        raise HTTPException(status_code=422, detail="member or position does not exist")
+
+
+def insert_grant(conn, payload: GrantCreate, actor_member_id: Any) -> dict[str, Any]:
+    """Shared permission grant for the JSON API and the setup page."""
+    if payload.valid_until and payload.valid_until <= payload.valid_from:
+        raise HTTPException(status_code=422, detail="valid_until must be after valid_from")
+    try:
+        row = conn.execute(
+            """INSERT INTO workhub.permission_grants
+                  (subject_type, position_id, member_id, resource, action, scope_type, scope_org_unit_id,
+                   scope_definition, effect, valid_from, valid_until, reason, approved_by, approved_at, created_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s)
+               RETURNING grant_id, subject_type, position_id, member_id, resource, action, scope_type,
+                         scope_org_unit_id, effect, valid_from, valid_until""",
+            (payload.subject_type, payload.position_id, payload.member_id, payload.resource, payload.action,
+             payload.scope_type, payload.scope_org_unit_id, Jsonb(payload.scope_definition), payload.effect,
+             payload.valid_from, payload.valid_until, payload.reason, actor_member_id, actor_member_id),
+        ).fetchone()
+        subject_type = "position" if payload.position_id else "member"
+        subject_id = payload.position_id or payload.member_id
+        audit(conn, actor_member_id, "grant.created", subject_type, subject_id, payload.reason, row)
+        return row
+    except ForeignKeyViolation:
+        raise HTTPException(status_code=422, detail="grant subject or scope does not exist")
+
+
+@app.post("/v1/org-units", status_code=status.HTTP_201_CREATED)
+def create_org_unit(payload: OrgUnitCreate, actor: dict = Depends(require_permission("workforce.org_units", "manage"))):
+    with connection() as conn:
+        return insert_org_unit(conn, payload, actor["member_id"])
 
 
 @app.get("/v1/members")
@@ -89,20 +156,42 @@ def list_members(_actor: dict = Depends(require_permission("workforce.members", 
         ).fetchall()
 
 
-@app.post("/v1/members", status_code=status.HTTP_201_CREATED)
-def create_member(payload: MemberCreate, actor: dict = Depends(require_permission("workforce.members", "manage"))):
+def insert_member(conn, payload: MemberCreate, actor_member_id: Any) -> dict[str, Any]:
+    """Shared by the JSON API and the setup page: one insert, one audit, active."""
     try:
-        with connection() as conn:
-            member = conn.execute(
-                """INSERT INTO workhub.workforce_members (employee_code, display_name, joined_at)
-                   VALUES (%s, %s, %s)
-                   RETURNING member_id, employee_code, display_name, employment_status, joined_at""",
-                (payload.employee_code, payload.display_name, payload.joined_at),
-            ).fetchone()
-            audit(conn, actor["member_id"], "member.created", "member", member["member_id"], "created through management API", member)
-            return member
+        member = conn.execute(
+            """INSERT INTO workhub.workforce_members (employee_code, display_name, joined_at, employment_status)
+               VALUES (%s, %s, %s, 'active')
+               RETURNING member_id, employee_code, display_name, employment_status, joined_at""",
+            (payload.employee_code, payload.display_name, payload.joined_at),
+        ).fetchone()
+        audit(conn, actor_member_id, "member.created", "member", member["member_id"], "created through management API", member)
+        return member
     except UniqueViolation:
         raise HTTPException(status_code=409, detail="employee code already exists")
+
+
+def activate_member(conn, member_id: Any, actor_member_id: Any, reason: str) -> dict[str, Any]:
+    """Restore a pending or suspended account to active and invalidate old sessions."""
+    member = conn.execute("SELECT * FROM workhub.workforce_members WHERE member_id = %s FOR UPDATE", (member_id,)).fetchone()
+    if not member:
+        raise HTTPException(status_code=404, detail="member not found")
+    updated = conn.execute(
+        """UPDATE workhub.workforce_members SET employment_status = 'active', departed_at = NULL,
+                  token_version = token_version + 1, updated_at = now()
+           WHERE member_id = %s
+           RETURNING member_id, display_name, employment_status, departed_at, token_version""",
+        (member_id,),
+    ).fetchone()
+    conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))
+    audit(conn, actor_member_id, "member.status_changed", "member", member_id, reason, updated, member)
+    return updated
+
+
+@app.post("/v1/members", status_code=status.HTTP_201_CREATED)
+def create_member(payload: MemberCreate, actor: dict = Depends(require_permission("workforce.members", "manage"))):
+    with connection() as conn:
+        return insert_member(conn, payload, actor["member_id"])
 
 
 @app.get("/v1/positions")
@@ -177,40 +266,8 @@ def list_grants(subject_type: str | None = None, subject_id: UUID | None = None,
 
 @app.post("/v1/assignments", status_code=status.HTTP_201_CREATED)
 def create_assignment(payload: AssignmentCreate, actor: dict = Depends(require_permission("workforce.assignments", "manage"))):
-    if payload.ends_at and payload.ends_at <= payload.starts_at:
-        raise HTTPException(status_code=422, detail="ends_at must be after starts_at")
-    state = "active" if payload.starts_at <= datetime.now(timezone.utc) else "scheduled"
-    try:
-        with connection() as conn:
-            eligibility = conn.execute(
-                """SELECT m.employment_status, p.status AS position_status
-                   FROM workhub.workforce_members m CROSS JOIN workhub.positions p
-                   WHERE m.member_id = %s AND p.position_id = %s""",
-                (payload.member_id, payload.position_id),
-            ).fetchone()
-            if not eligibility:
-                raise HTTPException(status_code=422, detail="member or position does not exist")
-            if eligibility["employment_status"] != "active" or eligibility["position_status"] != "active":
-                raise HTTPException(status_code=409, detail="member and position must be active")
-            row = conn.execute(
-                """INSERT INTO workhub.position_assignments
-                   (member_id, position_id, assignment_type, status, starts_at, ends_at, approved_by,
-                    approved_at, reason, created_by)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, now(), %s, %s)
-                   RETURNING assignment_id, member_id, position_id, assignment_type, status, starts_at, ends_at""",
-                (payload.member_id, payload.position_id, payload.assignment_type, state, payload.starts_at,
-                 payload.ends_at, actor["member_id"], payload.reason, actor["member_id"]),
-            ).fetchone()
-            conn.execute("UPDATE workhub.workforce_members SET token_version = token_version + 1, updated_at = now() WHERE member_id = %s", (payload.member_id,))
-            conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (payload.member_id,))
-            audit(conn, actor["member_id"], "assignment.created", "assignment", row["assignment_id"], payload.reason, row)
-            return row
-    except UniqueViolation:
-        raise HTTPException(status_code=409, detail="assignment conflicts with existing data")
-    except ExclusionViolation:
-        raise HTTPException(status_code=409, detail="overlapping assignment for this member and position")
-    except ForeignKeyViolation:
-        raise HTTPException(status_code=422, detail="member or position does not exist")
+    with connection() as conn:
+        return insert_assignment(conn, payload, actor["member_id"])
 
 
 @app.post("/v1/assignments/{assignment_id}/end")
@@ -242,27 +299,8 @@ def end_assignment(assignment_id: UUID, reason: str, actor: dict = Depends(requi
 
 @app.post("/v1/grants", status_code=status.HTTP_201_CREATED)
 def create_grant(payload: GrantCreate, actor: dict = Depends(require_permission("workforce.grants", "manage"))):
-    if payload.valid_until and payload.valid_until <= payload.valid_from:
-        raise HTTPException(status_code=422, detail="valid_until must be after valid_from")
-    try:
-        with connection() as conn:
-            row = conn.execute(
-                """INSERT INTO workhub.permission_grants
-                   (subject_type, position_id, member_id, resource, action, scope_type, scope_org_unit_id,
-                    scope_definition, effect, valid_from, valid_until, reason, approved_by, approved_at, created_by)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s)
-                   RETURNING grant_id, subject_type, position_id, member_id, resource, action, scope_type,
-                             scope_org_unit_id, effect, valid_from, valid_until""",
-                (payload.subject_type, payload.position_id, payload.member_id, payload.resource, payload.action,
-                 payload.scope_type, payload.scope_org_unit_id, Jsonb(payload.scope_definition), payload.effect,
-                 payload.valid_from, payload.valid_until, payload.reason, actor["member_id"], actor["member_id"]),
-            ).fetchone()
-            subject_type = "position" if payload.position_id else "member"
-            subject_id = payload.position_id or payload.member_id
-            audit(conn, actor["member_id"], "grant.created", subject_type, subject_id, payload.reason, row)
-            return row
-    except ForeignKeyViolation:
-        raise HTTPException(status_code=422, detail="grant subject or scope does not exist")
+    with connection() as conn:
+        return insert_grant(conn, payload, actor["member_id"])
 
 
 @app.get("/v1/positions/{position_id}/config-versions")
@@ -430,8 +468,16 @@ def list_work_items(org_unit_id: UUID | None = None, position_id: UUID | None = 
         params.append(position_id)
     if open_only:
         filters.append("w.status IN ('planned', 'in_progress', 'blocked')")
-    where = ("WHERE " + " AND ".join(filters)) if filters else ""
     with connection() as conn:
+        if org_unit_id is not None:
+            require_org_unit_access(conn, _actor["member_id"], org_unit_id)
+        if not has_company_scope(conn, _actor["member_id"]):
+            scoped_orgs = list(active_org_unit_ids(conn, _actor["member_id"]))
+            if not scoped_orgs:
+                return []
+            filters.append("w.org_unit_id = ANY(%s)")
+            params.append(scoped_orgs)
+        where = ("WHERE " + " AND ".join(filters)) if filters else ""
         return conn.execute(
             f"""SELECT {WORK_ITEM_SELECT}
                   FROM workhub.work_items w
@@ -448,6 +494,10 @@ def list_work_items(org_unit_id: UUID | None = None, position_id: UUID | None = 
 def create_work_item(payload: WorkItemCreate, actor: dict = Depends(require_permission("workforce.work_items", "manage"))):
     try:
         with connection() as conn:
+            position = conn.execute("SELECT org_unit_id FROM workhub.positions WHERE position_id = %s",
+                                    (payload.position_id,)).fetchone()
+            if position:
+                require_org_unit_access(conn, actor["member_id"], position["org_unit_id"])
             return insert_work_item(conn, payload, actor["member_id"])
     except CheckViolation:
         raise HTTPException(status_code=422, detail="blocked work items require a non-empty blocked_reason")
@@ -466,6 +516,7 @@ def update_work_item(work_item_id: UUID, payload: WorkItemUpdate,
             ).fetchone()
             if not prior:
                 raise HTTPException(status_code=404, detail="work item not found")
+            require_org_unit_access(conn, actor["member_id"], prior["org_unit_id"])
             if "status" in updates and updates["status"] == "blocked":
                 reason = updates.get("blocked_reason", prior["blocked_reason"])
                 if not (reason and reason.strip()):
@@ -491,6 +542,11 @@ def update_work_item(work_item_id: UUID, payload: WorkItemUpdate,
 @app.post("/v1/work-items/{work_item_id}/reports", status_code=status.HTTP_201_CREATED)
 def submit_report(work_item_id: UUID, payload: ReportCreate,
                   actor: dict = Depends(require_permission("workforce.reports", "submit"))):
+    return create_report(work_item_id, payload, actor["member_id"])
+
+
+def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: Any):
+    """Share the audited write between the browser and JSON API."""
     try:
         with connection() as conn:
             item = conn.execute(
@@ -501,17 +557,28 @@ def submit_report(work_item_id: UUID, payload: ReportCreate,
                 raise HTTPException(status_code=404, detail="work item not found")
             if item["status"] not in OPEN_ITEM_STATUSES:
                 raise HTTPException(status_code=409, detail="cannot report progress on a closed work item")
+            assigned = conn.execute(
+                """SELECT 1 FROM workhub.position_assignments
+                   WHERE member_id = %s AND position_id = (SELECT position_id FROM workhub.work_items WHERE work_item_id = %s)
+                     AND status IN ('active', 'scheduled') AND starts_at <= now()
+                     AND (ends_at IS NULL OR now() < ends_at)""",
+                (actor_member_id, work_item_id),
+            ).fetchone()
+            # Only an explicit security administrator can report outside their
+            # assigned position; work-item managers are still position-bound.
+            if not assigned and not has_permission(conn, actor_member_id, "workforce.grants", "manage"):
+                raise HTTPException(status_code=403, detail="reporter is not assigned to this work item position")
             row = conn.execute(
                 """INSERT INTO workhub.work_item_reports
                    (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence)
                    VALUES (%s, %s, %s, %s, %s, %s)
                    RETURNING report_id, work_item_id, reported_by_member_id, submitted_via, progress_value,
                              note, evidence, status, reported_at""",
-                (work_item_id, actor["member_id"], payload.submitted_via, payload.progress_value,
+                (work_item_id, actor_member_id, payload.submitted_via, payload.progress_value,
                  payload.note, payload.evidence),
             ).fetchone()
             conn.execute("UPDATE workhub.work_items SET updated_at = now() WHERE work_item_id = %s", (work_item_id,))
-            audit(conn, actor["member_id"], "work_item_report.created", "work_item_report", row["report_id"],
+            audit(conn, actor_member_id, "work_item_report.created", "work_item_report", row["report_id"],
                   f"progress submitted via {payload.submitted_via}", row)
             return row
     except CheckViolation:
@@ -520,11 +587,12 @@ def submit_report(work_item_id: UUID, payload: ReportCreate,
 
 @app.get("/v1/work-items/{work_item_id}/reports")
 def list_work_item_reports(work_item_id: UUID,
-                           _actor: dict = Depends(require_permission("workforce.reports", "read"))):
+                           actor: dict = Depends(require_permission("workforce.reports", "read"))):
     with connection() as conn:
-        exists = conn.execute("SELECT 1 FROM workhub.work_items WHERE work_item_id = %s", (work_item_id,)).fetchone()
+        exists = conn.execute("SELECT org_unit_id FROM workhub.work_items WHERE work_item_id = %s", (work_item_id,)).fetchone()
         if not exists:
             raise HTTPException(status_code=404, detail="work item not found")
+        require_org_unit_access(conn, actor["member_id"], exists["org_unit_id"])
         return conn.execute(
             """SELECT r.report_id, r.reported_by_member_id, m.display_name AS reported_by, r.submitted_via,
                       r.progress_value, r.note, r.evidence, r.status, r.retracted_at, r.reported_at
@@ -956,15 +1024,18 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7, layer: str = "all"
 @app.get("/v1/board/org-units/{org_unit_id}")
 def board_for_org_unit(org_unit_id: UUID, stale_days: int = 7, layer: str = "all",
                        stage: str | None = None,
-                       _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
+                       actor: dict = Depends(require_permission("workforce.work_items", "read"))):
     with connection() as conn:
+        require_org_unit_access(conn, actor["member_id"], org_unit_id)
         return build_board(conn, org_unit_id, stale_days, layer, stage)
 
 
 @app.get("/v1/office")
 def office(stale_days: int = 7,
-           _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
+           actor: dict = Depends(require_permission("workforce.work_items", "read"))):
     with connection() as conn:
+        if not has_company_scope(conn, actor["member_id"]):
+            raise HTTPException(status_code=403, detail="office view requires company scope")
         return build_office(conn, stale_days)
 
 
@@ -1038,6 +1109,438 @@ def revoke_current_session(principal: dict = Depends(current_principal)):
 
 
 # ---------------------------------------------------------------------------
+# Department entries -> company rollup
+#
+# Until now the two halves of the product never touched: a department filed
+# interface_entries, the company board read work_items, and nothing ever wrote
+# interface_entries.work_item_id. So a department's numbers could not reach the
+# company however honest the form was (plugin-host-concept ch.2).
+#
+# The rule below is the contract's single condition set (ch.6): an entry feeds a
+# company number only when
+#     status_entry = 'active' AND entry_mode = 'live' AND work_item_id IS NOT NULL
+# It is written once, in ROLLUP_PREDICATE / ROLLUP_STATE_SQL, so the badge on a
+# department page, the board panel and the JSON endpoint can never disagree about
+# which entries counted. Draft data and unlinked entries never enter a rollup.
+# ---------------------------------------------------------------------------
+
+#: The only entries that may feed a company number.
+ROLLUP_PREDICATE = ("e.status_entry = 'active' AND e.entry_mode = 'live' "
+                    "AND e.work_item_id IS NOT NULL")
+
+#: Why an entry is (not) in the rollup, as one SQL CASE shared by every reader.
+ROLLUP_STATE_SQL = ("CASE WHEN e.status_entry <> 'active' THEN 'retracted' "
+                    "WHEN e.entry_mode <> 'live' THEN 'draft' "
+                    "WHEN e.work_item_id IS NULL THEN 'unlinked' "
+                    "ELSE 'rolled' END")
+
+ROLLUP_STATES = ("rolled", "unlinked", "draft", "retracted")
+
+#: The standard columns a declared field may map onto. Aggregation reads these;
+#: a display_only field has no column and stays private to the department.
+ROLLUP_COLUMNS = ("title", "status", "blocked_reason", "progress_value", "note", "evidence")
+
+ENTRY_COLUMNS_SQL = ("e.entry_id, e.interface_id, e.work_item_id, e.title, e.status, "
+                     "e.blocked_reason, e.progress_value, e.note, e.evidence, e.extra, "
+                     "e.reported_by, e.reported_at, e.entry_mode, e.status_entry")
+
+
+def _reason(exc):
+    """One short sentence, never a stack trace: the tone the metrics panel uses."""
+    detail = str(exc).strip()
+    return detail or exc.__class__.__name__
+
+
+def _descriptor_bindings(descriptor):
+    """Emit-mode metric bindings of one descriptor, defensively.
+
+    Display bindings are skipped on purpose: they show a platform metric and
+    carry no aggregation of their own (contract 2), so they can never answer
+    "which entries produced this number".
+    """
+    raw = descriptor.get("metrics") if isinstance(descriptor, dict) else None
+    if not isinstance(raw, list):
+        return []
+    bindings = []
+    for binding in raw:
+        if isinstance(binding, dict) and binding.get("mode") == "emit" and binding.get("metric_key"):
+            bindings.append(binding)
+    return bindings
+
+
+def _field_map_to(descriptor, field_key):
+    """The standard column a declared field writes to (None for display_only)."""
+    if not field_key or not isinstance(descriptor, dict):
+        return None
+    for field in descriptor.get("fields") or []:
+        if isinstance(field, dict) and field.get("key") == field_key:
+            map_to = field.get("map_to")
+            return map_to if map_to in ROLLUP_COLUMNS else None
+    return None
+
+
+def _field_label(descriptor, field_key):
+    if not field_key or not isinstance(descriptor, dict):
+        return None
+    for field in descriptor.get("fields") or []:
+        if isinstance(field, dict) and field.get("key") == field_key:
+            label = field.get("label")
+            return str(label) if label else None
+    return None
+
+
+INTERFACES_SQL = """
+    SELECT i.interface_id, i.name, i.org_unit_id, i.version_no, i.descriptor,
+           o.org_code, o.name AS org_unit_name
+      FROM workhub.interfaces i
+      JOIN workhub.org_units o ON o.org_unit_id = i.org_unit_id
+     WHERE i.status = 'active'
+       AND (%(scope)s)"""
+
+
+def _active_interfaces(conn, org_unit_id, interface_id=None):
+    """The pages whose numbers may enter a rollup (only approved pages count).
+
+    A department aggregates its own approved pages plus those of its child
+    departments. A company aggregates every active department: the company board
+    is supposed to answer "what did the departments report", and a department
+    whose parent pointer was never filled in must still be visible there.
+    """
+    unit = conn.execute(
+        "SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units WHERE org_unit_id = %s",
+        (org_unit_id,)).fetchone()
+    is_company = bool(unit) and (unit.get("unit_type") or "") == "company"
+    params = {}
+    if is_company:
+        scope_sql = ("i.org_unit_id IN (SELECT org_unit_id FROM workhub.org_units "
+                     "WHERE status = 'active' AND unit_type <> 'company')")
+    else:
+        scope_sql = ("(i.org_unit_id = %(unit)s OR i.org_unit_id IN "
+                     "(SELECT org_unit_id FROM workhub.org_units "
+                     " WHERE parent_org_unit_id = %(unit)s AND status = 'active'))")
+        params["unit"] = org_unit_id
+    sql = INTERFACES_SQL % {"scope": scope_sql}
+    if interface_id is not None:
+        sql += " AND i.interface_id = %(interface)s"
+        params["interface"] = interface_id
+    sql += " ORDER BY o.name, i.name, i.version_no DESC"
+    return conn.execute(sql, params).fetchall()
+
+
+def _binding_entries(conn, interface_id, binding):
+    """Entries of one page that satisfy the rollup predicate (and where_status)."""
+    sql = ("SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
+           "FROM workhub.interface_entries e WHERE e.interface_id = %s AND " + ROLLUP_PREDICATE)
+    params = [interface_id]
+    where_status = binding.get("where_status")
+    if where_status:
+        sql += " AND e.status = %s"
+        params.append(where_status)
+    sql += " ORDER BY e.reported_at DESC, e.entry_id DESC"
+    return conn.execute(sql, tuple(params)).fetchall()
+
+
+def page_entries(conn, interface_id):
+    """Every stored entry of a page with its rollup state, newest first.
+
+    This is what the fill page lists: including the entries that are NOT in the
+    rollup, because the point of the badge is that people can see, per entry,
+    why a number is smaller than the work they did.
+    """
+    return conn.execute(
+        "SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
+        "FROM workhub.interface_entries e WHERE e.interface_id = %s "
+        "ORDER BY e.reported_at DESC, e.entry_id DESC", (interface_id,)).fetchall()
+
+
+def _aggregate_value(agg, column, rows):
+    """count / sum / avg / count_distinct over one column; NULLs are skipped."""
+    if agg == "count":
+        return len(rows)
+    values = [row.get(column) for row in rows if row.get(column) is not None]
+    if agg == "count_distinct":
+        return len({str(value) for value in values})
+    numbers = []
+    for value in values:
+        try:
+            numbers.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    if not numbers:
+        return None
+    if agg == "sum":
+        total = sum(numbers)
+        return int(total) if float(total).is_integer() else total
+    if agg == "avg":
+        return sum(numbers) / len(numbers)
+    return None
+
+
+def _format_metric(metric_key, value):
+    """The company formatter, so a department number reads like a company one."""
+    try:
+        from workhub import funnel as funnel_module
+        return funnel_module.format_metric(metric_key, value)
+    except Exception:  # noqa: BLE001 - formatting is never worth a 500
+        return "—" if value is None else str(value)
+
+
+def entry_state_counts(conn, interface_id):
+    """How many entries of this page sit in each rollup state."""
+    rows = conn.execute(
+        "SELECT state, count(*) AS n FROM (SELECT " + ROLLUP_STATE_SQL + " AS state "
+        "FROM workhub.interface_entries e WHERE e.interface_id = %s) t GROUP BY state",
+        (interface_id,)).fetchall()
+    counts = {state: 0 for state in ROLLUP_STATES}
+    for row in rows:
+        state = row.get("state")
+        if state in counts:
+            counts[state] = int(row.get("n") or 0)
+    return counts
+
+
+def _entry_brief(row):
+    return {
+        "entry_id": row.get("entry_id"),
+        "title": row.get("title"),
+        "status": row.get("status"),
+        "progress_value": row.get("progress_value"),
+        "reported_at": row.get("reported_at"),
+        "work_item_id": row.get("work_item_id"),
+    }
+
+
+def rollup_entries(conn, interface_id, metric_key=None):
+    """The entries that actually participated in a number (or in the page).
+
+    Never raises: a missing page, an undeclared metric or a broken descriptor is
+    an unavailable answer with a reason, because this is what a manager opens
+    when a number looks wrong -- and a 500 would hide the explanation.
+    """
+    try:
+        page = conn.execute(
+            """SELECT interface_id, name, org_unit_id, status, descriptor
+                 FROM workhub.interfaces WHERE interface_id = %s""",
+            (interface_id,)).fetchone()
+        if not page:
+            return {"available": False, "reason": "找不到这个界面", "entries": [],
+                    "metric_key": metric_key, "value": None}
+        base = {"available": True, "reason": None, "interface_id": page["interface_id"],
+                "interface_name": page["name"], "metric_key": metric_key,
+                "mode": None, "agg": None, "from_field": None, "where_status": None}
+        binding = None
+        if metric_key:
+            binding = next((b for b in _descriptor_bindings(page["descriptor"])
+                            if b.get("metric_key") == metric_key), None)
+            if binding is None:
+                base.update({
+                    "available": False,
+                    "reason": "这个页面没有声明指标 " + str(metric_key) + "，因此没有条目参与它",
+                    "value": None, "entries": [], "entry_count": 0})
+                return base
+            rows = _binding_entries(conn, page["interface_id"], binding)
+        else:
+            rows = conn.execute(
+                "SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
+                "FROM workhub.interface_entries e WHERE e.interface_id = %s AND "
+                + ROLLUP_PREDICATE + " ORDER BY e.reported_at DESC, e.entry_id DESC",
+                (page["interface_id"],)).fetchall()
+        column = _field_map_to(page["descriptor"], (binding or {}).get("from_field"))
+        value = None
+        if binding is not None and column is not None:
+            value = _aggregate_value(binding.get("agg"), column, rows)
+        if binding is not None:
+            base.update({"mode": "emit", "agg": binding.get("agg"),
+                         "from_field": binding.get("from_field"),
+                         "where_status": binding.get("where_status")})
+        base.update({
+            "value": value,
+            "formatted": _format_metric(metric_key, value) if metric_key else None,
+            "entry_count": len(rows),
+            "entries": [_entry_brief(row) for row in rows],
+        })
+        return base
+    except Exception as exc:  # noqa: BLE001 - a rollup lookup must never 500 a page
+        return {"available": False, "reason": _reason(exc), "entries": [],
+                "metric_key": metric_key, "value": None}
+
+
+def aggregate_entries(conn, org_unit_id, metric_key, interface_id=None):
+    """One emitted metric, computed from the entries that are allowed to count.
+
+    Contract 2 binding: {metric_key, mode=emit, agg, from_field, where_status}.
+    The binding is read from the page's own descriptor (never re-invented here),
+    and the number is computed only over entries passing ROLLUP_PREDICATE.
+    """
+    try:
+        # Every page that declares this metric contributes; the schema allows two
+        # active pages of one department to declare the same key (the unique index
+        # is on slug, not metric_key), and silently taking the first one would make
+        # the company number smaller than the work the departments did.
+        hits = []
+        for page in _active_interfaces(conn, org_unit_id, interface_id):
+            for binding in _descriptor_bindings(page["descriptor"]):
+                if binding.get("metric_key") == metric_key:
+                    hits.append((page, binding))
+        if not hits:
+            return {"available": False, "reason": "没有已启用的页面声明指标 " + str(metric_key),
+                    "metric_key": metric_key, "value": None, "entries": [], "entry_count": 0}
+        # count sums the rows, sum/avg add up the measured numbers, and
+        # count_distinct de-duplicates the shared values, so one page's rows can
+        # never be counted twice and two pages' rows always both count.
+        first_page, first_binding = hits[0]
+        agg = first_binding.get("agg")
+        entries = []
+        per_page = []
+        for page, binding in hits:
+            column = _field_map_to(page["descriptor"], binding.get("from_field"))
+            rows = _binding_entries(conn, page["interface_id"], binding)
+            value = None if column is None else _aggregate_value(binding.get("agg"), column, rows)
+            entries.extend(_entry_brief(row) for row in rows)
+            per_page.append({
+                "interface_id": page["interface_id"],
+                "interface_name": page["name"],
+                "org_unit_name": page.get("org_unit_name"),
+                "entry_count": len(rows),
+                "value": value,
+            })
+        column = _field_map_to(first_page["descriptor"], first_binding.get("from_field"))
+        total = None
+        if column is not None:
+            if agg == "count":
+                total = sum(item["value"] or 0 for item in per_page)
+            elif agg == "sum":
+                numbers = [item["value"] for item in per_page if item["value"] is not None]
+                total = sum(numbers) if numbers else None
+                if isinstance(total, float) and total.is_integer():
+                    total = int(total)
+            elif agg == "avg":
+                numbers = [item["value"] for item in per_page if item["value"] is not None]
+                total = sum(numbers) / len(numbers) if numbers else None
+            elif agg == "count_distinct":
+                total = sum(item["value"] or 0 for item in per_page)
+        return {
+            "available": True,
+            "reason": None if column is not None else "指标读取的字段只在本部门可见，不参与汇总",
+            "metric_key": metric_key,
+            "mode": "emit",
+            "agg": agg,
+            "from_field": first_binding.get("from_field"),
+            "where_status": first_binding.get("where_status"),
+            "label": _field_label(first_page["descriptor"], first_binding.get("from_field")) or metric_key,
+            "interface_id": first_page["interface_id"],
+            "interface_name": first_page["name"],
+            "org_unit_id": first_page["org_unit_id"],
+            "org_unit_name": first_page.get("org_unit_name"),
+            "pages": per_page,
+            "value": total,
+            "formatted": _format_metric(metric_key, total),
+            "entry_count": len(entries),
+            "entries": entries,
+        }
+    except Exception as exc:  # noqa: BLE001 - see rollup_entries
+        return {"available": False, "reason": _reason(exc), "metric_key": metric_key,
+                "value": None, "entries": [], "entry_count": 0}
+
+
+def build_department_aggregates(conn, org_unit_id, descriptor=None, interface_id=None):
+    """Everything a department page and a board panel need about its numbers.
+
+    Returns the declared metrics with real values, the one dict render_interface
+    wants for metric_card / metric_grid (``aggregates``), and how many entries sit
+    in each rollup state -- so the page can say out loud why a number is small
+    instead of leaving people to guess. Total: a failure is available=False with
+    a reason, never an exception, because this runs inside a page render.
+    """
+    empty = {"available": False, "reason": None, "org_unit_id": str(org_unit_id),
+             "interfaces": [], "metrics": [], "aggregates": {},
+             "counts": {state: 0 for state in ROLLUP_STATES}, "total": 0}
+    try:
+        pages = list(_active_interfaces(conn, org_unit_id, interface_id))
+        if descriptor is not None and not pages:
+            pages = [{"interface_id": interface_id, "name": None, "descriptor": descriptor}]
+        panel = dict(empty)
+        panel.update({"available": True, "interfaces": [], "metrics": [], "aggregates": {}})
+        totals = {state: 0 for state in ROLLUP_STATES}
+        for page in pages:
+            page_interface_id = page.get("interface_id")
+            counts = (entry_state_counts(conn, page_interface_id) if page_interface_id is not None
+                      else {state: 0 for state in ROLLUP_STATES})
+            for state, count in counts.items():
+                totals[state] = totals.get(state, 0) + count
+            page_metrics = []
+            for binding in _descriptor_bindings(page.get("descriptor")):
+                column = _field_map_to(page.get("descriptor"), binding.get("from_field"))
+                rows = (_binding_entries(conn, page_interface_id, binding)
+                        if page_interface_id is not None else [])
+                value = None if column is None else _aggregate_value(binding.get("agg"), column, rows)
+                metric = {
+                    "metric_key": binding.get("metric_key"),
+                    "label": (_field_label(page.get("descriptor"), binding.get("from_field"))
+                              or binding.get("metric_key")),
+                    "mode": "emit",
+                    "agg": binding.get("agg"),
+                    "from_field": binding.get("from_field"),
+                    "where_status": binding.get("where_status"),
+                    "value": value,
+                    "formatted": _format_metric(binding.get("metric_key"), value),
+                    "entry_count": len(rows),
+                    "interface_id": page_interface_id,
+                    "interface_name": page.get("name"),
+                    "org_unit_id": page.get("org_unit_id"),
+                    "org_unit_name": page.get("org_unit_name"),
+                    "available": column is not None,
+                    "reason": None if column is not None else "字段只在本部门可见，不参与汇总",
+                }
+                page_metrics.append(metric)
+                panel["metrics"].append(metric)
+                if column is not None:
+                    panel["aggregates"][binding.get("metric_key")] = value
+            panel["interfaces"].append({
+                "interface_id": page_interface_id,
+                "name": page.get("name"),
+                "org_unit_id": page.get("org_unit_id"),
+                "org_unit_name": page.get("org_unit_name"),
+                "counts": counts,
+                "entry_count": sum(counts.values()),
+                "metrics": page_metrics,
+            })
+        panel["counts"] = totals
+        panel["total"] = sum(totals.values())
+        return panel
+    except Exception as exc:  # noqa: BLE001 - degrade, never 500 a board
+        empty["reason"] = _reason(exc)
+        return empty
+
+
+def list_open_work_items(conn, org_unit_id=None, company_scope=False, limit=100):
+    """The work items an entry may be attached to: open ones, in scope.
+
+    Finished and cancelled items are excluded: linking to one would let a number
+    outlive the work it describes. Company scope sees every department; a member
+    of one department sees their own.
+    """
+    # A non-numeric limit (None, "abc") is a caller bug, not a 500: clamping a
+    # string raises ValueError before the comparison ever runs.
+    try:
+        limit = min(max(int(limit), 1), 500)
+    except (TypeError, ValueError):
+        limit = 100
+    sql = ("SELECT w.work_item_id, w.title, w.status, w.org_unit_id, o.name AS org_unit_name "
+           "FROM workhub.work_items w JOIN workhub.org_units o ON o.org_unit_id = w.org_unit_id "
+           "WHERE w.status IN ('planned', 'in_progress', 'blocked')")
+    params = []
+    if not company_scope:
+        if org_unit_id is None:
+            return []
+        sql += " AND w.org_unit_id = %s"
+        params.append(org_unit_id)
+    sql += " ORDER BY o.name, w.updated_at DESC LIMIT %s"
+    params.append(limit)
+    return conn.execute(sql, tuple(params)).fetchall()
+
+
+# ---------------------------------------------------------------------------
 # Web UI
 #
 # The pages are mounted on the same app as the JSON API so there is one process to
@@ -1047,7 +1550,8 @@ def revoke_current_session(principal: dict = Depends(current_principal)):
 # functions the bearer scheme uses. Nothing here grants anything by itself.
 # ---------------------------------------------------------------------------
 from workhub.web import router as web_router  # noqa: E402
-from workhub.security import principal_from_request  # noqa: E402
+from workhub.security import (active_org_unit_ids, has_company_scope, has_permission,  # noqa: E402
+                              principal_from_request)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
@@ -1058,4 +1562,39 @@ app.include_router(web_router)
 async def attach_browser_principal(request, call_next):
     # Cheap when absent: API callers send no cookie, so no lookup happens at all.
     request.state.member = principal_from_request(request)
+    # The navigation is built from what this person can actually do, so nobody is
+    # shown a door they cannot open -- and nobody has to guess why it is missing.
+    request.state.nav = {"departments": False, "progress": False, "review": False, "admin": False}
+    request.state.dept_rail = []
+    request.state.dept_active = None
+    if request.state.member is not None:
+        member_id = request.state.member["member_id"]
+        with connection() as conn:
+            request.state.nav = {
+                "departments": has_permission(conn, member_id, "workforce.reports", "read"),
+                "progress": has_company_scope(conn, member_id),
+                "review": has_permission(conn, member_id, "workforce.interfaces", "review"),
+                "admin": has_company_scope(conn, member_id),
+            }
+            # The sidebar belongs to the shell, not to one page: it lists the
+            # departments this person may enter, so every screen looks the same.
+            if request.state.nav["departments"]:
+                if has_company_scope(conn, member_id):
+                    request.state.dept_rail = conn.execute(
+                        """SELECT org_unit_id, name FROM workhub.org_units
+                           WHERE status = 'active' AND unit_type <> 'company' ORDER BY name""").fetchall()
+                else:
+                    scoped = list(active_org_unit_ids(conn, member_id))
+                    if scoped:
+                        request.state.dept_rail = conn.execute(
+                            """SELECT org_unit_id, name FROM workhub.org_units
+                               WHERE status = 'active' AND org_unit_id = ANY(%s) ORDER BY name""",
+                            (scoped,)).fetchall()
+    # Highlight the department the URL is inside, so the sidebar shows where you are.
+    parts = [p for p in request.url.path.split("/") if p]
+    if len(parts) >= 2 and parts[0] == "departments":
+        try:
+            request.state.dept_active = UUID(parts[1])
+        except (ValueError, TypeError):
+            request.state.dept_active = None
     return await call_next(request)
