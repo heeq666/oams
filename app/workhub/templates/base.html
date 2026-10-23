@@ -217,6 +217,18 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .progress-department h3 { font-size: 14px; margin: 14px 0 8px; }
   .progress-department .items { margin-top: 12px; }
   .progress-department a { color: var(--accent); }
+  /* What a version changed, on the review queue: one line per change, severity
+     first, so a reviewer's eye can skip the low ones and stop at the costly ones. */
+  .diff-block { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line);
+                border-radius: 8px; background: #fafbfc; }
+  .diff-head { margin: 0 0 6px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .diff-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex;
+               flex-direction: column; gap: 6px; }
+  .diff-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 14px; }
+  .diff-area { font-size: 12px; color: var(--muted); border: 1px solid var(--line);
+               border-radius: 4px; padding: 0 6px; }
+  .diff-value { color: var(--ink); }
+  .diff-why { font-size: 13px; color: var(--muted); flex-basis: 100%; padding-left: 4px; }
   @media (max-width: 720px) { header.topbar { flex-wrap: wrap; padding: 12px 16px; gap: 8px; }
     header.topbar nav { order: 3; flex-basis: 100%; flex-wrap: wrap; gap: 8px 14px; }
     main { padding: 18px 16px 48px; } .orgnav { flex-wrap: wrap; } }

@@ -39,7 +39,7 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from workhub import api, funnel, metrics
+from workhub import api, funnel, metrics, review as review_rules
 from workhub.config import settings
 from workhub.datacenter import DataCenter, DataCenterNotConfigured, build_datacenter
 from workhub.db import connection
@@ -574,23 +574,40 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
             return RedirectResponse(url=back + "?error=" + urllib.parse.quote("；".join(problems)[:600]),
                                     status_code=303)
         position = UUID(position_id) if position_id.strip() else None
+        # One open proposal at a time per slug. Two drafts of the same page give
+        # the reviewer two diffs against one live version and no way to tell which
+        # one the department means to ship.
+        open_version = conn.execute(
+            """SELECT interface_id FROM workhub.interfaces
+               WHERE org_unit_id = %s AND slug = %s AND status IN ('draft', 'pending')
+               ORDER BY version_no DESC LIMIT 1""", (org_unit_id, slug.strip())).fetchone()
+        if open_version is not None:
+            return RedirectResponse(
+                url=f"/departments/{org_unit_id}/{open_version['interface_id']}?error="
+                    + urllib.parse.quote("这个页面已经有一版在改或待审核，先把那一版处理掉"),
+                status_code=303)
+        # The live version keeps serving while the next one is written and
+        # reviewed. Archiving it here would blank the department's page for as
+        # long as review takes -- and if the draft were then abandoned, forever.
+        live = conn.execute(
+            """SELECT interface_id, version_no FROM workhub.interfaces
+               WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
+            (org_unit_id, slug.strip())).fetchone()
         version = conn.execute(
             """SELECT COALESCE(max(version_no), 0) + 1 FROM workhub.interfaces
                WHERE org_unit_id = %s AND slug = %s""", (org_unit_id, slug.strip())).fetchone()["?column?"]
         # A page a department just wrote starts unapproved: it must be seen and
         # filled inside the department before it can claim to speak for the company.
-        conn.execute(
-            """UPDATE workhub.interfaces SET status = 'archived', updated_at = now()
-               WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
-            (org_unit_id, slug.strip()))
         row = conn.execute(
             """INSERT INTO workhub.interfaces
                    (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
-                    position_id, version_no, created_by, updated_by)
-               VALUES (%s, %s, %s, 'draft', 'department', %s, %s, %s, %s, %s, %s)
+                    position_id, version_no, based_on, created_by, updated_by)
+               VALUES (%s, %s, %s, 'draft', 'department', %s, %s, %s, %s, %s, %s, %s)
                RETURNING interface_id""",
             (org_unit_id, slug.strip(), name.strip(), descriptor.get("schema_version", "0.1"),
-             Jsonb(descriptor), position, version, principal["member_id"], principal["member_id"])).fetchone()
+             Jsonb(descriptor), position, version,
+             live["interface_id"] if live is not None else None,
+             principal["member_id"], principal["member_id"])).fetchone()
         api.audit(conn, principal["member_id"], "interface.created", "interface", row["interface_id"],
                   "created inside department workbench", {"slug": slug.strip(), "version_no": version})
     return RedirectResponse(url=f"/departments/{org_unit_id}/{row['interface_id']}?saved=1", status_code=303)
@@ -640,6 +657,15 @@ def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
             """SELECT * FROM workhub.interface_entries
                WHERE interface_id = %s AND status_entry = 'active' AND entry_mode = %s
                ORDER BY reported_at DESC, entry_id DESC LIMIT 1""", (interface_id, mode)).fetchone()
+        # A draft, or a page under review, does not replace the live one: name the
+        # version still serving the company, or the department will believe the
+        # screen it is editing is the screen the company sees.
+        live_version = None
+        if page["status"] != "active":
+            live_version = conn.execute(
+                """SELECT interface_id, version_no, updated_at FROM workhub.interfaces
+                   WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
+                (org_unit_id, page["slug"])).fetchone()
     descriptor = page["descriptor"]
     fields = [f for f in descriptor.get("fields", []) if isinstance(f, dict) and f.get("key")]
     try:
@@ -652,6 +678,9 @@ def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
         "current": page, "page": page, "rendered": rendered, "recent": recent,
         "preview": page["status"] != "active", "draft_mode": page["status"] != "active",
         "page_status_label": {"draft": "待提交审核", "pending": "审核中"}.get(page["status"], page["status"]),
+        "live_version": live_version,
+        "review_code_label": (review_rules.rejection_label(page.get("review_code"))
+                              if page.get("review_code") else None),
         # The same five stages as the company page: a department reads the funnel
         # it feeds, from the one source of truth, rather than a private copy.
         "funnel_chain": department_funnel_chain(),
@@ -875,6 +904,30 @@ def department_withdraw_review(request: Request, org_unit_id: UUID, interface_id
                   "department withdrew the review request", {"from": "pending", "to": "draft"})
     return RedirectResponse(url=base + "?saved=withdrawn", status_code=303)
 
+def _review_bundle(conn, row):
+    """The diff a reviewer reads: this version against the one it was written on.
+
+    based_on is what the department started from, so it is the honest reference
+    even if someone else's version went live in the meantime. Falling back to
+    "whatever is live now" keeps old rows readable; a page with neither is a
+    first version, and review_rules says so instead of pretending nothing changed.
+    """
+    reference = None
+    if row.get("based_on"):
+        reference = conn.execute(
+            "SELECT descriptor, version_no FROM workhub.interfaces WHERE interface_id = %s",
+            (row["based_on"],)).fetchone()
+    if reference is None:
+        reference = conn.execute(
+            """SELECT descriptor, version_no FROM workhub.interfaces
+               WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
+            (row["org_unit_id"], row["slug"])).fetchone()
+    old_descriptor = reference["descriptor"] if reference is not None else None
+    bundle = review_rules.review_bundle(old_descriptor, row.get("descriptor"))
+    bundle["reference_version"] = reference["version_no"] if reference is not None else None
+    return bundle
+
+
 @router.get("/reviews", response_class=HTMLResponse)
 def review_queue(request: Request, saved: str | None = None, error: str | None = None):
     """The company side: pages a department finished and wants approved."""
@@ -887,6 +940,7 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
     with connection() as conn:
         pending = conn.execute(
             """SELECT i.interface_id, i.name, i.slug, i.version_no, i.visibility, i.schema_version,
+                      i.descriptor, i.based_on,
                       o.name AS org_name, o.org_unit_id, p.title AS position_title,
                       m.display_name AS author, i.updated_at
                FROM workhub.interfaces i
@@ -896,16 +950,25 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
                WHERE i.status = 'pending'
                ORDER BY i.updated_at""").fetchall()
         decided = conn.execute(
-            """SELECT i.interface_id, i.name, i.status, i.review_note, o.name AS org_name,
+            """SELECT i.interface_id, i.name, i.status, i.review_note, i.review_code, o.name AS org_name,
                       m.display_name AS reviewer, i.reviewed_at
                FROM workhub.interfaces i
                JOIN workhub.org_units o USING (org_unit_id)
                LEFT JOIN workhub.workforce_members m ON m.member_id = i.reviewed_by
                WHERE i.reviewed_at IS NOT NULL
                ORDER BY i.reviewed_at DESC LIMIT 10""").fetchall()
+    # Every pending page is read as a diff against the version it was written
+    # against, not as a whole page: that is the only part a human still has to
+    # think about, and the part where a quiet re-mapping would otherwise slip by.
+    with connection() as conn:
+        review_cards = [dict(row, bundle=_review_bundle(conn, row)) for row in pending]
+    # The decision list reads a code, not prose: "what do departments keep getting
+    # wrong" has to be answerable by counting, not by re-reading old notes.
+    decided_cards = [dict(row, code_label=review_rules.rejection_label(row["review_code"]))
+                     for row in decided]
     return TEMPLATES.TemplateResponse(request, "reviews.html", {
-        "pending": pending, "decided": decided, "member": _member(request),
-        "saved": saved, "error": error,
+        "pending": review_cards, "decided": decided_cards, "member": _member(request),
+        "saved": saved, "error": error, "reasons": review_rules.REJECTION_CHOICES,
         "csrf": _form_token(request, "workhub:review-form:v1")})
 
 
@@ -922,8 +985,9 @@ def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
     _check_form_token(request, csrf, "workhub:review-form:v1")
     with connection() as conn:
         page = conn.execute(
-            """SELECT interface_id, org_unit_id, slug, status FROM workhub.interfaces
-               WHERE interface_id = %s FOR UPDATE""", (interface_id,)).fetchone()
+            """SELECT interface_id, org_unit_id, slug, status, version_no, descriptor, based_on
+               FROM workhub.interfaces WHERE interface_id = %s FOR UPDATE""",
+            (interface_id,)).fetchone()
         if page is None:
             return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("找不到这个页面"), status_code=303)
         if page["status"] != "pending":
@@ -941,14 +1005,20 @@ def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
                       review_note = %s, updated_at = now()
                 WHERE interface_id = %s""",
             (principal["member_id"], note.strip() or None, interface_id))
+        # The approval records what was actually reviewed, so "why did the number
+        # move on the 12th" can be answered from the audit log alone.
+        bundle = _review_bundle(conn, dict(page))
+        summary = bundle["summary"]["headline"] if bundle else ""
         api.audit(conn, principal["member_id"], "interface.approved", "interface", interface_id,
-                  note.strip() or "review approved", {"to": "active"})
+                  (note.strip() or "review approved") + (f"｜{summary}" if summary else ""),
+                  {"to": "active", "version_no": page["version_no"],
+                   "changes": bundle["summary"]["total"] if bundle else 0})
     return RedirectResponse(url="/reviews?saved=approved", status_code=303)
 
 
 @router.post("/reviews/{interface_id}/reject")
 def review_reject(request: Request, interface_id: UUID, csrf: str = Form(...),
-                  note: str = Form(...)):
+                  note: str = Form(...), reason_code: str = Form(default="")):
     """Send a page back with a reason; the department keeps its trial entries."""
     try:
         principal = _require(request, "workforce.interfaces", "review")
@@ -959,6 +1029,13 @@ def review_reject(request: Request, interface_id: UUID, csrf: str = Form(...),
     _check_form_token(request, csrf, "workhub:review-form:v1")
     if not note.strip():
         return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("退回必须写明原因"), status_code=303)
+    # A code is optional for scripts and older forms but never guessed: an empty
+    # code stays NULL and shows as 未分类, because inventing a class from prose
+    # would put a fact in the record that the reviewer never stated.
+    code = (reason_code or "").strip() or None
+    if code is not None and not review_rules.is_rejection_code(code):
+        return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("未知的退回原因类型"),
+                                status_code=303)
     with connection() as conn:
         page = conn.execute(
             "SELECT interface_id, status FROM workhub.interfaces WHERE interface_id = %s FOR UPDATE",
@@ -969,11 +1046,11 @@ def review_reject(request: Request, interface_id: UUID, csrf: str = Form(...),
         conn.execute(
             """UPDATE workhub.interfaces
                   SET status = 'draft', reviewed_by = %s, reviewed_at = now(),
-                      review_note = %s, updated_at = now()
+                      review_note = %s, review_code = %s, updated_at = now()
                 WHERE interface_id = %s""",
-            (principal["member_id"], note.strip(), interface_id))
+            (principal["member_id"], note.strip(), code, interface_id))
         api.audit(conn, principal["member_id"], "interface.rejected", "interface", interface_id,
-                  note.strip(), {"to": "draft"})
+                  note.strip(), {"to": "draft", "review_code": code})
     return RedirectResponse(url="/reviews?saved=rejected", status_code=303)
 
 
