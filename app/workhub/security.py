@@ -47,24 +47,11 @@ def principal_for_token(token: str) -> dict[str, Any] | None:
 
     Both the bearer scheme (MCP, curl) and the browser cookie end up here, so a
     session behaves identically on both: the UI cannot be a softer way in.
-
-    The position title rides along because every screen shows it in the top bar.
-    It is dressing only -- nothing authorises on it -- and a person between
-    assignments gets None, in which case the bar simply omits the title.
     """
     with connection() as conn:
         row = conn.execute(
             """SELECT m.member_id, m.display_name, m.employment_status, m.token_version,
-                      s.session_id, s.token_version AS session_token_version,
-                      (SELECT p.title
-                         FROM workhub.position_assignments a
-                         JOIN workhub.positions p USING (position_id)
-                        WHERE a.member_id = m.member_id
-                          AND a.status IN ('active', 'scheduled')
-                          AND a.starts_at <= now()
-                          AND (a.ends_at IS NULL OR now() < a.ends_at)
-                        ORDER BY a.starts_at DESC
-                        LIMIT 1) AS position_title
+                      s.session_id, s.token_version AS session_token_version
                FROM workhub.workforce_sessions s
                JOIN workhub.workforce_members m USING (member_id)
                WHERE s.token_digest = %s AND s.revoked_at IS NULL
