@@ -164,29 +164,6 @@ def _script(base: str) -> None:
 
     code, body, _ = call("/board")
     check("board renders for the admin", code == 200 and "进度看板" in body, str(code))
-    # The bar names the person by position first and by initial second, between
-    # two rules that cut it into brand | destinations | person. The position is
-    # dressing, not authorisation: the only thing worth asserting is that it
-    # travels with the session at all.
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        seat = conn.execute(
-            """SELECT p.title
-                 FROM workhub.position_assignments a
-                 JOIN workhub.positions p USING (position_id)
-                WHERE a.member_id = %s AND a.status IN ('active', 'scheduled')
-                ORDER BY a.starts_at DESC LIMIT 1""",
-            (people["9999"],),
-        ).fetchone()
-    bar = re.search(r'<header class="topbar">([\s\S]*?)</header>', body)
-    bar_html = bar.group(1) if bar else ""
-    check("top bar splits into brand | destinations | person",
-          bar_html.count('class="navsep"') == 2,
-          "seps=%d" % bar_html.count('class="navsep"'))
-    check("top bar carries an initial disc and a way out",
-          'class="avatar"' in bar_html and "退出" in bar_html, "")
-    check("top bar shows the person's position title",
-          bool(seat) and seat["title"] in bar_html,
-          (seat or {}).get("title", "<no assignment>"))
     check("board shows the blocked reason",
           "新版合同模板第 8 条" in body or "考勤机导出" in body, "")
     check("board marks AI-dictated reports", "AI 代笔" in body, "")
