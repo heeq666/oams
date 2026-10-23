@@ -64,7 +64,7 @@ def _script() -> None:
         has_rail = 'class="app-rail"' in html
         rail = re.search(r'<aside class="app-rail".*?</aside>', html, re.S)
         names = re.findall(r'class="rail-item[^"]*">\s*([^<]+?)\s*<', rail.group(0)) if rail else []
-        top = re.search(r"<nav>(.*?)</nav>", html, re.S)
+        top = re.search(r"<nav[^>]*>(.*?)</nav>", html, re.S)
         links = re.findall(r">([^<]+)<", top.group(1)) if top else []
         return has_rail, [n.strip() for n in names], [l.strip() for l in links if l.strip()]
 
@@ -98,12 +98,13 @@ def _script() -> None:
     status, html, _ = admin_call("/settings")
     has_rail, names, links = shell(html)
     check("admin sidebar lists departments", has_rail and "设计部" in names, names)
-    check("admin top bar keeps globals", links == ["部门", "页面审核", "进度中心", "汇报汇总", "设置"], links)
+    check("admin top bar keeps globals", links == ["进度中心", "汇报中心", "页面审核", "设置"], links)
 
     status, html = follow(lead_call, "/departments")
     has_rail, names, links = shell(html)
-    check("reviewer sidebar lists only their department", has_rail and names == ["设计部"], names)
-    check("reviewer top bar hides administrator entries", links == ["部门", "页面审核"], links)
+    check("reviewer sidebar leads with the department list and their own department",
+          has_rail and names == ["首页", "设计部"], names)
+    check("reviewer top bar hides administrator entries", links == ["页面审核"], links)
     check("department tabs are inside the content area, not the sidebar",
           'class="page-tabs"' in html and names.count("设计部") == 1, names)
 

@@ -39,7 +39,7 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from workhub import api, funnel, metrics, review as review_rules
+from workhub import admin_labels, api, funnel, metrics, review as review_rules
 from workhub.config import settings
 from workhub.datacenter import DataCenter, DataCenterNotConfigured, build_datacenter
 from workhub.db import connection
@@ -1932,11 +1932,66 @@ def admin_audit(request: Request, limit: int = Query(default=100, ge=1, le=500))
 
 @router.get("/settings", response_class=HTMLResponse)
 def settings_home(request: Request):
-    """One door for administrator work, so the top bar stays about daily work."""
+    """Who exists, what each job can reach, what changed lately.
+
+    One screen answers the three questions a manager actually asks about the
+    setup, in that order. The step-by-step wizard -- create a department, create
+    a job, create the first person -- keeps its own page at /setup: it is a
+    one-off flow, and mixing a wizard into an overview makes both harder to read.
+    """
     try:
         _require(request, "workforce.grants", "manage")
     except _NotSignedIn:
         return RedirectResponse(url="/login?next=/settings", status_code=302)
     except _NotPermitted:
         return _denied(request, "设置页只有管理员可以打开。")
-    return TEMPLATES.TemplateResponse(request, "settings.html", {"member": _member(request)})
+    with connection() as conn:
+        org_units = conn.execute(
+            """SELECT u.org_unit_id, u.name, u.org_code, u.unit_type,
+                      parent.name AS parent_name,
+                      (SELECT count(*)
+                         FROM workhub.position_assignments a
+                         JOIN workhub.positions held ON held.position_id = a.position_id
+                        WHERE held.org_unit_id = u.org_unit_id
+                          AND a.status = 'active') AS member_count,
+                      (SELECT count(*)
+                         FROM workhub.interfaces i
+                        WHERE i.org_unit_id = u.org_unit_id
+                          AND i.status = 'active') AS page_count
+               FROM workhub.org_units u
+               LEFT JOIN workhub.org_units parent ON parent.org_unit_id = u.parent_org_unit_id
+               WHERE u.status = 'active'
+               ORDER BY u.name""").fetchall()
+        positions = conn.execute(
+            """SELECT p.position_id, p.title, p.position_code, o.name AS org_name
+               FROM workhub.positions p
+               JOIN workhub.org_units o ON o.org_unit_id = p.org_unit_id
+               WHERE p.status = 'active'
+               ORDER BY o.name, p.title""").fetchall()
+        grants = conn.execute(
+            """SELECT position_id, resource, action
+               FROM workhub.permission_grants
+               WHERE subject_type = 'position' AND revoked_at IS NULL
+               ORDER BY resource, action""").fetchall()
+        events = conn.execute(
+            """SELECT e.event_type, e.subject_type, e.reason, e.occurred_at,
+                      m.display_name AS actor_name
+               FROM workhub.workforce_audit_events e
+               LEFT JOIN workhub.workforce_members m ON m.member_id = e.actor_member_id
+               ORDER BY e.occurred_at DESC, e.event_id DESC
+               LIMIT 5""").fetchall()
+
+    by_position: dict = {}
+    for grant in grants:
+        by_position.setdefault(grant["position_id"], []).append(grant)
+    position_rows = [
+        dict(row, capabilities=admin_labels.summarize_capabilities(by_position.get(row["position_id"], [])))
+        for row in positions
+    ]
+    recent = [dict(row, action=admin_labels.describe_event(row["event_type"])) for row in events]
+    return TEMPLATES.TemplateResponse(request, "settings.html", {
+        "member": _member(request),
+        "org_units": org_units,
+        "positions": position_rows,
+        "recent": recent,
+    })
