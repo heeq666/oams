@@ -55,13 +55,15 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      badge that competes with status colours. Warnings keep one accent each. */
   .row1 .pos { margin-left: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
   .row1 .pos .vac { color: var(--blocked); font-style: normal; margin-left: 6px; }
-  .badge { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line);
-           color: var(--muted); background: #fafbfc; }
-  .badge.blocked { color: #fff; background: var(--blocked); border-color: var(--blocked); }
-  .badge.decision { color: #fff; background: var(--decision); border-color: var(--decision); }
-  .badge.agent { color: #fff; background: #4c51bf; border-color: #4c51bf; }
-  .badge.human { color: #fff; background: #4a5568; border-color: #4a5568; }
-  .badge.vacant { color: var(--blocked); border-color: var(--blocked); }
+  /* States read as a tinted word, not a chip with a frame: the fill carries the
+     state and the text keeps its status colour, so nothing has to be outlined. */
+  .badge { font-size: 12px; line-height: 18px; padding: 1px 8px; border-radius: 10px;
+           border: 0; color: #525252; background: var(--subtle); }
+  .badge.blocked { color: var(--blocked); background: var(--danger-soft); }
+  .badge.decision { color: var(--decision); background: var(--warning-soft); }
+  .badge.agent { color: var(--agent); background: var(--agent-soft); }
+  .badge.human { color: #525252; background: var(--subtle); }
+  .badge.vacant { color: var(--blocked); background: var(--danger-soft); }
   .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
   .note { margin-top: 6px; font-size: 14px; }
   .evidence { color: var(--muted); font-size: 13px; margin-top: 4px; }
@@ -93,7 +95,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .orgnav a { padding: 7px 16px; font-size: 14px; color: var(--muted); text-decoration: none; }
   .orgnav a + a { border-left: 1px solid var(--line); }
   .orgnav a.on { background: var(--accent); color: #fff; }
-  .orgnav a:hover:not(.on) { background: #fafbfc; color: var(--ink); }
+  .orgnav a:hover:not(.on) { background: var(--subtle); color: var(--ink); }
   /* The AI-dictation scoreboard: one horizontal human/agent split, not a metric card. */
   .channel-scorecard { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
                        padding: 12px 14px; margin-bottom: 16px; }
@@ -117,12 +119,12 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .tabs.layers { gap: 2px; margin-bottom: 12px; }
   .tabs.layers a { border: none; background: transparent; color: var(--muted);
                    padding: 6px 12px; border-radius: 8px; }
-  .tabs.layers a:hover { background: #eceef0; color: var(--ink); }
+  .tabs.layers a:hover { background: var(--subtle); color: var(--ink); }
   .tabs.layers a.on { background: var(--accent); color: #fff; }
   .tabs.layers a .cnt { font-weight: 600; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
   .flowstrip { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-               background: #fafbfc; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+               background: var(--subtle); border: 0; border-radius: 8px; padding: 10px 12px; }
   .flowstrip .arrow, .flowstrip .fork { color: var(--muted); font-size: 13px; }
   .flowstrip .fork { margin-left: 10px; }
   .flowstrip .stage { display: inline-flex; align-items: baseline; gap: 6px; padding: 7px 14px;
@@ -160,9 +162,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .detail { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
   .zoom-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .zoom-head h2 { margin: 0; }
-  .badge.heat.ok { color: var(--done); border-color: #cfe3d6; background: #f2f8f4; }
-  .badge.heat.warn { color: var(--decision); border-color: #e8cf94; background: #fdf6e8; }
-  .badge.heat.alert { color: #fff; background: var(--blocked); border-color: var(--blocked); }
+  .badge.heat.ok { color: var(--done); background: var(--success-soft); }
+  .badge.heat.warn { color: var(--decision); background: var(--warning-soft); }
+  .badge.heat.alert { color: var(--blocked); background: var(--danger-soft); }
   svg.room { width: 100%; height: auto; background: #fbfcfb; border: 1px solid var(--line);
              border-radius: 10px; margin-bottom: 12px; }
   .desk rect { fill: #fff; stroke: #d3d9de; stroke-width: 2; }
@@ -201,7 +203,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .link.danger { color: var(--blocked); }
   .seatlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .seatlist li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-                 background: #fafbfc; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+                 background: var(--subtle); border: 0; border-radius: 8px; padding: 8px 12px; }
   .stack { margin-bottom: 20px; }
   .form-row .check { flex-direction: row; align-items: center; gap: 6px; }
   .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
@@ -219,8 +221,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .progress-department a { color: var(--accent); }
   /* What a version changed, on the review queue: one line per change, severity
      first, so a reviewer's eye can skip the low ones and stop at the costly ones. */
-  .diff-block { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line);
-                border-radius: 8px; background: #fafbfc; }
+  .diff-block { margin-top: 12px; padding: 10px 12px; border: 0;
+                border-radius: 8px; background: var(--subtle); }
   .diff-head { margin: 0 0 6px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
   .diff-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex;
                flex-direction: column; gap: 6px; }
@@ -294,7 +296,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      slot in the middle, the account right. The slot is centred on the bar rather
      than pushed right by the brand, so the navigation stays where the eye expects
      it no matter how long the person's name is. */
-  header.topbar { background: var(--card); border-bottom: 1px solid var(--line);
+  header.topbar { background: var(--card); border-bottom: 0;
                   height: 56px; padding: 0 24px; gap: 0;
                   display: flex; align-items: center; justify-content: space-between; }
   header.topbar a { color: var(--ink); text-decoration: none; }
@@ -335,12 +337,14 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                                background: transparent; flex: none; }
   .app-rail .rail-item.on { color: var(--ink); font-weight: 600; }
   .app-rail .rail-item.on .mark { background: var(--accent); }
-  .app-frame > main { background: var(--card); border-radius: 20px 0 0 20px;
+  /* The content area sits on the same ground as the rail: on the canvas the
+     white belongs to the panels inside it, not to a big white sheet. */
+  .app-frame > main { background: var(--bg); border-radius: 20px 0 0 20px;
                       padding: 32px 32px 40px; }
   h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
   h2 { font-size: 15px; font-weight: 600; }
   .sub { font-size: 13px; color: var(--muted); }
-  .card { border-radius: 28px; padding: 20px 24px; border-color: var(--line); }
+  .card { border-radius: 28px; padding: 20px 24px; border: 0; }
   .card + .card { margin-top: 20px; }
   .card > h2:first-child { margin-top: 0; }
   .card-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
@@ -443,6 +447,17 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   input, select, textarea, .strip, .flash, .diff-block { border-radius: var(--r-control); }
   .auth-card { border-radius: var(--r-xl); }
   thead tr:first-child th { border-radius: 0; }
+  /* No outline anywhere: every surface is a filled panel on the page ground.
+     Separation comes from the ground colour and the radius, never from a
+     hairline -- the same choice the canvas screens make. */
+  .card, .metric, .channel-scorecard, .detail, .panel, .review-card,
+  ul.items > li, .auth-card, .flowstrip, .tabs a, .orgnav, .orgnav a + a,
+  .page-tab { border: 0; }
+  /* The segmented switches keep their silhouette as a filled track. */
+  .orgnav { background: var(--subtle); }
+  .orgnav a + a { border-left: 0; }
+  .orgnav a.on { background: var(--card); color: var(--ink); font-weight: 500; }
+  .tabs a { background: var(--subtle); }
 </style>
 </head>
 {% set path = request.url.path %}
