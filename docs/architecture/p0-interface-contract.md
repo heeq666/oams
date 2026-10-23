@@ -218,6 +218,8 @@ blocked_reason needs_decision progress_value
 
 `display_only` 不是字段。`map_to` 只能取上面这些或 `display_only`。
 
+**但有两个是例外，只能平台写、不能部门填**：`sample_status` 与 `approval_status`（`descriptor.PLATFORM_DERIVED_FIELDS`）。它们是**颜色级**记录派生的款级结论，部门把字段映射到它们会分叉事实，校验器报 `[DATA_RULE_VIOLATION]`。词汇表成员身份与 `map_to` 使用权是两件事：留在词汇表里（平台派生数据要用这个名字），但不许 `fields[].map_to` 指向。要表达状态请用 `status`。
+
 > 修订记录（Lead，本轮）：G 组三个字段是第一版冻结时漏掉的。概念稿第 80 行写明「标准字段 = 数据中心词汇表 + 汇报必需的过程字段（status / progress / note / evidence / needs_decision）」，而 `blocked_reason` / `progress_value` 是 `progress_row` 与 `blocker_list` 两个录入模块的实际产出列。已加入冻结集。
 
 ---

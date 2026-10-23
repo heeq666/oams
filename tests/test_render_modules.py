@@ -78,7 +78,7 @@ AGGREGATES = {
     "funnel.designed": 128, "funnel.sample_done": 59, "funnel.sample_wip": 24,
     "funnel.sample_pending": 45, "funnel.sample_open": 69, "funnel.priced": 87,
     "funnel.ordered": 63, "funnel.not_ordered": 65, "funnel.qty": 63289,
-    "funnel.gmv": 17458734.0, "funnel.roi": 5.17,
+    "funnel.gmv": 17458734.0, "funnel.roi": 5.1751,
     "rank.funnel.qty.抖音": 820, "rank.funnel.qty.天猫": 640, "rank.funnel.qty.拼多多": 310,
     "activity": [
         {"when": "今天 09:12", "what": "补充了打样单号 SY-2610", "who": "设计部"},
@@ -340,7 +340,9 @@ def test_metric_money_and_roi_use_the_canonical_formatting():
     assert "¥1,745.87 万" in money
     roi = render_interface(page({"type": "metric_card",
                                  "params": {"metric_key": "funnel.roi"}}), {}, AGGREGATES)
-    assert "5.17" in roi
+    # Rounded half up by owner ruling (2026-10-23): 5.1751 renders as 5.18.
+    assert "5.18" in roi
+    assert "5.17" not in roi
     assert "倍" in roi
 
 

@@ -25,6 +25,8 @@ the three buckets always add up to the style count.
 """
 from __future__ import annotations
 
+from decimal import ROUND_HALF_UP, Decimal
+
 from workhub.datacenter import DataCenter, as_bool
 
 #: Colour-level words that mean "this colour has been sampled".
@@ -38,6 +40,13 @@ SAMPLE_DONE_WORDS: tuple[str, ...] = ("已出样",)
 #: really emits (docs/runbooks/product-hub-data-access.md lists all 21 values),
 #: so a colour sitting in 前工艺中 or 配料完成-待剪裁 is not silently counted as
 #: "not started".
+#:
+#: The last three are not a stage on that line but were ruled to belong here by
+#: the product owner (2026-10-23): 重做 restarts a colour that already went round
+#: once, and 已安排 / 毛衣已安排 is booked with the factory. Work that has been
+#: booked or re-booked is in production, so filing it under "not started" would
+#: overstate 打样未完成. 后工艺 and 剪裁中 were checked against the owner's list
+#: and were already here.
 SAMPLE_WIP_WORDS: tuple[str, ...] = (
     "配料中",
     "制版中",
@@ -49,24 +58,24 @@ SAMPLE_WIP_WORDS: tuple[str, ...] = (
     "剪裁中",
     "待剪裁",
     "配料完成-待剪裁",
+    "重做",
+    "已安排",
+    "毛衣已安排",
 )
 
-#: Colour words this module deliberately does **not** classify. They are either
-#: terminal-negative (取消 / 失败), scheduling-only (已安排 / 待定), a re-do that
-#: has not restarted production (重做), or metadata (AI效果图 / ODM / 特殊情况).
+#: Colour words this module deliberately does **not** classify as in production.
+#: They are terminal-negative (取消 / 失败), genuinely untouched (未开始 /
+#: 未填写 / 待定), or metadata (AI效果图 / ODM / 特殊情况).
 #: A style whose colours are all in this set derives to "pending", the
 #: conservative reading: it cannot be sold and it is not visibly in production.
 #:
-#: REVIEW NOTE: this partition of the 21-word vocabulary is a judgement call and
-#: is listed in the delivery report for the product owner to confirm. 重做,
-#: 已安排 and 待剪裁 are the ones that could plausibly move to SAMPLE_WIP_WORDS.
+#: 重做 / 已安排 / 毛衣已安排 used to sit here and moved to SAMPLE_WIP_WORDS by
+#: owner ruling (2026-10-23). What is left is the residue that really is "no
+#: work started", plus words that describe a colour rather than a stage.
 UNCLASSIFIED_SAMPLE_WORDS: tuple[str, ...] = (
     "未开始",
     "未填写",
-    "重做",
     "取消",
-    "已安排",
-    "毛衣已安排",
     "ODM",
     "失败",
     "特殊情况",
@@ -203,9 +212,16 @@ def compute_funnel(dc: DataCenter, *, wave: str | None = None) -> dict[str, floa
     }
 
 
-def _truncate(value: float, digits: int) -> float:
-    factor = 10 ** digits
-    return int(value * factor) / factor
+def _round_half_up(value: float, digits: int) -> Decimal:
+    """Round a ratio the way a person reading 5.1751 expects: 5.18.
+
+    Python's built-in round() is round-half-to-even on the decimal string, so
+    round(5.175, 2) is 5.17 — the opposite of what the owner ruled. Going
+    through Decimal keeps the half-up rule exact instead of inheriting binary
+    float error.
+    """
+    quantum = Decimal(1).scaleb(-digits)
+    return Decimal(str(value)).quantize(quantum, rounding=ROUND_HALF_UP)
 
 
 def format_metric(metric_key: str, value: float | int | None) -> str:
@@ -218,11 +234,11 @@ def format_metric(metric_key: str, value: float | int | None) -> str:
     None renders as an em dash — "no denominator yet" must not look like "zero".
     Money is shown in 万元 with two decimals; ROI keeps two decimals.
 
-    ROI is **truncated**, not rounded, on purpose: the contract's measured
-    26D冬1-2波 value is 5.17 while 6,889,366 / 1,331,248 = 5.1751, which any
-    round-half-up rule turns into 5.18. Truncation reproduces the published
-    number and is also the conservative direction for a ratio nobody wants to
-    see inflated.
+    ROI is **rounded half up**, by owner ruling (2026-10-23): 6,889,366 /
+    1,331,248 = 5.1751 renders as 5.18, not 5.17. Earlier drafts truncated to
+    match the figure printed in the concept doc; the owner has since decided
+    the display should follow the arithmetic, so the concept doc's 5.17 is the
+    stale number, not this function.
     """
     if value is None:
         return "—"
@@ -230,7 +246,7 @@ def format_metric(metric_key: str, value: float | int | None) -> str:
     if key == "funnel.gmv":
         return f"¥{value / 10000:,.2f} 万"
     if key == "funnel.roi":
-        return f"{_truncate(float(value), 2):.2f}"
+        return f"{_round_half_up(float(value), 2):.2f}"
     unit = METRIC_UNITS.get(key, "")
     if isinstance(value, (int, float)):
         number = f"{_as_int(float(value)):,}"

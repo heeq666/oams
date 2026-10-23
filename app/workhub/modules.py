@@ -44,6 +44,14 @@ STANDARD_FIELD_VOCAB: tuple[str, ...] = (
     # C. time
     "planned_at", "due_at", "completed_at", "reported_at", "status_since",
     # D. status
+    # NOTE: sample_status / approval_status are *canonical names*, not *field
+    # mappings*. They stay in the vocabulary because the vocabulary is the shared
+    # language of the interface contract and the product data centre writes these
+    # two itself (style-level status is derived from colour-level development
+    # records). A department descriptor may NOT use them as map_to -- the
+    # validator rejects that with DATA_RULE_VIOLATION (see
+    # workhub.descriptor.PLATFORM_DERIVED_FIELDS). Read this line as "the platform
+    # can say sample_status", not "a department can map a field to sample_status".
     "status", "sample_status", "approval_status",
     # E. text and evidence
     "title", "note", "evidence", "evidence_url", "file",

@@ -574,3 +574,88 @@ def test_an_entry_can_be_linked_and_then_it_counts(world):
         (world["entries"]["unlinked"],))
     back = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.progress_sum")
     assert back["value"] == 200, "unlinking removes it again"
+
+
+# ---------------------------------------------------------------------------
+# Two active pages, one metric key: the arithmetic has to compose
+# ---------------------------------------------------------------------------
+
+
+def test_two_pages_declaring_one_metric_are_pooled_not_first_wins(world):
+    """The schema allows it (the unique index is on slug, not metric_key)."""
+
+    second = _insert_interface(world["conn"], world["dept"], world["member_id"],
+                               world["position"], slug="rollup-fixture-two")
+    _insert_entry(world["conn"], second, world["member_id"], "second-done-30",
+                  status="done", progress=30, work_item_id=world["item_a"])
+    _insert_entry(world["conn"], second, world["member_id"], "second-wip-50",
+                  status="in_progress", progress=50, work_item_id=world["item_b"])
+
+    conn = world["conn"]
+
+    # sum: both pages contribute (200 was page one alone).
+    total = api.aggregate_entries(conn, world["dept"], "dept.ROLLUPD.progress_sum")
+    assert total["value"] == 200 + 80
+    assert total["entry_count"] == 5
+
+    # count: five rows, not two.
+    counted = api.aggregate_entries(conn, world["dept"], "dept.ROLLUPD.finished")
+    assert counted["value"] == 3, "two done rows on page one plus one on page two"
+
+
+def test_average_is_weighted_by_rows_not_by_pages(world):
+    """Page means are not averagable: a one-row page must not outvote a big one."""
+
+    second = _insert_interface(world["conn"], world["dept"], world["member_id"],
+                               world["position"], slug="rollup-fixture-two")
+    # Page one pools 40 / 60 / 100 (mean 66.67 over 3 rows); page two adds 30 / 50
+    # (mean 40 over 2 rows). The pooled mean is 280 / 5 = 56.
+    _insert_entry(world["conn"], second, world["member_id"], "second-done-30",
+                  status="done", progress=30, work_item_id=world["item_a"])
+    _insert_entry(world["conn"], second, world["member_id"], "second-wip-50",
+                  status="in_progress", progress=50, work_item_id=world["item_b"])
+
+    average = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.progress_avg")
+    assert average["value"] == pytest.approx(56.0), (
+        "mean of the page means would be 53.33 -- that is the bug this pins down")
+
+
+def test_count_distinct_takes_the_union_across_pages(world):
+    """A status reported on two pages is still one status."""
+
+    second = _insert_interface(world["conn"], world["dept"], world["member_id"],
+                               world["position"], slug="rollup-fixture-two")
+    # Page one contributes done / done / blocked; page two contributes done and
+    # in_progress. Union = 3. Adding the per-page distinct counts would give 4.
+    _insert_entry(world["conn"], second, world["member_id"], "second-done-30",
+                  status="done", progress=30, work_item_id=world["item_a"])
+    _insert_entry(world["conn"], second, world["member_id"], "second-wip-50",
+                  status="in_progress", progress=50, work_item_id=world["item_b"])
+
+    distinct = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.statuses")
+    assert distinct["value"] == 3
+    assert {page["entry_count"] for page in distinct["pages"]} == {3, 2}
+
+
+def test_archived_page_still_does_not_count_even_beside_a_live_one(world):
+    """Two pages is the fix; the archived fixture page must stay excluded."""
+
+    second = _insert_interface(world["conn"], world["dept"], world["member_id"],
+                               world["position"], slug="rollup-fixture-two")
+    _insert_entry(world["conn"], second, world["member_id"], "second-done-30",
+                  status="done", progress=30, work_item_id=world["item_a"])
+
+    total = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.progress_sum")
+    assert total["value"] == 230
+    assert {page["interface_id"] for page in total["pages"]} == {world["page"], second}
+
+
+def test_work_item_limit_survives_junk_instead_of_raising(world):
+    """web.py passes no limit today; a string or None must not become a 500."""
+
+    conn = world["conn"]
+    assert api.list_open_work_items(conn, world["dept"], limit=None)
+    assert api.list_open_work_items(conn, world["dept"], limit="abc")
+    assert len(api.list_open_work_items(conn, world["dept"], limit=0)) == 1
+    assert api.list_open_work_items(conn, world["dept"], limit=9999)
+

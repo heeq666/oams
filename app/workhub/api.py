@@ -1276,6 +1276,52 @@ def _aggregate_value(agg, column, rows):
     return None
 
 
+def _combine_pages(agg, page_rows):
+    """Fold several pages' rows into one number without double counting.
+
+    page_rows is [(column, rows)] -- one pair per page that could resolve its
+    from_field. The rows are pooled *before* the arithmetic because per-page
+    arithmetic does not compose:
+
+    * count       -- the rows themselves, so two pages both count;
+    * sum         -- the measured values added across pages;
+    * avg         -- the pooled mean, which weights a page by its row count; the
+                     mean of the page means would let a page with one entry
+                     outvote a page with fifty;
+    * count_distinct -- the union of the values, because a value reported on two
+                     pages is still one value. Adding the per-page distinct
+                     counts would count it twice.
+    """
+    if not page_rows:
+        # No page could resolve its from_field to a column the rollup owns, so
+        # there is nothing to count -- return "unknown", not zero.
+        return None
+    if agg == "count":
+        return sum(len(rows) for _, rows in page_rows)
+    values = []
+    for column, rows in page_rows:
+        for row in rows:
+            value = row.get(column)
+            if value is not None:
+                values.append(value)
+    if agg == "count_distinct":
+        return len({str(value) for value in values})
+    numbers = []
+    for value in values:
+        try:
+            numbers.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    if not numbers:
+        return None
+    if agg == "sum":
+        total = sum(numbers)
+        return int(total) if float(total).is_integer() else total
+    if agg == "avg":
+        return sum(numbers) / len(numbers)
+    return None
+
+
 def _format_metric(metric_key, value):
     """The company formatter, so a department number reads like a company one."""
     try:
@@ -1385,17 +1431,20 @@ def aggregate_entries(conn, org_unit_id, metric_key, interface_id=None):
         if not hits:
             return {"available": False, "reason": "没有已启用的页面声明指标 " + str(metric_key),
                     "metric_key": metric_key, "value": None, "entries": [], "entry_count": 0}
-        # count sums the rows, sum/avg add up the measured numbers, and
-        # count_distinct de-duplicates the shared values, so one page's rows can
-        # never be counted twice and two pages' rows always both count.
+        # Every page's rows are pooled before the arithmetic runs: taking the
+        # first page's value, averaging the page means, or adding up per-page
+        # distinct counts would all be wrong once two pages declare one key.
         first_page, first_binding = hits[0]
         agg = first_binding.get("agg")
         entries = []
         per_page = []
+        page_rows = []
         for page, binding in hits:
             column = _field_map_to(page["descriptor"], binding.get("from_field"))
             rows = _binding_entries(conn, page["interface_id"], binding)
             value = None if column is None else _aggregate_value(binding.get("agg"), column, rows)
+            if column is not None:
+                page_rows.append((column, rows))
             entries.extend(_entry_brief(row) for row in rows)
             per_page.append({
                 "interface_id": page["interface_id"],
@@ -1404,24 +1453,11 @@ def aggregate_entries(conn, org_unit_id, metric_key, interface_id=None):
                 "entry_count": len(rows),
                 "value": value,
             })
-        column = _field_map_to(first_page["descriptor"], first_binding.get("from_field"))
-        total = None
-        if column is not None:
-            if agg == "count":
-                total = sum(item["value"] or 0 for item in per_page)
-            elif agg == "sum":
-                numbers = [item["value"] for item in per_page if item["value"] is not None]
-                total = sum(numbers) if numbers else None
-                if isinstance(total, float) and total.is_integer():
-                    total = int(total)
-            elif agg == "avg":
-                numbers = [item["value"] for item in per_page if item["value"] is not None]
-                total = sum(numbers) / len(numbers) if numbers else None
-            elif agg == "count_distinct":
-                total = sum(item["value"] or 0 for item in per_page)
+        total = _combine_pages(agg, page_rows)
+        usable = bool(page_rows)
         return {
             "available": True,
-            "reason": None if column is not None else "指标读取的字段只在本部门可见，不参与汇总",
+            "reason": None if usable else "指标读取的字段只在本部门可见，不参与汇总",
             "metric_key": metric_key,
             "mode": "emit",
             "agg": agg,
