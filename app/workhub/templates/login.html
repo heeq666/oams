@@ -1,17 +1,29 @@
 {% extends "base.html" %}
 {% block title %}登录 · Workhub{% endblock %}
-{% block content %}
-<h1>登录</h1>
-<p class="sub">粘贴管理员发给你的会话令牌进入。令牌等同密码，只私发本人，别转发到群里。</p>
-{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
-<form method="post" action="/login" class="card" style="max-width:520px">
-  <input type="hidden" name="next" value="{{ next }}">
-  <div class="field" style="margin-bottom:12px">
-    <label for="token">会话令牌</label>
-    <input id="token" name="token" type="password" autocomplete="off" required style="width:100%"
-           placeholder="粘贴管理员给你的令牌">
+{% block bodyclass %}auth{% endblock %}
+{# No navigation on this screen: there is nothing to navigate to before the
+   token is accepted, and a rail full of departments the visitor cannot open
+   would only look like a permissions bug. #}
+{% block shell %}
+<div class="auth-wrap">
+  <div class="auth-col">
+    <a class="auth-brand" href="/login" aria-label="Workhub">
+      <img src="/static/brand/logo-login.png" alt="Workhub" width="77" height="60">
+    </a>
+    <form method="post" action="/login" class="auth-card">
+      <h1>登录</h1>
+      <p class="sub">用管理员发给你的会话令牌登录。</p>
+      <input type="hidden" name="next" value="{{ next }}">
+      {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
+      <div class="field">
+        <label for="token">会话令牌</label>
+        <input id="token" name="token" type="password" autocomplete="off" required
+               placeholder="粘贴令牌，或直接打开管理员给的链接"{% if error %} aria-invalid="true" aria-describedby="token-error"{% endif %}>
+      </div>
+      <button type="submit">登录</button>
+      <p class="auth-help">没有令牌？让管理员在服务器上执行 <span class="mono">workhub issue-token --member-id &lt;成员ID&gt;</span>。</p>
+    </form>
+    <p class="auth-foot">Workhub · 内部系统，仅限公司网络访问</p>
   </div>
-  <button type="submit">进入</button>
-</form>
-<p class="sub" style="margin-top:14px">还没有令牌？找系统管理员签发一个，有效期默认 8 小时，到期后需要重新签发。</p>
+</div>
 {% endblock %}

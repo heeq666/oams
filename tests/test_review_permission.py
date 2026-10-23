@@ -109,7 +109,7 @@ def _script() -> None:
 
     # Can review.
     status, page, _ = lead("/reviews")
-    check("reviewer permission opens the review queue", status == 200 and "部门页面审核" in page, status)
+    check("reviewer permission opens the review queue", status == 200 and "页面审核" in page, status)
 
     # Cannot do administrator work.
     status, _, _ = lead("/setup")

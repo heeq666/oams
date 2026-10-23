@@ -1,102 +1,129 @@
 {% extends "base.html" %}
 {% block title %}页面审核 · Workhub{% endblock %}
 {% block content %}
-<h1>部门页面审核</h1>
-<p class="sub">部门做完页面后会提交到这里。通过后它成为该部门的正式页面，填写的正式数据进入公司汇总；退回时部门保留已经试填的内容。</p>
-
-{% if saved == 'approved' %}<div class="flash">已通过。该页面现在正式使用，数据进入公司汇总。</div>
-{% elif saved == 'rejected' %}<div class="flash">已退回，部门会看到退回原因。</div>{% endif %}
-{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
-
-<h2>待审核 · {{ pending | length }}</h2>
-{% if pending %}
-{% for p in pending %}
-<section class="card" style="margin-bottom:12px">
-  <div class="row1">
-    <strong>{{ p.org_name }} · {{ p.name }}</strong>
-    <span class="badge vacant">待审核</span>
-    <span class="pos mono">{{ p.slug }} v{{ p.version_no }}</span>
+<div class="pagehead">
+  <div>
+    <h1>页面审核</h1>
+    <p class="sub">部门提交的页面先在这里过一遍。通过后它成为正式页面，填写的正式数据进入公司汇总。</p>
   </div>
-  <p class="meta">
-    提交人：{{ p.author or '—' }} · 提交时间：{{ p.updated_at | dt }}
-    {% if p.position_title %} · 填写岗位：{{ p.position_title }}{% endif %}
-    · 可见范围：{{ '公共模板' if p.visibility == 'public' else '仅本部门' }}
-  </p>
-  {% set b = p.bundle %}
+  <span class="pill neutral">待审核 {{ pending | length }}</span>
+</div>
+
+{% if saved == 'approved' %}<div class="flash" role="status">已通过。该页面现在正式使用，数据进入公司汇总。</div>
+{% elif saved == 'rejected' %}<div class="flash" role="status">已退回，部门会看到退回原因。</div>{% endif %}
+{% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+
+{% if pending %}
+<div class="stack-20">
+{% for p in pending %}
+{% set b = p.bundle %}
+<section class="card review-card">
+  <div class="card-head">
+    <div>
+      <div class="row" style="gap:8px">
+        <span class="title-line">{{ p.org_name }} · {{ p.name }}</span>
+        <span class="pill neutral">v{{ p.version_no }}</span>
+        {% if b.first_version %}<span class="pill info">首版</span>{% endif %}
+      </div>
+      <p class="meta">
+        {{ p.author or '—' }} 提交 · {{ p.updated_at | dt }}
+        · {{ '现在对外的是 v' ~ b.reference_version if b.reference_version else '公司目前没有这一页' }}
+        {% if p.visibility == 'public' %}· 公共模板{% endif %}
+      </p>
+    </div>
+    <a class="spacer" href="/interfaces/{{ p.interface_id }}">预览与试填 →</a>
+  </div>
+
   <div class="diff-block">
     <p class="diff-head">
       <strong>这一版改了什么</strong>
       <span class="meta">{{ b.summary.headline }}</span>
+      {% if b.summary.high %}<span class="pill warning">需注意 {{ b.summary.high }}</span>{% endif %}
+      {% if b.summary.low %}<span class="pill neutral">提示 {{ b.summary.low }}</span>{% endif %}
     </p>
+
     {% if b.first_version %}
-      <p class="note">首版：没有可对比的在线版本，请按整页审核。</p>
+      <p class="strip neutral">首版：没有可对比的在线版本，请按整页审核——重点看字段有没有接到标准字段、状态词认不认得。</p>
     {% elif b.changes %}
       {% if b.summary.high %}
-      <p class="note">标着「需注意」的改动，通过后会立刻改变公司数字的含义，历史数据不会重算。</p>
+      <p class="strip warning">标着「需注意」的改动，通过后会立刻改变公司数字的含义，历史数据不会重算。</p>
       {% endif %}
-      <ul class="diff-list">
-        {% for c in b.changes %}
-        <li>
-          <span class="badge {{ 'blocked' if c.severity == 'high' else ('decision' if c.severity == 'medium' else 'vacant') }}">{{ c.severity_label }}</span>
-          <span class="diff-area">{{ c.area }}</span>
-          <strong>{{ c.label }}</strong>
-          <span class="mono diff-value">{{ c.before }} → {{ c.after }}</span>
-          {% if c.why %}<span class="diff-why">{{ c.why }}</span>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-      {% if b.reference_version %}<p class="meta">对比的是提交时在线的 v{{ b.reference_version }}。</p>{% endif %}
+      {% for c in b.changes %}
+      <div class="diff-row">
+        <span class="diff-sev">
+          <span class="pill {{ 'warning' if c.severity == 'high' else ('info' if c.severity == 'medium' else 'neutral') }}">{{ c.severity_label }}</span>
+        </span>
+        <span class="diff-area">{{ c.area }}</span>
+        <div class="diff-body">
+          <div class="diff-title">{{ c.label }}</div>
+          <div class="diff-change mono">{{ c.before }} → {{ c.after }}</div>
+          {% if c.why %}<div class="diff-why2">{{ c.why }}</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      {% if b.reference_version %}<p class="meta" style="margin-top:12px">对比的是提交时在线的 v{{ b.reference_version }}。</p>{% endif %}
     {% else %}
-      <p class="note">与在线版本没有差异：这一版没有改动任何字段、状态词、指标或可见范围。</p>
+      <p class="strip neutral">与在线版本没有差异：这一版没有改动任何字段、状态词、指标或可见范围。</p>
     {% endif %}
   </div>
 
-  <p class="sub" style="margin:10px 0 6px">
-    <a href="/interfaces/{{ p.interface_id }}">预览与试填 →</a>
-  </p>
-  <div class="form-row" style="align-items:flex-end; gap:12px">
-    <form method="post" action="/reviews/{{ p.interface_id }}/approve" style="flex:1">
+  <div class="decide" style="margin-top:16px; gap:14px">
+    <form method="post" action="/reviews/{{ p.interface_id }}/approve">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <div class="field"><label for="note-a-{{ p.interface_id }}">通过备注（可留空）</label>
-        <input id="note-a-{{ p.interface_id }}" name="note" maxlength="500" style="width:100%"></div>
-      <button type="submit">通过并启用</button>
+      <div class="caption">通过</div>
+      <div class="hint">通过后这一版立刻对外，备注写进审计记录。</div>
+      <div class="controls">
+        <input id="note-a-{{ p.interface_id }}" name="note" maxlength="500"
+               aria-label="通过备注（可留空）" placeholder="通过备注（可留空）">
+        <button type="submit">通过并启用</button>
+      </div>
     </form>
-    <form method="post" action="/reviews/{{ p.interface_id }}/reject" style="flex:1">
+    <form method="post" action="/reviews/{{ p.interface_id }}/reject">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <div class="field"><label for="code-r-{{ p.interface_id }}">退回原因类型（必选，可用于统计）</label>
-        <select id="code-r-{{ p.interface_id }}" name="reason_code" required style="width:100%">
+      <div class="caption">退回</div>
+      <div class="hint">必须选一个原因类型，会记进最近决定，便于回头统计。</div>
+      <div class="controls">
+        <select id="code-r-{{ p.interface_id }}" name="reason_code" required aria-label="退回原因类型">
           <option value="">选择原因类型…</option>
           {% for r in reasons %}<option value="{{ r.code }}" title="{{ r.hint }}">{{ r.label }}</option>{% endfor %}
-        </select></div>
-      <div class="field"><label for="note-r-{{ p.interface_id }}">退回说明（必填）</label>
-        <input id="note-r-{{ p.interface_id }}" name="note" required maxlength="500" style="width:100%"></div>
-      <button type="submit" class="link" style="color:var(--blocked)">退回部门</button>
+        </select>
+        <input id="note-r-{{ p.interface_id }}" name="note" required maxlength="500"
+               aria-label="退回说明（必填）" placeholder="退回说明（必填）：这个词还在用，删掉之后这些条目没有落点">
+        <button type="submit" class="danger">退回部门</button>
+      </div>
     </form>
   </div>
 </section>
 {% endfor %}
+</div>
 {% else %}
-<p class="empty">没有待审核的页面。</p>
+<div class="card"><p class="empty">没有待审核的页面。</p></div>
 {% endif %}
 
-<h2>最近决定</h2>
-{% if decided %}
-<table>
-  <thead><tr><th>部门 / 页面</th><th>结果</th><th>原因类型</th><th>审核人</th><th>备注</th><th>时间</th></tr></thead>
-  <tbody>
-  {% for d in decided %}
-    <tr>
-      <td>{{ d.org_name }} · {{ d.name }}</td>
-      <td>{% if d.status == 'active' %}已通过{% elif d.status == 'draft' %}已退回{% else %}{{ d.status }}{% endif %}</td>
-      <td>{{ d.code_label if d.review_code else '—' }}</td>
-      <td>{{ d.reviewer or '—' }}</td>
-      <td>{{ d.review_note or '—' }}</td>
-      <td>{{ d.reviewed_at | dt }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="empty">还没有审核记录。</p>
-{% endif %}
+<div class="card" style="margin-top:20px">
+  <div class="card-head"><h2 style="margin:0">最近决定</h2></div>
+  {% if decided %}
+  <table style="margin-top:12px">
+    <thead><tr><th>时间</th><th>页面</th><th>决定</th><th>原因类型</th><th>审核人</th></tr></thead>
+    <tbody>
+    {% for d in decided %}
+      <tr>
+        <td class="mono">{{ d.reviewed_at | dt }}</td>
+        <td>{{ d.org_name }} · {{ d.name }}{% if d.version_no %} v{{ d.version_no }}{% endif %}
+          {% if d.review_note %}<div class="crumb-meta">{{ d.review_note }}</div>{% endif %}</td>
+        <td>
+          {% if d.status == 'active' %}<span class="pill success">通过</span>
+          {% elif d.status == 'draft' %}<span class="pill danger">退回</span>
+          {% else %}<span class="pill neutral">{{ d.status }}</span>{% endif %}
+        </td>
+        <td>{{ d.code_label if d.review_code else '—' }}</td>
+        <td>{{ d.reviewer or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty" style="margin-top:12px">还没有审核记录。</p>
+  {% endif %}
+</div>
 {% endblock %}

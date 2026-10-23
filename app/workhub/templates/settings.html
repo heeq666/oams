@@ -1,54 +1,101 @@
 {% extends "base.html" %}
 {% block title %}设置 · Workhub{% endblock %}
 {% block content %}
-<h1>设置</h1>
-<p class="sub">管理员专用。日常填报请回到「部门」。</p>
-
-<h2>组织与人员</h2>
-<div class="grid">
-  <a class="metric" href="/setup" style="text-decoration:none;color:inherit">
-    <div class="n">试用设置</div>
-    <div class="k">建部门、岗位、成员，生成登录链接</div>
-  </a>
-  <a class="metric" href="/admin/positions" style="text-decoration:none;color:inherit">
-    <div class="n">岗位</div>
-    <div class="k">岗位目录与在职人数</div>
-  </a>
-  <a class="metric" href="/admin/work-items" style="text-decoration:none;color:inherit">
-    <div class="n">工作项</div>
-    <div class="k">挂在岗位上的事项</div>
-  </a>
+<div class="pagehead">
+  <div>
+    <h1>设置</h1>
+    <p class="sub">部门、岗位与权限在这里维护。改动都会写进审计记录，谁在什么时候动了什么，事后查得到。</p>
+  </div>
+  <nav class="seg" aria-label="设置分组">
+    <a class="on" href="/settings" aria-current="page">部门与岗位</a>
+    <a href="/admin/audit">审计记录</a>
+    <a href="/setup">试用与开关</a>
+  </nav>
 </div>
 
-<h2>页面与视图</h2>
-<div class="grid">
-  <a class="metric" href="/setup/interfaces" style="text-decoration:none;color:inherit">
-    <div class="n">界面制作</div>
-    <div class="k">导入界面描述、查看全部页面</div>
-  </a>
-  <a class="metric" href="/interfaces" style="text-decoration:none;color:inherit">
-    <div class="n">部门界面</div>
-    <div class="k">按界面填写</div>
-  </a>
-  <a class="metric" href="/board" style="text-decoration:none;color:inherit">
-    <div class="n">部门看板</div>
-    <div class="k">按部门看进度与依据</div>
-  </a>
-  <a class="metric" href="/office" style="text-decoration:none;color:inherit">
-    <div class="n">办公室</div>
-    <div class="k">平面图与工位</div>
-  </a>
+<div class="settings-cols">
+  <section class="card">
+    <div class="card-head">
+      <h2 style="margin:0">部门</h2>
+      <span class="crumb-meta">{{ org_units | length }} 个 · {{ org_units | selectattr('page_count') | list | length }} 个有页面</span>
+      <a class="btn btn-ghost sm spacer" href="/setup#org">新增部门</a>
+    </div>
+    <table style="margin-top:12px">
+      <thead><tr><th>部门</th><th>上级</th><th>成员</th><th>工作台页面</th></tr></thead>
+      <tbody>
+      {% for u in org_units %}
+        <tr>
+          <td><b>{{ u.name }}</b></td>
+          <td>{{ u.parent_name or '公司' }}</td>
+          <td>{{ u.member_count }}</td>
+          <td>
+            {% if u.page_count %}<span class="pill neutral">{{ u.page_count }} 页</span>
+            {% else %}<span class="pill neutral" style="color:var(--muted)">没建</span>{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="empty">还没有部门。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2 style="margin:0">岗位</h2>
+      <span class="crumb-meta">{{ positions | length }} 个</span>
+      <a class="btn btn-ghost sm spacer" href="/setup#position">新增岗位</a>
+    </div>
+    <div class="role-list">
+    {% for p in positions %}
+      <div class="role-row">
+        <div class="row" style="gap:8px">
+          <b>{{ p.title }}</b>
+          <span class="pill neutral">{{ p.org_name }}</span>
+        </div>
+        <div class="role-caps">{{ p.capabilities }}</div>
+      </div>
+    {% else %}
+      <p class="empty">还没有岗位。</p>
+    {% endfor %}
+    </div>
+  </section>
 </div>
 
-<h2>运维</h2>
-<div class="grid">
-  <a class="metric" href="/admin/spaces" style="text-decoration:none;color:inherit">
-    <div class="n">布置</div>
-    <div class="k">部门区域与工位坐标</div>
-  </a>
-  <a class="metric" href="/admin/audit" style="text-decoration:none;color:inherit">
-    <div class="n">审计</div>
-    <div class="k">谁在什么时候改了什么</div>
-  </a>
-</div>
+<section class="card" style="margin-top:20px">
+  <div class="card-head">
+    <h2 style="margin:0">最近改动</h2>
+    <span class="crumb-meta">权限与页面的变更都会留痕</span>
+    <a class="spacer" href="/admin/audit">查看审计记录 →</a>
+  </div>
+  {% if recent %}
+  <table style="margin-top:12px">
+    <thead><tr><th>时间</th><th>谁</th><th>做了什么</th><th>说明</th></tr></thead>
+    <tbody>
+    {% for e in recent %}
+      <tr>
+        <td class="mono">{{ e.occurred_at | dt }}</td>
+        <td>{{ e.actor_name or '系统' }}</td>
+        <td>{{ e.action }}</td>
+        <td>{{ e.reason or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty" style="margin-top:12px">还没有记录。</p>
+  {% endif %}
+</section>
+
+<section class="card" style="margin-top:20px">
+  <div class="card-head"><h2 style="margin:0">其他管理入口</h2></div>
+  <div class="links">
+    <a class="btn btn-ghost sm" href="/setup/interfaces">界面制作</a>
+    <a class="btn btn-ghost sm" href="/admin/work-items">工作项</a>
+    <a class="btn btn-ghost sm" href="/admin/positions">岗位目录</a>
+    <a class="btn btn-ghost sm" href="/admin/spaces">工位布置</a>
+    <a class="btn btn-ghost sm" href="/interfaces">部门界面</a>
+    <a class="btn btn-ghost sm" href="/office">办公室平面图</a>
+  </div>
+</section>
 {% endblock %}
