@@ -59,6 +59,16 @@
           <span class="badge {% if page.status == 'pending' %}decision{% else %}vacant{% endif %}">{{ page_status_label }}</span>
           <span class="pos">本部门可见 · 试填不进汇总</span>
         </div>
+        {% if live_version %}
+          {# The company still sees the old version: say so, or a department will
+             assume the screen it is editing is the screen the company reads. #}
+          <p class="meta">公司现在看到的是 <b>v{{ live_version.version_no }}</b>（上次更新 {{ live_version.updated_at | dt }}）。这一版启用前，公司数字只按旧版汇总。</p>
+        {% else %}
+          <p class="meta">这一版还没启用，公司目前没有该页面的数字。</p>
+        {% endif %}
+        {% if review_code_label %}
+          <p class="meta">退回原因类型：{{ review_code_label }}</p>
+        {% endif %}
         {% if page.review_note %}
           <p class="meta">公司审核意见：{{ page.review_note }}</p>
         {% endif %}

@@ -22,6 +22,35 @@
     {% if p.position_title %} · 填写岗位：{{ p.position_title }}{% endif %}
     · 可见范围：{{ '公共模板' if p.visibility == 'public' else '仅本部门' }}
   </p>
+  {% set b = p.bundle %}
+  <div class="diff-block">
+    <p class="diff-head">
+      <strong>这一版改了什么</strong>
+      <span class="meta">{{ b.summary.headline }}</span>
+    </p>
+    {% if b.first_version %}
+      <p class="note">首版：没有可对比的在线版本，请按整页审核。</p>
+    {% elif b.changes %}
+      {% if b.summary.high %}
+      <p class="note">标着「需注意」的改动，通过后会立刻改变公司数字的含义，历史数据不会重算。</p>
+      {% endif %}
+      <ul class="diff-list">
+        {% for c in b.changes %}
+        <li>
+          <span class="badge {{ 'blocked' if c.severity == 'high' else ('decision' if c.severity == 'medium' else 'vacant') }}">{{ c.severity_label }}</span>
+          <span class="diff-area">{{ c.area }}</span>
+          <strong>{{ c.label }}</strong>
+          <span class="mono diff-value">{{ c.before }} → {{ c.after }}</span>
+          {% if c.why %}<span class="diff-why">{{ c.why }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% if b.reference_version %}<p class="meta">对比的是提交时在线的 v{{ b.reference_version }}。</p>{% endif %}
+    {% else %}
+      <p class="note">与在线版本没有差异：这一版没有改动任何字段、状态词、指标或可见范围。</p>
+    {% endif %}
+  </div>
+
   <p class="sub" style="margin:10px 0 6px">
     <a href="/interfaces/{{ p.interface_id }}">预览与试填 →</a>
   </p>
@@ -34,7 +63,12 @@
     </form>
     <form method="post" action="/reviews/{{ p.interface_id }}/reject" style="flex:1">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <div class="field"><label for="note-r-{{ p.interface_id }}">退回原因（必填）</label>
+      <div class="field"><label for="code-r-{{ p.interface_id }}">退回原因类型（必选，可用于统计）</label>
+        <select id="code-r-{{ p.interface_id }}" name="reason_code" required style="width:100%">
+          <option value="">选择原因类型…</option>
+          {% for r in reasons %}<option value="{{ r.code }}" title="{{ r.hint }}">{{ r.label }}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label for="note-r-{{ p.interface_id }}">退回说明（必填）</label>
         <input id="note-r-{{ p.interface_id }}" name="note" required maxlength="500" style="width:100%"></div>
       <button type="submit" class="link" style="color:var(--blocked)">退回部门</button>
     </form>
@@ -48,12 +82,13 @@
 <h2>最近决定</h2>
 {% if decided %}
 <table>
-  <thead><tr><th>部门 / 页面</th><th>结果</th><th>审核人</th><th>备注</th><th>时间</th></tr></thead>
+  <thead><tr><th>部门 / 页面</th><th>结果</th><th>原因类型</th><th>审核人</th><th>备注</th><th>时间</th></tr></thead>
   <tbody>
   {% for d in decided %}
     <tr>
       <td>{{ d.org_name }} · {{ d.name }}</td>
       <td>{% if d.status == 'active' %}已通过{% elif d.status == 'draft' %}已退回{% else %}{{ d.status }}{% endif %}</td>
+      <td>{{ d.code_label if d.review_code else '—' }}</td>
       <td>{{ d.reviewer or '—' }}</td>
       <td>{{ d.review_note or '—' }}</td>
       <td>{{ d.reviewed_at | dt }}</td>
