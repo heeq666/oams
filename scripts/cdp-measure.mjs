@@ -29,7 +29,11 @@ for (const path of paths) {
   await send("Page.navigate", { url: base + path });
   await sleep(2200);
   const before = await send("Runtime.evaluate", { expression, returnByValue: true });
-  await send("Runtime.evaluate", { expression: "window.scrollTo(0, 500)" });
+// The shell scrolls the content column, not the window, so scroll whichever
+  // element actually owns the scrollbar before measuring again.
+  await send("Runtime.evaluate", {
+    expression: "document.querySelectorAll('.app-frame > main').forEach(function (m) { if (m.scrollHeight > m.clientHeight) m.scrollTop = 500; }); window.scrollTo(0, 500);",
+  });
   await sleep(400);
   const after = await send("Runtime.evaluate", { expression, returnByValue: true });
   report[path] = {

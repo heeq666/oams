@@ -30,7 +30,12 @@ const probe = `(() => {
     mainScrollTop: Math.round(main.scrollTop),
     mainScrollable: main.scrollHeight - main.clientHeight,
     railFullyVisible: r.top >= -1 && r.bottom <= window.innerHeight + 1,
-    railBelowBar: b ? r.top >= b.bottom - 1 : true,
+    // The top bar now floats above the frame (a capsule with gutters), so the
+    // rail starts at the viewport top and is not pushed below the bar.
+    railSpansViewport: Math.abs(r.top) <= 2 && Math.abs(r.bottom - window.innerHeight) <= 2,
+    barFloats: b ? (Math.abs(b.top - 20) <= 2 && Math.abs(b.height - 40) <= 2) : false,
+    barScrolled: bar ? bar.classList.contains('is-scrolled') : false,
+    barWidth: b ? Math.round(b.width) : null,
   };
 })()`;
 

@@ -292,34 +292,47 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     --ring: #a1a1a1; --rail-w: 127px;
   }
   body { font-size: 14px; -webkit-font-smoothing: antialiased; }
-  /* The bar is a light strip: brand left, the four destinations inside a grey
-     slot in the middle, the account right. The slot is centred on the bar rather
-     than pushed right by the brand, so the navigation stays where the eye expects
-     it no matter how long the person's name is. */
-  header.topbar { background: var(--card); border-bottom: 0;
-                  height: 56px; padding: 0 24px; gap: 0;
-                  display: flex; align-items: center; justify-content: space-between; }
+  /* The bar is a floating capsule, not a full-width strip: it sits 20px below
+     the top edge, spans 1360px at rest and narrows to 880px once the content
+     has scrolled 40px under it. It is a three-column grid (brand / nav /
+     account) so the navigation stays optically centred no matter how long the
+     person's position title is. The glass is transparent at rest and fills in
+     on scroll, which is what makes the narrowing legible: there is something
+     to see moving underneath it. Everything is driven by one class. */
+  header.topbar { position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+                  z-index: 30; width: calc(100% - 80px); max-width: 1360px;
+                  height: 40px; padding: 0 20px; gap: 18px;
+                  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+                  border-radius: var(--r-pill); background: rgba(255, 255, 255, 0);
+                  -webkit-backdrop-filter: blur(0px); backdrop-filter: blur(0px);
+                  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
+                  transition: max-width 240ms cubic-bezier(.4, 0, .2, 1),
+                              background-color 240ms cubic-bezier(.4, 0, .2, 1),
+                              backdrop-filter 240ms cubic-bezier(.4, 0, .2, 1); }
+  header.topbar.is-scrolled { max-width: 880px; background: rgba(255, 255, 255, .70);
+                              -webkit-backdrop-filter: saturate(1.2) blur(10px);
+                              backdrop-filter: saturate(1.2) blur(10px); }
   header.topbar a { color: var(--ink); text-decoration: none; }
-  header.topbar .brand { display: flex; align-items: center; gap: 10px;
-                         font-size: 15px; font-weight: 600; }
-  header.topbar .brand img { display: block; width: 51px; height: 40px; }
-  header.topbar .brand .wordmark { font-weight: 600; }
-  header.topbar .navslot { position: absolute; left: 50%; top: 50%;
-                           transform: translate(-50%, -50%); }
-  header.topbar nav { display: flex; align-items: center; justify-content: center;
-                      gap: 23px; height: 48px; min-width: 396px; padding: 0 28px;
-                      border-radius: 999px; background: var(--ring); }
-  /* White labels on the grey slot, as drawn: the current item is the one with a
-     near-black pill behind it, so "you are here" is still carried by the fill. */
-  header.topbar nav a { padding: 5px 10px; border-radius: 6px; font-size: 13px;
-                        line-height: 1.4; white-space: nowrap; color: #fff; }
-  header.topbar nav a:hover { background: rgba(255, 255, 255, .3); }
-  header.topbar nav a.on { background: var(--accent); color: #fff; font-weight: 600;
-                           border-radius: var(--r-pill); }
-  header.topbar .who { display: flex; align-items: center; gap: 12px;
-                       color: #525252; font-size: 13px; }
-  header.topbar .who button.link { color: var(--muted); font-size: 13px; }
-  header.topbar .who button.link:hover { color: var(--ink); }
+  header.topbar .brand { justify-self: start; display: flex; align-items: center; gap: 10px;
+                         font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+  header.topbar .brand img { display: block; width: 30px; height: 30px; border-radius: 10px; }
+  header.topbar .bar-nav { display: flex; align-items: center; justify-content: center; gap: 2px; }
+  /* "You are here" is one ink wash behind the label -- the same wash at rest and
+     after the capsule narrows, so the item does not change colour under the
+     user's eye while the shell animates. */
+  header.topbar .bar-nav a { padding: 0 14px; height: 30px; line-height: 30px;
+                             border-radius: var(--r-pill); font-size: 13px;
+                             color: #525252; white-space: nowrap; }
+  header.topbar .bar-nav a:hover { color: var(--ink); background: rgba(23, 23, 23, .05); }
+  header.topbar .bar-nav a.on { color: var(--ink); font-weight: 500;
+                                background: rgba(23, 23, 23, .10); }
+  header.topbar .who { justify-self: end; display: flex; align-items: center; gap: 10px;
+                       color: #525252; font-size: 12px; }
+  header.topbar .who .avatar { width: 30px; height: 30px; border-radius: 999px;
+                               background: var(--accent); color: #fafafa;
+                               display: grid; place-items: center; font-size: 12px; font-weight: 500; }
+  header.topbar .who button.link { color: var(--muted); font-size: 12px; padding: 0; }
+  header.topbar .who button.link:hover { color: var(--ink); background: none; }
   /* The rail holds the current section's views, centred on the screen rather
      than stacked from the top: the bottom padding is the bar's height, so the
      group reads as centred in the window instead of drooping below the bar. */
@@ -458,6 +471,49 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .orgnav a + a { border-left: 0; }
   .orgnav a.on { background: var(--card); color: var(--ink); font-weight: 500; }
   .tabs a { background: var(--subtle); }
+
+  /* ---- floating capsule shell -------------------------------------------
+     The bar has left the column layout: it floats over the frame, so content
+     scrolls underneath the glass and the narrowing reads as something moving.
+     The frame owns the whole viewport and the content column keeps a 72px
+     gutter at the top for the capsule. */
+  body { display: block; height: 100vh; overflow: hidden; }
+  .app-frame { height: 100vh; }
+  .app-frame > main { position: relative; padding: 72px 32px 40px; }
+  .bar-sentinel { position: absolute; top: 0; left: 0; width: 1px; height: 40px;
+                  pointer-events: none; }
+  .app-rail { padding-top: 56px; }
+  /* Buttons: one pill, four roles -- solid ink primary, quiet grey secondary,
+     red destructive, and a bare text link. Every one is 36px tall, so a row of
+     them shares a baseline instead of stepping. */
+  button, .btn { height: 36px; padding: 0 16px; border-radius: var(--r-pill);
+                 background: var(--accent); color: #fafafa; border: 0;
+                 font-size: 13px; font-weight: 500; line-height: 34px; }
+  button:hover, .btn:hover { background: #404040; opacity: 1; }
+  .btn-ghost, button.ghost { background: var(--subtle); color: var(--ink); border: 0; }
+  .btn-ghost:hover, button.ghost:hover { background: #ececec; opacity: 1; }
+  .btn-danger, button.danger { background: var(--blocked); color: #fafafa; border: 0; }
+  .btn-danger:hover, button.danger:hover { background: #b91c1c; opacity: 1; }
+  .btn-sm, button.sm { height: 30px; line-height: 28px; padding: 0 12px; font-size: 12px; }
+  button.link, .link { background: none; border: 0; height: auto; line-height: inherit;
+                       padding: 0; color: var(--muted); font-size: 12px; font-weight: 400; }
+  button.link:hover, .link:hover { background: none; color: var(--ink); opacity: 1; }
+  .badge, .pill { min-height: 20px; padding: 1px 8px; font-size: 11.5px; line-height: 18px; }
+  @media (max-width: 900px) {
+    header.topbar { width: calc(100% - 32px); max-width: none; padding: 0 14px; gap: 10px; }
+    header.topbar.is-scrolled { max-width: none; }
+    header.topbar .brand .wordmark { display: none; }
+    header.topbar .bar-nav a { padding: 0 10px; }
+    header.topbar .who .who-role { display: none; }
+    .app-frame > main { padding: 64px 16px 40px; }
+  }
+  @media (max-width: 760px) {
+    .app-frame { height: auto; }
+    .app-rail { padding-top: 0; }
+    /* The marker must stay rendered: a display:none element never intersects, so
+       the capsule would think the page had already scrolled on first paint. */
+    .bar-sentinel { height: 1px; }
+  }
 </style>
 </head>
 {% set path = request.url.path %}
@@ -466,27 +522,32 @@ body { margin: 0; background: var(--bg); color: var(--ink);
    wholesale instead of fighting the layout with `display:none`. #}
 {% block shell %}
 {% set caps = request.state.nav or {} %}
-<header class="topbar">
+{# The shell is a floating capsule: brand on the left, the four destinations in
+   the middle, the account on the right. It floats over the frame instead of
+   taking a row of it, so the content scrolls underneath the glass. #}
+<header class="topbar" id="topbar">
   {# The logo goes to the first screen this person can actually use: a link that
      answers 403 is worse than no link at all. #}
   <a class="brand" href="{% if caps.progress %}/progress{% elif caps.review %}/reviews{% elif caps.admin %}/settings{% else %}/departments{% endif %}" aria-label="Workhub 首页">
-    <img src="/static/brand/logo.png" alt="" width="51" height="40">
+    <img src="/static/brand/logo.png" alt="" width="30" height="30">
     <span class="wordmark">Workhub</span>
   </a>
   {# Links come from what this person can actually do, so the bar never shows a
      door that answers 403. Nothing here is a security check; the server still
      decides every request on its own. #}
-  <div class="navslot">
-    <nav aria-label="主导航">
-      {% if caps.progress %}<a href="/progress"{% if path.startswith('/progress') %} class="on"{% endif %}>进度中心</a>{% endif %}
-      {% if caps.progress %}<a href="/interfaces/board"{% if path.startswith('/interfaces') %} class="on"{% endif %}>汇报中心</a>{% endif %}
-      {% if caps.review %}<a href="/reviews"{% if path.startswith('/reviews') %} class="on"{% endif %}>页面审核</a>{% endif %}
-      {% if caps.admin %}<a href="/settings"{% if path.startswith('/settings') or path.startswith('/admin') or path.startswith('/setup') %} class="on"{% endif %}>设置</a>{% endif %}
-    </nav>
-  </div>
+  <nav class="bar-nav" aria-label="主导航">
+    {% if caps.progress %}<a href="/progress"{% if path.startswith('/progress') %} class="on"{% endif %}>进度中心</a>{% endif %}
+    {% if caps.progress %}<a href="/interfaces/board"{% if path.startswith('/interfaces') %} class="on"{% endif %}>汇报中心</a>{% endif %}
+    {% if caps.review %}<a href="/reviews"{% if path.startswith('/reviews') %} class="on"{% endif %}>页面审核</a>{% endif %}
+    {% if caps.admin %}<a href="/settings"{% if path.startswith('/settings') or path.startswith('/admin') or path.startswith('/setup') %} class="on"{% endif %}>设置</a>{% endif %}
+  </nav>
   <div class="who">
     {% if member %}
-      <span>{{ member.display_name }}</span>
+      {# Position is the useful label here, not the person's name: everyone in the
+         bar is looking at the same app, and the name adds nothing to that. The
+         initial on the avatar still says who it is. #}
+      <span class="who-role">{{ member.position_title or member.display_name }}</span>
+      <span class="avatar" aria-hidden="true">{{ member.display_name[:1] }}</span>
       <form method="post" action="/logout" class="inline">
         <button type="submit" class="link">退出</button>
       </form>
@@ -509,10 +570,31 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   </aside>
   {% endif %}
   <main>
+  {# A one-pixel marker at the top of the content: it leaves the scrolling
+     viewport at exactly 40px, which is the threshold the capsule waits for.
+     Watching a marker beats listening to scroll -- no rAF loop, no jank, and a
+     page that does not scroll never fires it at all. #}
+  <div class="bar-sentinel" aria-hidden="true"></div>
   {% block content %}{% endblock %}
   </main>
 </div>
 {% endblock %}
 {% block tail %}{% endblock %}
+<script>
+  (function () {
+    var bar = document.getElementById('topbar');
+    var marker = document.querySelector('.bar-sentinel');
+    var main = document.querySelector('.app-frame > main');
+    if (!bar || !marker || !('IntersectionObserver' in window)) return;
+    // On a wide screen the content column scrolls; on a narrow one the window
+    // does, so the observer has to follow whichever element actually scrolls.
+    var scroller = main && main.scrollHeight > main.clientHeight + 1 ? main : null;
+    new IntersectionObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        bar.classList.toggle('is-scrolled', !entries[i].isIntersecting);
+      }
+    }, { root: scroller, threshold: 0 }).observe(marker);
+  })();
+</script>
 </body>
 </html>
