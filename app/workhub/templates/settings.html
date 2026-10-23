@@ -82,15 +82,7 @@
   {% endif %}
 </section>
 
-<section class="card" style="margin-top:20px">
-  <div class="card-head"><h2 style="margin:0">其他管理入口</h2></div>
-  <div class="links">
-    <a class="btn btn-ghost sm" href="/setup/interfaces">界面制作</a>
-    <a class="btn btn-ghost sm" href="/admin/work-items">工作项</a>
-    <a class="btn btn-ghost sm" href="/admin/positions">岗位目录</a>
-    <a class="btn btn-ghost sm" href="/admin/spaces">工位布置</a>
-    <a class="btn btn-ghost sm" href="/interfaces">部门界面</a>
-    <a class="btn btn-ghost sm" href="/office">办公室平面图</a>
-  </div>
-</section>
+{# The six screens that used to sit in a row here are views of this same
+   section, so they live in the rail beside the page instead of a second menu
+   inside it: one entry per place, not two doors to the same rooms. #}
 {% endblock %}

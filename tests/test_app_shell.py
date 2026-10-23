@@ -99,7 +99,8 @@ def _script() -> None:
     status, html, _ = admin_call("/settings")
     has_rail, names, links = shell(html)
     check("the settings column lists its own views",
-          has_rail and names == ["部门与岗位", "审计记录", "试用与开关"], names)
+          has_rail and names == ["部门与岗位", "岗位目录", "工作项管理", "工位布置",
+                                 "审计记录", "试用与开关"], names)
     check("admin top bar keeps globals", links == ["进度中心", "汇报中心", "页面审核", "设置"], links)
 
     status, html, _ = admin_call("/progress")
