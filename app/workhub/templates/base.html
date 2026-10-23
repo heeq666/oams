@@ -284,39 +284,63 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     --info: #2563eb; --agent: #7c3aed; --agent-soft: #f5f3ff;
     --success-soft: #f0fdf4; --warning-soft: #fffbeb; --danger-soft: #fef2f2;
     --r-sm: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 14px;
-    --rail-w: 152px;
+    --ring: #a1a1a1; --rail-w: 127px;
   }
   body { font-size: 14px; -webkit-font-smoothing: antialiased; }
-  /* the bar is light now: the logo is black artwork, so a dark bar would need
-     a second (white) logo asset for no gain */
-  header.topbar { background: var(--card); color: var(--ink); border-bottom: 1px solid var(--line);
-                  height: 56px; padding: 0 24px; gap: 10px; }
-  header.topbar a { color: var(--muted); }
-  header.topbar .brand { display: flex; align-items: center; gap: 10px; margin-right: auto;
-                         color: var(--ink); font-size: 15px; letter-spacing: 0; }
-  header.topbar .brand img { display: block; width: 41px; height: 32px; }
+  /* The bar is a light strip: brand left, the four destinations inside a grey
+     slot in the middle, the account right. The slot is centred on the bar rather
+     than pushed right by the brand, so the navigation stays where the eye expects
+     it no matter how long the person's name is. */
+  header.topbar { background: var(--card); border-bottom: 1px solid var(--line);
+                  height: 56px; padding: 0 24px; gap: 0;
+                  display: flex; align-items: center; justify-content: space-between; }
+  header.topbar a { color: var(--ink); text-decoration: none; }
+  header.topbar .brand { display: flex; align-items: center; gap: 10px;
+                         font-size: 15px; font-weight: 600; }
+  header.topbar .brand img { display: block; width: 51px; height: 40px; }
   header.topbar .brand .wordmark { font-weight: 600; }
-  header.topbar nav { display: flex; gap: 4px; flex: none; }
-  header.topbar nav a { padding: 7px 12px; border-radius: var(--r-md); font-size: 14px;
-                        color: var(--muted); text-decoration: none; }
-  header.topbar nav a:hover { background: var(--subtle); color: var(--ink); }
-  header.topbar nav a.on { background: var(--subtle); color: var(--ink); font-weight: 600; }
-  header.topbar .who { color: var(--muted); font-size: 13px; gap: 10px; }
+  header.topbar .navslot { position: absolute; left: 50%; top: 50%;
+                           transform: translate(-50%, -50%); }
+  header.topbar nav { display: flex; align-items: center; justify-content: center;
+                      gap: 23px; height: 48px; min-width: 396px; padding: 0 28px;
+                      border-radius: 999px; background: var(--ring); }
+  /* Labels are near-black on the grey slot: white on #a1a1a1 measures ~2.3:1,
+     which is unreadable on a projector and fails WCAG AA outright. The dark pill
+     on the current item carries the "you are here" signal instead. */
+  header.topbar nav a { padding: 5px 10px; border-radius: 6px; font-size: 13px;
+                        line-height: 1.4; white-space: nowrap; }
+  header.topbar nav a:hover { background: rgba(255, 255, 255, .3); }
+  header.topbar nav a.on { background: var(--accent); color: #fff; font-weight: 600; }
+  header.topbar .who { display: flex; align-items: center; gap: 12px;
+                       color: #525252; font-size: 13px; }
   header.topbar .who button.link { color: var(--muted); font-size: 13px; }
   header.topbar .who button.link:hover { color: var(--ink); }
-  .app-rail { padding: 16px 12px; border-right: 1px solid var(--line); }
-  .app-rail .rail-head { font-size: 12px; color: var(--muted); padding: 10px 10px 6px; letter-spacing: 0; }
-  .app-rail .rail-item { padding: 7px 10px; border-radius: var(--r-md); font-size: 14px; color: var(--ink); }
-  .app-rail .rail-item:hover { background: var(--subtle); }
-  .app-rail .rail-item.on { background: var(--subtle); color: var(--ink); font-weight: 600; }
-  .app-frame > main { padding: 32px 40px 64px; }
+  /* The rail holds the current section's views, centred on the screen rather
+     than stacked from the top: the bottom padding is the bar's height, so the
+     group reads as centred in the window instead of drooping below the bar. */
+  .app-rail { background: var(--bg); border-right: 0; padding: 16px 12px 72px;
+              display: flex; flex-direction: column; justify-content: center;
+              gap: 2px; overflow-y: auto; }
+  .app-rail .rail-item { display: flex; align-items: center; gap: 8px;
+                         padding: 7px 8px 7px 10px; border-radius: 6px;
+                         font-size: 13px; line-height: 16px; color: #525252;
+                         text-decoration: none; }
+  .app-rail .rail-item:hover { color: var(--ink); }
+  /* A short rule, not a filled row: it marks the current view without turning
+     the rail into a second column of buttons competing with the bar. */
+  .app-rail .rail-item .mark { width: 3px; height: 16px; border-radius: 2px;
+                               background: transparent; flex: none; }
+  .app-rail .rail-item.on { color: var(--ink); font-weight: 600; }
+  .app-rail .rail-item.on .mark { background: var(--accent); }
+  .app-frame > main { background: var(--card); border-radius: 20px 0 0 20px;
+                      padding: 32px 32px 40px; }
   h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
   h2 { font-size: 15px; font-weight: 600; }
   .sub { font-size: 13px; color: var(--muted); }
-  .card { border-radius: var(--r-xl); padding: 24px; border-color: var(--line); }
+  .card { border-radius: 28px; padding: 20px 24px; border-color: var(--line); }
   .card + .card { margin-top: 20px; }
   .card > h2:first-child { margin-top: 0; }
-  .card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .card-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .card-head .spacer { margin-left: auto; }
   button, .btn { background: var(--accent); border-radius: var(--r-md); padding: 8px 16px;
                  font-size: 14px; font-weight: 500; }
@@ -415,21 +439,25 @@ body { margin: 0; background: var(--bg); color: var(--ink);
 {# The shell is one block so a page without navigation (login) can replace it
    wholesale instead of fighting the layout with `display:none`. #}
 {% block shell %}
+{% set caps = request.state.nav or {} %}
 <header class="topbar">
-  <a class="brand" href="/departments" aria-label="Workhub 首页">
-    <img src="/static/brand/logo.png" alt="" width="41" height="32">
+  {# The logo goes to the first screen this person can actually use: a link that
+     answers 403 is worse than no link at all. #}
+  <a class="brand" href="{% if caps.progress %}/progress{% elif caps.review %}/reviews{% elif caps.admin %}/settings{% else %}/departments{% endif %}" aria-label="Workhub 首页">
+    <img src="/static/brand/logo.png" alt="" width="51" height="40">
     <span class="wordmark">Workhub</span>
   </a>
   {# Links come from what this person can actually do, so the bar never shows a
      door that answers 403. Nothing here is a security check; the server still
      decides every request on its own. #}
-  <nav aria-label="主导航">
-    {% set caps = request.state.nav or {} %}
-    {% if caps.progress %}<a href="/progress"{% if path.startswith('/progress') %} class="on"{% endif %}>进度中心</a>{% endif %}
-    {% if caps.progress %}<a href="/interfaces/board"{% if path == '/interfaces/board' %} class="on"{% endif %}>汇报中心</a>{% endif %}
-    {% if caps.review %}<a href="/reviews"{% if path.startswith('/reviews') %} class="on"{% endif %}>页面审核</a>{% endif %}
-    {% if caps.admin %}<a href="/settings"{% if path.startswith('/settings') or path.startswith('/admin') %} class="on"{% endif %}>设置</a>{% endif %}
-  </nav>
+  <div class="navslot">
+    <nav aria-label="主导航">
+      {% if caps.progress %}<a href="/progress"{% if path.startswith('/progress') %} class="on"{% endif %}>进度中心</a>{% endif %}
+      {% if caps.progress %}<a href="/interfaces/board"{% if path.startswith('/interfaces') %} class="on"{% endif %}>汇报中心</a>{% endif %}
+      {% if caps.review %}<a href="/reviews"{% if path.startswith('/reviews') %} class="on"{% endif %}>页面审核</a>{% endif %}
+      {% if caps.admin %}<a href="/settings"{% if path.startswith('/settings') or path.startswith('/admin') or path.startswith('/setup') %} class="on"{% endif %}>设置</a>{% endif %}
+    </nav>
+  </div>
   <div class="who">
     {% if member %}
       <span>{{ member.display_name }}</span>
@@ -441,20 +469,16 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     {% endif %}
   </div>
 </header>
-{# One shell for the whole app: departments down the left, global entries across
-   the top. A department's own pages are tabs inside the content area. #}
-{% set rails = request.state.dept_rail or [] %}
-{% set here = request.state.dept_active %}
+{# One shell for the whole app: the four destinations across the top, and the
+   views of whichever one you are in down the left. The left column is the
+   server's answer (request.state.rail), not a page's markup, so every screen
+   agrees about what sits under the entry it belongs to. #}
+{% set rails = request.state.rail or [] %}
 <div class="app-frame{% if not rails %} no-rail{% endif %}">
   {% if rails %}
-  <aside class="app-rail" aria-label="部门">
-    <a href="/departments" class="rail-item{% if not here %} on{% endif %}">首页</a>
-    <div class="rail-head">部门</div>
-    {% for u in rails %}
-      <a href="/departments/{{ u.org_unit_id }}"
-         class="rail-item{% if here == u.org_unit_id %} on{% endif %}">
-        {{ u.name }}
-      </a>
+  <aside class="app-rail" aria-label="本节导航">
+    {% for item in rails %}
+      <a href="{{ item.href }}" class="rail-item{% if item.on %} on{% endif %}"{% if item.on %} aria-current="page"{% endif %}><span class="mark" aria-hidden="true"></span>{{ item.label }}</a>
     {% endfor %}
   </aside>
   {% endif %}

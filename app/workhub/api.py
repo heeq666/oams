@@ -1594,6 +1594,45 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent /
 app.include_router(web_router)
 
 
+def _shell_rail(path, nav, departments, dept_active, caps):
+    """The left column is the sub-navigation of whichever top entry you are in.
+
+    A screen can have several views -- the review queue and what it decided
+    lately, the setup overview and the audit log that backs it. Those belong
+    under the entry that owns them, not in the global bar; putting them in the
+    bar made every view look equally important. An item is only offered when
+    this person can open it: a link that answers 403 is worse than no link.
+    """
+    head = path.strip("/").split("/")[0] if path.strip("/") else ""
+    items = []
+
+    def add(label, href, on=False):
+        items.append({"label": label, "href": href, "on": bool(on)})
+
+    if head in ("progress", "departments", "reports", "office"):
+        if nav.get("progress"):
+            add("公司总览", "/progress", path.startswith("/progress"))
+        for row in departments:
+            add(row["name"], "/departments/" + str(row["org_unit_id"]),
+                dept_active == row["org_unit_id"])
+    elif head in ("interfaces", "board"):
+        add("汇报汇总", "/interfaces/board", path.startswith("/interfaces/board"))
+        add("部门页面", "/interfaces", path == "/interfaces")
+    elif head == "reviews":
+        add("待审核", "/reviews", path == "/reviews")
+        add("最近决定", "/reviews#decided")
+        if nav.get("departments"):
+            add("部门页面", "/interfaces")
+    elif head in ("settings", "admin", "setup"):
+        if caps.get("settings"):
+            add("部门与岗位", "/settings", path == "/settings")
+        if caps.get("audit"):
+            add("审计记录", "/admin/audit", path == "/admin/audit")
+        if caps.get("setup"):
+            add("试用与开关", "/setup", path.startswith("/setup"))
+    return items
+
+
 @app.middleware("http")
 async def attach_browser_principal(request, call_next):
     # Cheap when absent: API callers send no cookie, so no lookup happens at all.
@@ -1602,19 +1641,27 @@ async def attach_browser_principal(request, call_next):
     # shown a door they cannot open -- and nobody has to guess why it is missing.
     request.state.nav = {"departments": False, "progress": False, "review": False, "admin": False}
     request.state.dept_rail = []
+    request.state.rail = []
     request.state.dept_active = None
+    # Highlight the department the URL is inside, so the sidebar shows where you are.
+    parts = [p for p in request.url.path.split("/") if p]
+    if len(parts) >= 2 and parts[0] == "departments":
+        try:
+            request.state.dept_active = UUID(parts[1])
+        except (ValueError, TypeError):
+            request.state.dept_active = None
     if request.state.member is not None:
         member_id = request.state.member["member_id"]
         with connection() as conn:
-            request.state.nav = {
+            nav = {
                 "departments": has_permission(conn, member_id, "workforce.reports", "read"),
                 "progress": has_company_scope(conn, member_id),
                 "review": has_permission(conn, member_id, "workforce.interfaces", "review"),
                 "admin": has_company_scope(conn, member_id),
             }
-            # The sidebar belongs to the shell, not to one page: it lists the
-            # departments this person may enter, so every screen looks the same.
-            if request.state.nav["departments"]:
+            request.state.nav = nav
+            # The departments this person may enter, for the progress column.
+            if nav["departments"]:
                 if has_company_scope(conn, member_id):
                     request.state.dept_rail = conn.execute(
                         """SELECT org_unit_id, name FROM workhub.org_units
@@ -1626,11 +1673,13 @@ async def attach_browser_principal(request, call_next):
                             """SELECT org_unit_id, name FROM workhub.org_units
                                WHERE status = 'active' AND org_unit_id = ANY(%s) ORDER BY name""",
                             (scoped,)).fetchall()
-    # Highlight the department the URL is inside, so the sidebar shows where you are.
-    parts = [p for p in request.url.path.split("/") if p]
-    if len(parts) >= 2 and parts[0] == "departments":
-        try:
-            request.state.dept_active = UUID(parts[1])
-        except (ValueError, TypeError):
-            request.state.dept_active = None
+            caps = {
+                "settings": has_permission(conn, member_id, "workforce.grants", "manage"),
+                "audit": has_permission(conn, member_id, "workforce.audit", "read"),
+                "setup": all(has_permission(conn, member_id, resource, "manage")
+                             for resource in ("workforce.grants", "workforce.members",
+                                              "workforce.positions", "workforce.assignments")),
+            }
+            request.state.rail = _shell_rail(request.url.path, nav, request.state.dept_rail,
+                                             request.state.dept_active, caps)
     return await call_next(request)
