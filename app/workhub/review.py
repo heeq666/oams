@@ -193,6 +193,24 @@ def diff_descriptors(old: Mapping | None, new: Mapping | None) -> list[dict]:
     return _sorted_changes(changes)
 
 
+def visibility_of(descriptor: Mapping) -> object:
+    """Audience requested by a descriptor, in whichever shape it was written."""
+    return _visibility(descriptor)
+
+
+def _visibility(descriptor: Mapping) -> object:
+    """The page's audience lives under meta in descriptors the department saves.
+
+    Read both shapes: a descriptor that carries the value at the top level (the
+    older fixtures and hand-written plugins do) must still be comparable, and a
+    change from one shape to the other is itself worth showing a reviewer.
+    """
+    meta = descriptor.get("meta")
+    if isinstance(meta, Mapping) and meta.get("visibility") is not None:
+        return meta.get("visibility")
+    return descriptor.get("visibility")
+
+
 def _diff_basic(old: Mapping, new: Mapping) -> list[dict]:
     changes: list[dict] = []
     if _text(old.get("name")) != _text(new.get("name")):
@@ -209,12 +227,14 @@ def _diff_basic(old: Mapping, new: Mapping) -> list[dict]:
                                path="position_codes", label="可用岗位",
                                before=old.get("position_codes"), after=new.get("position_codes"),
                                why="岗位决定谁能填这一页，范围变大要确认是有意为之。"))
-    if _text(old.get("visibility")) != _text(new.get("visibility")):
-        to_public = str(new.get("visibility") or "").strip() == "public"
+    old_visibility = _visibility(old)
+    new_visibility = _visibility(new)
+    if _text(old_visibility) != _text(new_visibility):
+        to_public = str(new_visibility or "").strip() == "public"
         changes.append(_change(kind="visibility_changed", area=AREA_SCOPE,
                                severity=SEVERITY_HIGH if to_public else SEVERITY_MEDIUM,
                                path="visibility", label="可见范围",
-                               before=old.get("visibility"), after=new.get("visibility"),
+                               before=old_visibility, after=new_visibility,
                                why="改成公共模板意味着别的部门也会看到这一版的结构。"))
     if _text(old.get("schema_version")) != _text(new.get("schema_version")):
         changes.append(_change(kind="schema_changed", area=AREA_BASIC, severity=SEVERITY_LOW,
@@ -282,10 +302,42 @@ def _field_label(field: Mapping, key: str) -> str:
     return key
 
 
+def _status_options(descriptor: Mapping) -> list[str]:
+    """The words a department can actually pick, taken from the enum field."""
+    words: list[str] = []
+    for field in descriptor.get("fields") or []:
+        if not isinstance(field, Mapping) or field.get("map_to") != "status":
+            continue
+        for word in field.get("options") or []:
+            if isinstance(word, str) and word not in words:
+                words.append(word)
+    return words
+
+
 def _diff_status_map(old: Mapping, new: Mapping) -> list[dict]:
     changes: list[dict] = []
     before = old.get("status_map") if isinstance(old.get("status_map"), Mapping) else {}
     after = new.get("status_map") if isinstance(new.get("status_map"), Mapping) else {}
+
+    # The dropdown and the mapping are edited separately, and a word can quietly
+    # drop out of one but not the other: gone from the dropdown while the mapping
+    # lingers means nobody can pick it again, gone from the mapping while the
+    # dropdown still offers it means the next entry fails to save.
+    old_options = _status_options(old)
+    new_options = _status_options(new)
+    for word in new_options:
+        if word not in old_options and word not in before:
+            changes.append(_change(kind="status_added", area=AREA_STATUS, severity=SEVERITY_LOW,
+                                   path=f"status_option[{word}]", label=f"新增状态词「{word}」",
+                                   after=word))
+    for word in old_options:
+        if word not in new_options and word in after:
+            changes.append(_change(kind="status_removed", area=AREA_STATUS, severity=SEVERITY_HIGH,
+                                   path=f"status_option[{word}]", label=f"不再可选状态词「{word}」",
+                                   before=after.get(word),
+                                   why="映射还留着，已经用这个词填过的条目不会立刻丢，但新条目再也选不到它。"))
+
+
     for word in after:
         if word not in before:
             changes.append(_change(kind="status_added", area=AREA_STATUS, severity=SEVERITY_LOW,
