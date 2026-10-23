@@ -1609,15 +1609,25 @@ def _shell_rail(path, nav, departments, dept_active, caps):
     def add(label, href, on=False):
         items.append({"label": label, "href": href, "on": bool(on)})
 
+    # Building a page is a view of the interface screens, not of setup, so it is
+    # listed with them even though its URL still lives under /setup.
+    if path.startswith("/setup/interfaces"):
+        head = "interfaces"
+
     if head in ("progress", "departments", "reports", "office"):
         if nav.get("progress"):
             add("公司总览", "/progress", path.startswith("/progress"))
         for row in departments:
             add(row["name"], "/departments/" + str(row["org_unit_id"]),
                 dept_active == row["org_unit_id"])
+        if caps.get("work_items") and nav.get("progress"):
+            add("办公室平面图", "/office", path.startswith("/office"))
     elif head in ("interfaces", "board"):
         add("汇报汇总", "/interfaces/board", path.startswith("/interfaces/board"))
-        add("部门页面", "/interfaces", path == "/interfaces")
+        if nav.get("departments"):
+            add("部门页面", "/interfaces", path == "/interfaces")
+        if caps.get("interfaces"):
+            add("界面制作", "/setup/interfaces", path.startswith("/setup/interfaces"))
     elif head == "reviews":
         add("待审核", "/reviews", path == "/reviews")
         add("最近决定", "/reviews#decided")
@@ -1626,10 +1636,16 @@ def _shell_rail(path, nav, departments, dept_active, caps):
     elif head in ("settings", "admin", "setup"):
         if caps.get("settings"):
             add("部门与岗位", "/settings", path == "/settings")
+        if caps.get("positions"):
+            add("岗位目录", "/admin/positions", path.startswith("/admin/positions"))
+        if caps.get("work_items"):
+            add("工作项管理", "/admin/work-items", path.startswith("/admin/work-items"))
+        if caps.get("positions"):
+            add("工位布置", "/admin/spaces", path.startswith("/admin/spaces"))
         if caps.get("audit"):
             add("审计记录", "/admin/audit", path == "/admin/audit")
         if caps.get("setup"):
-            add("试用与开关", "/setup", path.startswith("/setup"))
+            add("试用与开关", "/setup", path == "/setup")
     return items
 
 
@@ -1679,6 +1695,9 @@ async def attach_browser_principal(request, call_next):
                 "setup": all(has_permission(conn, member_id, resource, "manage")
                              for resource in ("workforce.grants", "workforce.members",
                                               "workforce.positions", "workforce.assignments")),
+                "interfaces": has_permission(conn, member_id, "workforce.interfaces", "manage"),
+                "work_items": has_permission(conn, member_id, "workforce.work_items", "read"),
+                "positions": has_permission(conn, member_id, "workforce.positions", "read"),
             }
             request.state.rail = _shell_rail(request.url.path, nav, request.state.dept_rail,
                                              request.state.dept_active, caps)
