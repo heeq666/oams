@@ -42,6 +42,37 @@ def _bundle(old, new):
     return review_rules.review_bundle(old, new)
 
 
+def test_a_word_dropped_from_the_dropdown_is_reported_even_if_mapped():
+    """The dropdown and status_map are edited in different places; a word that
+    leaves only the dropdown still becomes unpickable, so the reviewer sees it."""
+
+    narrower = _descriptor()
+    fields = json.loads(json.dumps(narrower["fields"]))
+    for field in fields:
+        if field.get("map_to") == "status":
+            field["options"] = [w for w in field["options"] if w != "等面料"]
+    narrower["fields"] = fields
+    bundle = _bundle(BASE_DESCRIPTOR, narrower)
+    removed = [c for c in bundle["changes"] if c["kind"] == "status_removed"]
+    assert len(removed) == 1
+    assert removed[0]["severity"] == review_rules.SEVERITY_HIGH
+    assert "等面料" in removed[0]["label"]
+    assert "映射还留着" in removed[0]["why"]
+
+
+def test_audience_change_is_read_from_where_descriptors_keep_it():
+    """Departments write the audience under meta; a top-level-only reader would
+    report every version as unchanged on the one field that decides who sees it."""
+
+    narrower = _descriptor()
+    narrower["meta"] = dict(narrower["meta"], visibility="public")
+    bundle = _bundle(BASE_DESCRIPTOR, narrower)
+    kinds = [c["kind"] for c in bundle["changes"]]
+    assert kinds == ["visibility_changed"]
+    assert bundle["changes"][0]["severity"] == review_rules.SEVERITY_HIGH
+    assert bundle["changes"][0]["after"] == "public"
+
+
 # --- diff: what counts as a change -------------------------------------------
 
 

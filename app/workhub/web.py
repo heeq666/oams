@@ -999,12 +999,19 @@ def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
             """UPDATE workhub.interfaces SET status = 'archived', updated_at = now()
                WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
             (page["org_unit_id"], page["slug"]))
+        # The audience the department asked for only takes effect now: a public
+        # template has to be signed off, so the row keeps 'department' while the
+        # page waits and the approval is what promotes it.
+        requested_visibility = review_rules.visibility_of(page["descriptor"] or {})
         conn.execute(
             """UPDATE workhub.interfaces
                   SET status = 'active', reviewed_by = %s, reviewed_at = now(),
-                      review_note = %s, updated_at = now()
+                      review_note = %s, visibility = COALESCE(%s, visibility),
+                      updated_at = now()
                 WHERE interface_id = %s""",
-            (principal["member_id"], note.strip() or None, interface_id))
+            (principal["member_id"], note.strip() or None,
+             requested_visibility if requested_visibility in ("department", "public") else None,
+             interface_id))
         # The approval records what was actually reviewed, so "why did the number
         # move on the 12th" can be answered from the audit log alone.
         bundle = _review_bundle(conn, dict(page))
