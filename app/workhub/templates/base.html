@@ -231,9 +231,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                border-radius: 4px; padding: 0 6px; }
   .diff-value { color: var(--ink); }
   .diff-why { font-size: 13px; color: var(--muted); flex-basis: 100%; padding-left: 4px; }
-  @media (max-width: 720px) { header.topbar { flex-wrap: wrap; padding: 12px 16px; gap: 8px; }
-    header.topbar nav { order: 3; flex-basis: 100%; flex-wrap: wrap; gap: 8px 14px; }
-    main { padding: 18px 16px 48px; } .orgnav { flex-wrap: wrap; } }
+  /* The top bar's own narrow-screen rules live further down, next to the pill. */
+  @media (max-width: 720px) { main { padding: 18px 16px 48px; } .orgnav { flex-wrap: wrap; } }
   /* A department's own pages, as tabs inside the content area. */
   .page-tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
   .page-tab { padding: 8px 14px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0;
@@ -292,34 +291,64 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     --ring: #a1a1a1; --rail-w: 127px;
   }
   body { font-size: 14px; -webkit-font-smoothing: antialiased; }
-  /* The bar is a light strip: brand left, the four destinations inside a grey
-     slot in the middle, the account right. The slot is centred on the bar rather
-     than pushed right by the brand, so the navigation stays where the eye expects
-     it no matter how long the person's name is. */
-  header.topbar { background: var(--card); border-bottom: 0;
-                  height: 56px; padding: 0 24px; gap: 0;
-                  display: flex; align-items: center; justify-content: space-between; }
+  /* One floating pill instead of a full-bleed band: translucent white over the
+     page ground, a hairline of grey, a shadow that lifts it off the content.
+     Everything on it is ink -- the bar is glass, not a coloured strip -- and two
+     dividers cut it into three zones (brand | destinations | person) so the ends
+     read as furniture and only the middle reads as navigation. */
+  header.topbar { display: flex; align-items: center; gap: 20px;
+                  height: 56px; margin: 12px 24px 8px; padding: 0 16px;
+                  border-radius: var(--r-pill);
+                  background: rgba(255, 255, 255, .74);
+                  -webkit-backdrop-filter: saturate(1.2) blur(16px);
+                  backdrop-filter: saturate(1.2) blur(16px);
+                  border: 1px solid var(--line);
+                  box-shadow: 0 1px 2px rgba(15, 23, 42, .04),
+                              0 14px 34px -18px rgba(15, 23, 42, .30); }
   header.topbar a { color: var(--ink); text-decoration: none; }
   header.topbar .brand { display: flex; align-items: center; gap: 10px;
-                         font-size: 15px; font-weight: 600; }
-  header.topbar .brand img { display: block; width: 51px; height: 40px; }
+                         padding-left: 4px; font-size: 15px; font-weight: 600;
+                         letter-spacing: .01em; }
+  header.topbar .brand img { display: block; width: 38px; height: 30px; }
   header.topbar .brand .wordmark { font-weight: 600; }
-  header.topbar .navslot { position: absolute; left: 50%; top: 50%;
-                           transform: translate(-50%, -50%); }
+  /* The rules are the only separators left, so they carry the whole "these three
+     things are not one list" message -- thin, quiet, and full-height-less. */
+  header.topbar .navsep { flex: 0 0 auto; width: 1px; height: 20px;
+                          background: var(--line); }
+  /* The destinations sit centred in the middle zone, between the two rules: with
+     the links hugged left they would read as more brand, and the right rule would
+     look like the user's own private divider. */
   header.topbar nav { display: flex; align-items: center; justify-content: center;
-                      gap: 23px; height: 48px; min-width: 396px; padding: 0 28px;
-                      border-radius: 999px; background: var(--ring); }
-  /* White labels on the grey slot, as drawn: the current item is the one with a
-     near-black pill behind it, so "you are here" is still carried by the fill. */
-  header.topbar nav a { padding: 5px 10px; border-radius: 6px; font-size: 13px;
-                        line-height: 1.4; white-space: nowrap; color: #fff; }
-  header.topbar nav a:hover { background: rgba(255, 255, 255, .3); }
-  header.topbar nav a.on { background: var(--accent); color: #fff; font-weight: 600;
-                           border-radius: var(--r-pill); }
-  header.topbar .who { display: flex; align-items: center; gap: 12px;
-                       color: #525252; font-size: 13px; }
+                      gap: 2px; flex: 1; }
+  /* Black labels on the white pill; hover and current are carried by a soft grey
+     wash rather than by inverting the text, which would shout. */
+  header.topbar nav a { padding: 7px 14px; border-radius: var(--r-pill);
+                        font-size: 13px; line-height: 1.4; white-space: nowrap;
+                        color: var(--ink); }
+  header.topbar nav a:hover { background: rgba(10, 10, 10, .05); }
+  header.topbar nav a.on { background: var(--subtle); font-weight: 600; }
+  header.topbar .who { display: flex; align-items: center; gap: 10px;
+                       margin-left: auto; color: var(--ink); font-size: 13px; }
+  header.topbar .who-role { color: #525252; font-size: 12px; white-space: nowrap; }
+  /* No photo upload yet, so the circle is the initial: dark disc, light letter,
+     the one piece of brand colour on an otherwise monochrome bar. */
+  header.topbar .avatar { display: grid; place-items: center; flex: 0 0 auto;
+                          width: 30px; height: 30px; border-radius: 50%;
+                          background: var(--accent); color: var(--bg);
+                          font-size: 12px; font-weight: 600; line-height: 1;
+                          user-select: none; }
   header.topbar .who button.link { color: var(--muted); font-size: 13px; }
   header.topbar .who button.link:hover { color: var(--ink); }
+  /* A pill cannot stay one row on a narrow screen, so it stops being a pill: the
+     corners soften, the destinations drop to their own line, the zones stack. */
+  @media (max-width: 720px) {
+    header.topbar { flex-wrap: wrap; height: auto; gap: 10px 12px;
+                    margin: 10px 12px 6px; padding: 10px 14px; border-radius: 20px; }
+    header.topbar .navsep { display: none; }
+    header.topbar nav { order: 3; flex-basis: 100%; flex-wrap: wrap; gap: 4px; }
+    header.topbar nav a { padding: 6px 12px; }
+    header.topbar .who { gap: 8px; }
+  }
   /* The rail holds the current section's views, centred on the screen rather
      than stacked from the top: the bottom padding is the bar's height, so the
      group reads as centred in the window instead of drooping below the bar. */
@@ -473,20 +502,25 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     <img src="/static/brand/logo.png" alt="" width="51" height="40">
     <span class="wordmark">Workhub</span>
   </a>
+  {# Two rules split the pill into three zones -- brand | destinations | person --
+     so the two ends read as furniture and only the middle reads as navigation. #}
+  <span class="navsep" aria-hidden="true"></span>
   {# Links come from what this person can actually do, so the bar never shows a
      door that answers 403. Nothing here is a security check; the server still
      decides every request on its own. #}
-  <div class="navslot">
-    <nav aria-label="主导航">
-      {% if caps.progress %}<a href="/progress"{% if path.startswith('/progress') %} class="on"{% endif %}>进度中心</a>{% endif %}
-      {% if caps.progress %}<a href="/interfaces/board"{% if path.startswith('/interfaces') %} class="on"{% endif %}>汇报中心</a>{% endif %}
-      {% if caps.review %}<a href="/reviews"{% if path.startswith('/reviews') %} class="on"{% endif %}>页面审核</a>{% endif %}
-      {% if caps.admin %}<a href="/settings"{% if path.startswith('/settings') or path.startswith('/admin') or path.startswith('/setup') %} class="on"{% endif %}>设置</a>{% endif %}
-    </nav>
-  </div>
+  <nav aria-label="主导航">
+    {% if caps.progress %}<a href="/progress"{% if path.startswith('/progress') %} class="on"{% endif %}>进度中心</a>{% endif %}
+    {% if caps.progress %}<a href="/interfaces/board"{% if path.startswith('/interfaces') %} class="on"{% endif %}>汇报中心</a>{% endif %}
+    {% if caps.review %}<a href="/reviews"{% if path.startswith('/reviews') %} class="on"{% endif %}>页面审核</a>{% endif %}
+    {% if caps.admin %}<a href="/settings"{% if path.startswith('/settings') or path.startswith('/admin') or path.startswith('/setup') %} class="on"{% endif %}>设置</a>{% endif %}
+  </nav>
+  <span class="navsep" aria-hidden="true"></span>
   <div class="who">
     {% if member %}
-      <span>{{ member.display_name }}</span>
+      {# Position first, face second: who you are at work is the岗位, and the
+         circle is only the fallback for the photo we do not have yet. #}
+      {% if member.position_title %}<span class="who-role">{{ member.position_title }}</span>{% endif %}
+      <span class="avatar" aria-hidden="true">{{ member.display_name[:1] }}</span>
       <form method="post" action="/logout" class="inline">
         <button type="submit" class="link">退出</button>
       </form>
