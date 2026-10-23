@@ -252,8 +252,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .app-rail .rail-head { font-size: 12px; color: var(--muted); padding: 4px 8px 8px; letter-spacing: .04em; }
   .app-rail .rail-item { display: block; padding: 8px 10px; border-radius: 6px; color: var(--ink);
                          text-decoration: none; font-size: 14px; }
-  .app-rail .rail-item:hover { background: #f0f2f5; }
-  .app-rail .rail-item.on { background: var(--accent); color: #fff; }
+  /* No fill on hover or on the current row: the marker below carries the state,
+     otherwise the rail reads as a second column of buttons. */
+  .app-rail .rail-item:hover { color: var(--ink); }
+  .app-rail .rail-item.on { background: transparent; color: var(--ink); }
   /* The content column fills the space next to the rail: a wide screen should
      show more of the board, not more empty margin. Only the readable text
      elements keep a line-length cap, so wide layouts stay legible. */
@@ -315,7 +317,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   header.topbar a { color: var(--ink); text-decoration: none; }
   header.topbar .brand { justify-self: start; display: flex; align-items: center; gap: 10px;
                          font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
-  header.topbar .brand img { display: block; width: 30px; height: 30px; border-radius: 10px; }
+  /* The mark is 730x570: forcing both sides would squash it, so only the height
+     is fixed and the width follows the file's own ratio. */
+  header.topbar .brand img { display: block; width: auto; height: 30px; border-radius: 8px; }
   header.topbar .bar-nav { display: flex; align-items: center; justify-content: center; gap: 2px; }
   /* "You are here" is one ink wash behind the label -- the same wash at rest and
      after the capsule narrows, so the item does not change colour under the
@@ -529,7 +533,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   {# The logo goes to the first screen this person can actually use: a link that
      answers 403 is worse than no link at all. #}
   <a class="brand" href="{% if caps.progress %}/progress{% elif caps.review %}/reviews{% elif caps.admin %}/settings{% else %}/departments{% endif %}" aria-label="Workhub 首页">
-    <img src="/static/brand/logo.png" alt="" width="30" height="30">
+    <img src="/static/brand/logo.png" alt="" height="30">
     <span class="wordmark">Workhub</span>
   </a>
   {# Links come from what this person can actually do, so the bar never shows a
