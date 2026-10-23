@@ -99,20 +99,25 @@ def test_layout_sticky_rail(site) -> None:
             print("FAIL", path, before)
             failures.append(path)
             continue
+        # The top bar is a floating capsule now: it sits above the frame, and the
+        # frame (rail + content) owns the whole viewport. What matters is that the
+        # rail keeps the full height and never moves while the content scrolls.
+        bar_ok = before["barFloats"] and after["barFloats"]
         if after["mainScrollable"] < 100:
-            # Nothing to scroll on this page: the rail must still sit under the bar.
-            ok = before["railFullyVisible"] and before["railBelowBar"]
+            ok = before["railFullyVisible"] and before["railSpansViewport"] and bar_ok
             print(("PASS " if ok else "FAIL ") +
                   f"{path:<12} no scroll needed; rail visible={before['railFullyVisible']} "
-                  f"below_bar={before['railBelowBar']}")
+                  f"spans={before['railSpansViewport']} bar_floats={before['barFloats']}")
         else:
             moved = abs(after["railTop"] - before["railTop"]) <= 1
             scrolled = after["mainScrollTop"] > 100
-            ok = moved and scrolled and after["railFullyVisible"] and after["railBelowBar"]
+            ok = (moved and scrolled and after["railFullyVisible"]
+                  and after["railSpansViewport"] and bar_ok)
             print(("PASS " if ok else "FAIL ") +
                   f"{path:<12} content_scroll={before['mainScrollTop']}->{after['mainScrollTop']} "
                   f"rail_top={before['railTop']}->{after['railTop']} "
-                  f"visible={after['railFullyVisible']} below_bar={after['railBelowBar']}")
+                  f"visible={after['railFullyVisible']} spans={after['railSpansViewport']} "
+                  f"bar_floats={after['barFloats']}")
         if not ok:
             failures.append(path)
     assert not failures, f"the rail does not stay put on: {failures}"

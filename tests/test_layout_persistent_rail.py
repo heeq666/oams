@@ -29,18 +29,31 @@ MEASURE_JS = """(() => {
   const r = rail.getBoundingClientRect();
   const m = main.getBoundingClientRect();
   const bar = document.querySelector('header.topbar');
-  const b = bar ? bar.getBoundingClientRect() : { bottom: 0 };
+  const b = bar ? bar.getBoundingClientRect() : { top: 0, width: 0, height: 0 };
   return {
     railLeft: Math.round(r.left), railRight: Math.round(r.right),
     railTop: Math.round(r.top), railBottom: Math.round(r.bottom),
     railHeight: Math.round(r.height), viewportHeight: window.innerHeight,
-    barBottom: Math.round(b.bottom),
+    barTop: Math.round(b.top), barWidth: Math.round(b.width),
+    barHeight: Math.round(b.height),
+    barScrolled: !!(bar && bar.classList.contains('is-scrolled')),
+    // A short page has nothing to scroll, so the capsule legitimately stays at
+    // rest: the narrowing is only asserted where the content is taller than the
+    // frame.
+    scrolls: (m.scrollHeight > m.clientHeight + 1)
+      || (document.documentElement.scrollHeight > window.innerHeight + 1),
     mainLeft: Math.round(m.left),
     railIsLeftOfContent: r.right <= m.left + 1,
-    // The rail is a column of the frame: it starts right under the top bar and
-    // runs all the way to the bottom of the viewport.
-    railSpansViewport: Math.abs(r.top - b.bottom) <= 2
+    // The rail is a column of the frame: the frame owns the whole viewport now,
+    // because the top bar floats over it instead of taking a row of it.
+    railSpansViewport: Math.abs(r.top) <= 2
       && Math.abs(r.bottom - window.innerHeight) <= 2,
+    // The capsule sits below the top edge, is 40px tall, and leaves room on
+    // both sides instead of running edge to edge.
+    barFloatsOnTop: Math.round(b.top) >= 8 && Math.round(b.top) <= 28
+      && Math.round(b.height) === 40,
+    // At rest it is the wide capsule; the content column slides underneath it.
+    barWideAtRest: Math.round(b.width) >= window.innerWidth - 120,
     position: getComputedStyle(rail).position,
   };
 })()"""
@@ -120,14 +133,22 @@ def test_layout_persistent_rail(site) -> None:
     failures = []
     for path in DEFAULT_PATHS:
         before, after = report[path]["before"], report[path]["afterScroll"]
+        narrowed = (not before.get("scrolls")) or (
+            after.get("barScrolled") and after.get("barWidth", 9999) <= 882)
         ok = (before.get("railIsLeftOfContent") and before.get("railSpansViewport")
+              and before.get("barFloatsOnTop") and before.get("barWideAtRest")
+              and narrowed
               and after.get("railLeft") == 0 and before.get("railLeft") == 0)
         print(("PASS " if ok else "FAIL ") + path +
-              f"  width={before.get('railRight')}px"
-              f"  height={before.get('railHeight')}px"
-              f"  spans_viewport={before.get('railSpansViewport')}"
-              f"  left_of_content={before.get('railIsLeftOfContent')}"
-              f"  stays_after_scroll={after.get('railLeft') == 0}")
+              f"  rail={before.get('railRight')}x{before.get('railHeight')}"
+              f"  bar={before.get('barWidth')}x{before.get('barHeight')}"
+              f"  bar_top={before.get('barTop')}"
+              f"  floats={before.get('barFloatsOnTop')}"
+              f"  wide_at_rest={before.get('barWideAtRest')}"
+              f"  scrolls={before.get('scrolls')}"
+              f"  scrolled={after.get('barScrolled')}"
+              f"  narrowed_to={after.get('barWidth')}"
+              f"  spans_viewport={before.get('railSpansViewport')}")
         if not ok:
             failures.append(path)
     assert not failures, f"the rail is not a persistent column on: {failures}"
