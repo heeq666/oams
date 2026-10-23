@@ -37,9 +37,11 @@ MEASURE_JS = """(() => {
     barBottom: Math.round(b.bottom),
     mainLeft: Math.round(m.left),
     railIsLeftOfContent: r.right <= m.left + 1,
-    // The rail is a column of the frame: it starts right under the top bar and
-    // runs all the way to the bottom of the viewport.
-    railSpansViewport: Math.abs(r.top - b.bottom) <= 2
+    // The rail is a column of the frame: it starts under the top bar and runs to
+    // the bottom of the viewport. The bar floats over the page (a pill with a
+    // gutter below it), so "under" means its box bottom plus that gutter -- the
+    // gutter is part of the bar, not a gap the rail should have filled.
+    railSpansViewport: r.top >= b.bottom - 1 && r.top <= b.bottom + 12
       && Math.abs(r.bottom - window.innerHeight) <= 2,
     position: getComputedStyle(rail).position,
   };
@@ -125,7 +127,7 @@ def test_layout_persistent_rail(site) -> None:
         print(("PASS " if ok else "FAIL ") + path +
               f"  width={before.get('railRight')}px"
               f"  height={before.get('railHeight')}px"
-              f"  spans_viewport={before.get('railSpansViewport')}"
+              f"  under_bar_to_bottom={before.get('railSpansViewport')}"
               f"  left_of_content={before.get('railIsLeftOfContent')}"
               f"  stays_after_scroll={after.get('railLeft') == 0}")
         if not ok:
