@@ -127,10 +127,39 @@ def test_derive_pending_for_not_started_unfilled_or_empty():
     assert derive_style_sample_state([]) == "pending"
 
 
-def test_derive_pending_for_negative_and_metadata_words():
-    # 取消/失败 are terminal, 已安排 is scheduling-only: none of them means the
+def test_derive_pending_for_negatively_terminated_styles():
+    # 取消/失败 are terminal and 未开始 is untouched: none of them means the
     # colour is being worked on right now.
-    assert derive_style_sample_state(["取消", "失败", "已安排"]) == "pending"
+    assert derive_style_sample_state(["取消", "失败"]) == "pending"
+    assert derive_style_sample_state(["取消", "未开始"]) == "pending"
+
+
+def test_booked_and_reworked_colours_count_as_in_production():
+    # Owner ruling 2026-10-23: 重做/已安排 不归 pending. A colour booked with the
+    # factory, or one that went back round, is in production — filing it under
+    # 打样未完成 overstates the backlog.
+    for word in ("重做", "已安排", "毛衣已安排"):
+        assert word in SAMPLE_WIP_WORDS
+        assert derive_style_sample_state([word]) == "wip"
+    assert derive_style_sample_state(["未开始", "已安排"]) == "wip"
+    assert derive_style_sample_state(["重做", "取消"]) == "wip"
+
+
+def test_late_stages_the_owner_named_stay_in_production():
+    # 后工艺 and 剪裁中 were already wip; the ruling re-confirmed them.
+    for word in ("后工艺", "剪裁中"):
+        assert word in SAMPLE_WIP_WORDS
+        assert derive_style_sample_state([word]) == "wip"
+
+
+def test_unclassified_words_keep_only_the_no_work_started_residue():
+    from workhub.funnel import UNCLASSIFIED_SAMPLE_WORDS
+
+    assert set(UNCLASSIFIED_SAMPLE_WORDS) == {
+        "未开始", "未填写", "取消", "ODM", "失败", "特殊情况", "待定", "AI效果图"
+    }
+    assert set(UNCLASSIFIED_SAMPLE_WORDS).isdisjoint(SAMPLE_WIP_WORDS)
+    assert set(UNCLASSIFIED_SAMPLE_WORDS).isdisjoint(SAMPLE_DONE_WORDS)
 
 
 def test_derive_is_order_independent_and_ignores_duplicates():
@@ -177,7 +206,8 @@ def test_funnel_matches_the_home_page_six_slots(dc):
     assert format_metric("funnel.ordered", metrics["funnel.ordered"]) == "29 款"
     assert format_metric("funnel.not_ordered", metrics["funnel.not_ordered"]) == "39 款"
     assert format_metric("funnel.gmv", metrics["funnel.gmv"]) == "¥1,745.87 万"
-    assert format_metric("funnel.roi", metrics["funnel.roi"]) == "5.17"
+    # Rounded half up by owner ruling: 5.1751 -> 5.18.
+    assert format_metric("funnel.roi", metrics["funnel.roi"]) == "5.18"
 
 
 def test_sample_buckets_partition_the_style_count(dc):
@@ -327,7 +357,7 @@ def test_list_waves_comes_from_the_fixture(dc):
 def test_format_metric_uses_the_contract_shapes():
     assert format_metric("funnel.qty", 63289) == "63,289 件"
     assert format_metric("funnel.gmv", 17458700) == "¥1,745.87 万"
-    assert format_metric("funnel.roi", 5.1751) == "5.17"
+    assert format_metric("funnel.roi", 5.1751) == "5.18"
     assert format_metric("funnel.sample_done", 59) == "59 款"
 
 
@@ -336,9 +366,25 @@ def test_format_metric_renders_none_as_dash():
     assert format_metric("funnel.gmv", None) == "—"
 
 
-def test_format_metric_roi_truncates_rather_than_rounds():
-    # 6889366 / 1331248 = 5.1751 -> 5.17, not 5.18.
-    assert format_metric("funnel.roi", 6889366 / 1331248) == "5.17"
+def test_format_metric_roi_rounds_half_up():
+    # Owner ruling 2026-10-23: ROI 四舍五入. 6889366 / 1331248 = 5.17511... -> 5.18.
+    assert format_metric("funnel.roi", 6889366 / 1331248) == "5.18"
+
+
+def test_roi_rounding_is_half_up_at_an_exact_half():
+    # The reason this is Decimal and not round(): round(5.175, 2) is 5.17 under
+    # banker's rounding, which is the opposite of what was ruled.
+    assert round(5.175, 2) == 5.17
+    assert format_metric("funnel.roi", 5.175) == "5.18"
+    assert format_metric("funnel.roi", 5.165) == "5.17"
+    assert format_metric("funnel.roi", 5.174) == "5.17"
+    assert format_metric("funnel.roi", 5.176) == "5.18"
+
+
+def test_roi_rounding_does_not_inherit_binary_float_error():
+    # 1.005 is 1.00499999999999989 in binary; str() keeps the decimal the caller
+    # meant, so an exact half still goes up.
+    assert format_metric("funnel.roi", 1.005) == "1.01"
 
 
 def test_format_metric_groups_thousands():

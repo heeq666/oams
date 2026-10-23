@@ -927,7 +927,7 @@ def _sample_aggregates(descriptor: dict) -> dict:
                 "funnel.ordered", "funnel.not_ordered", "funnel.qty",
                 "funnel.gmv", "funnel.roi"):
         aggregates[key] = {"funnel.qty": 63289, "funnel.gmv": 17458734.0,
-                           "funnel.roi": 5.17}.get(key, 128)
+                           "funnel.roi": 5.1751}.get(key, 128)
     for index, (word, standard) in enumerate((descriptor.get("status_map") or {}).items()):
         aggregates[f"status.{word}"] = 12 + index * 7
         aggregates[f"status.{standard}"] = 12 + index * 7

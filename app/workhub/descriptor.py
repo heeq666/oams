@@ -215,6 +215,15 @@ def _check_department(problems: _Problems, descriptor: dict,
                 problems.add("DATA_RULE_VIOLATION", "position_codes", f"unknown position {position!r}")
 
 
+#: Standard fields the product data centre derives itself (contract §5, group D).
+#: They stay in STANDARD_FIELD_VOCAB -- they are legitimate canonical names that the
+#: platform writes -- but a department descriptor must never map one of its own
+#: fields onto them: the style-level sample/approval status is derived from the
+#: colour-level development records, so a department typing it by hand would fork
+#: the truth. Vocabulary membership and map_to permission are two different things.
+PLATFORM_DERIVED_FIELDS: tuple[str, ...] = ("sample_status", "approval_status")
+
+
 def _check_fields(problems: _Problems, descriptor: dict, version: str,
                   strict_v02: bool) -> tuple[list[dict], set[str], dict[str, dict], set[str]]:
     """Fields must map somewhere real, and display-only fields cannot aggregate."""
@@ -246,6 +255,14 @@ def _check_fields(problems: _Problems, descriptor: dict, version: str,
             if field.get("aggregatable") is not False:
                 problems.add("DATA_RULE_VIOLATION", f"fields[{key}]",
                              "map_to=display_only requires aggregatable=false")
+        elif map_to in PLATFORM_DERIVED_FIELDS:
+            # In-vocabulary but never map-able, in every schema version: the
+            # platform derives this value from the colour-level records.
+            problems.add(
+                "DATA_RULE_VIOLATION", f"fields[{key}]",
+                f"map_to {map_to!r} 是平台派生口径：款级打样与审批状态由商品数据中心"
+                "颜色级记录派生，部门不得填报；请改用 'status' 或 'display_only'",
+            )
         elif map_to in vocab:
             mapped_fields.add(map_to)
         else:
@@ -591,7 +608,8 @@ __all__ = [
     "CAPABILITIES", "CONTAINER_DEPTH_LIMIT", "CURRENT_SCHEMA_VERSION",
     "DEFAULT_MODULE_TYPES", "DISPLAY_METRIC_PARAMS", "DISPLAY_ONLY",
     "DescriptorError", "FIELD_TYPES", "FORBIDDEN_KEYS", "LEGACY_SCHEMA_VERSION",
-    "MODULE_REGISTRY", "REJECT_CODES", "REQUIRED_TOP_LEVEL_KEYS",
+    "MODULE_REGISTRY", "PLATFORM_DERIVED_FIELDS", "REJECT_CODES",
+    "REQUIRED_TOP_LEVEL_KEYS",
     "REVIEWED_CAPABILITIES", "SCHEMA_VERSIONS", "STANDARD_FIELDS",
     "STANDARD_FIELD_VOCAB", "STANDARD_STATUSES", "V02_ONLY_MODULE_KEYS",
     "V02_ONLY_TOP_LEVEL_KEYS", "VISIBILITIES", "assert_descriptor",

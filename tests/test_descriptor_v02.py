@@ -20,6 +20,7 @@ from workhub.descriptor import (  # noqa: E402
     CURRENT_SCHEMA_VERSION,
     REJECT_CODES,
     SCHEMA_VERSIONS,
+    PLATFORM_DERIVED_FIELDS,
     STANDARD_FIELD_VOCAB,
     DescriptorError,
     assert_descriptor,
@@ -376,3 +377,75 @@ def test_standard_field_vocab_is_the_only_map_to_source():
     assert "title" in STANDARD_FIELD_VOCAB
     for field_key in ("style_no", "stage"):
         assert field_key not in STANDARD_FIELD_VOCAB
+
+
+# --------------------------------------------------------------------------- #
+# Platform-derived fields (user ruling: style-level sample status is derived
+# from the colour-level development records, never typed by a department)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("map_to", ["sample_status", "approval_status"])
+def test_platform_derived_map_to_is_rejected(map_to):
+    broken = base()
+    broken["fields"].append(field("platform_state", map_to, "enum"))
+    problems = validate_descriptor(broken)
+    assert "DATA_RULE_VIOLATION" in codes(problems)
+    hit = next(p for p in problems if map_to in p)
+    # The code prefix comes first, then the path, exactly like every other reject.
+    assert hit.startswith(f"[DATA_RULE_VIOLATION] fields[platform_state]:")
+    assert map_to in hit
+    assert "颜色级记录派生" in hit and "部门不得填报" in hit
+    assert "display_only" in hit
+
+
+@pytest.mark.parametrize("map_to", ["sample_status", "approval_status"])
+def test_platform_derived_reject_has_no_other_complaint(map_to):
+    # One broken mapping must produce exactly one problem: no bogus vocab error.
+    broken = base()
+    broken["fields"].append(field("platform_state", map_to, "enum"))
+    assert codes(validate_descriptor(broken)) == ["DATA_RULE_VIOLATION"]
+
+
+@pytest.mark.parametrize("map_to", ["sample_status", "approval_status"])
+def test_platform_derived_names_stay_in_the_vocabulary(map_to):
+    # They are still canonical names the platform writes; only *map_to* is banned.
+    assert map_to in STANDARD_FIELD_VOCAB
+    assert map_to in PLATFORM_DERIVED_FIELDS
+
+
+def test_map_to_status_is_still_legal():
+    descriptor = base()
+    descriptor["fields"] = [
+        field("style_no", "title"),
+        field("stage", "status", "enum"),
+        field("percent_done", "progress_value", "percent"),
+        field("sample_sheet", "evidence"),
+    ]
+    assert validate_descriptor(descriptor) == []
+
+
+def test_display_only_is_unaffected_by_the_platform_derived_rule():
+    descriptor = base()
+    descriptor["fields"].append(
+        field("sample_state_note", "display_only", aggregatable=False)
+    )
+    assert validate_descriptor(descriptor) == []
+
+
+def test_platform_derived_rule_applies_to_v01_documents_too():
+    # A 0.1 document that maps sample_status is just as wrong, and the code prefix
+    # is dropped for 0.1 -- but the complaint must still be there.
+    legacy = base(schema_version="0.1")
+    legacy.pop("capabilities")
+    legacy.pop("metrics")
+    legacy["fields"].append(field("platform_state", "sample_status", "enum"))
+    problems = validate_descriptor(legacy)
+    assert any("颜色级记录派生" in p for p in problems)
+
+
+def test_migration_window_also_rejects_platform_derived_map_to():
+    descriptor = base()
+    descriptor["fields"].append(field("platform_state", "sample_status", "enum"))
+    assert any("颜色级记录派生" in p
+               for p in validate_descriptor(descriptor, strict_v02=False))

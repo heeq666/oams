@@ -2,7 +2,7 @@
 
 The numbers come from workhub.funnel over a FixtureDataCenter, so these tests
 carry the contract's measured 26D冬1-2波 values (59 / 9 / 29 / 39 /
-¥1,745.87 万 / 5.17) and need neither a data centre nor a database.
+¥1,745.87 万 / 5.18) and need neither a data centre nor a database.
 
 The database is stubbed at the module boundary (workhub.web.connection and the
 security helpers web.py imported), because everything under test here is the
@@ -171,8 +171,8 @@ def test_panel_uses_the_single_formatter(stubbed):
     assert rows["funnel.ordered"]["formatted"] == "29 款"
     assert rows["funnel.not_ordered"]["formatted"] == "39 款"
     assert rows["funnel.gmv"]["formatted"] == "¥1,745.87 万"
-    # Truncated, not rounded: 5.1751 is 5.17 on the contract page.
-    assert rows["funnel.roi"]["formatted"] == "5.17"
+    # Rounded half up by owner ruling (2026-10-23): 5.1751 -> 5.18.
+    assert rows["funnel.roi"]["formatted"] == "5.18"
 
 
 def test_configured_wave_wins_over_the_first_wave(stubbed, monkeypatch):
@@ -318,7 +318,7 @@ def test_home_json_returns_the_six_metrics(stubbed):
         assert set(row) == {"key", "label", "value", "formatted", "unit"}
     assert body["metrics"][0]["formatted"] == "59 款"
     assert body["metrics"][4]["formatted"] == "¥1,745.87 万"
-    assert body["metrics"][5]["formatted"] == "5.17"
+    assert body["metrics"][5]["formatted"] == "5.18"
 
 
 def test_home_json_is_json_not_html(stubbed):
@@ -377,7 +377,7 @@ def test_board_renders_the_company_panel(stubbed, monkeypatch):
     assert WAVE in html
     assert "59 款" in html
     assert "¥1,745.87 万" in html
-    assert "5.17" in html
+    assert "5.18" in html
     # The department cards must survive underneath it.
     assert "未完成工作项" in html
 
