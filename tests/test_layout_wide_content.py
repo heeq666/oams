@@ -6,8 +6,8 @@ node; both are skipped (not failed) when absent.
 """
 import json
 import os
-import random
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -72,7 +72,9 @@ def chrome_ws(port):
 
 
 def measure(path, width):
-    port = 9500 + random.randint(0, 400)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
     profile = tempfile.mkdtemp(prefix="wh-width-")
     chrome = subprocess.Popen(
         [CHROME, "--headless=new", "--no-sandbox", "--disable-gpu",

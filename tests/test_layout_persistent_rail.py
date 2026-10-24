@@ -7,8 +7,8 @@ seeded administrator.
 """
 import json
 import os
-import random
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -105,7 +105,9 @@ def chrome_ws(port):
 
 
 def measure(paths):
-    port = 9400 + random.randint(0, 300)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
     profile = tempfile.mkdtemp(prefix="wh-layout-")
     chrome = subprocess.Popen(
         [CHROME, "--headless=new", "--no-sandbox", "--disable-gpu",
