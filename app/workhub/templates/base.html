@@ -301,26 +301,47 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      person's position title is. The glass is transparent at rest and fills in
      on scroll, which is what makes the narrowing legible: there is something
      to see moving underneath it. Everything is driven by one class. */
+  /* Three states, one class:
+       at rest     -- the navigation is its own small glass pill in the middle,
+                      the logo sits at the left edge and the account at the right;
+       scrolling   -- the bar narrows to 880px, so the three parts travel inward
+                      and meet (the pill's own glass fades as the bar's takes over);
+       scrolled    -- one capsule holding logo, navigation and account.
+     The pill-at-rest is what makes the first state readable: over a #FAFAFA page
+     a fully transparent 1360px bar showed nothing at all. */
   header.topbar { position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
                   z-index: 30; width: calc(100% - 80px); max-width: 1360px;
                   height: 40px; padding: 0 20px; gap: 18px;
                   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
                   border-radius: var(--r-pill); background: rgba(255, 255, 255, 0);
-                  -webkit-backdrop-filter: blur(0px); backdrop-filter: blur(0px);
-                  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
+                  box-shadow: none;
                   transition: max-width 240ms cubic-bezier(.4, 0, .2, 1),
                               background-color 240ms cubic-bezier(.4, 0, .2, 1),
+                              box-shadow 240ms cubic-bezier(.4, 0, .2, 1),
                               backdrop-filter 240ms cubic-bezier(.4, 0, .2, 1); }
   header.topbar.is-scrolled { max-width: 880px; background: rgba(255, 255, 255, .70);
                               -webkit-backdrop-filter: saturate(1.2) blur(10px);
-                              backdrop-filter: saturate(1.2) blur(10px); }
+                              backdrop-filter: saturate(1.2) blur(10px);
+                              box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
   header.topbar a { color: var(--ink); text-decoration: none; }
   header.topbar .brand { justify-self: start; display: flex; align-items: center; gap: 10px;
                          font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
   /* The mark is 730x570: forcing both sides would squash it, so only the height
      is fixed and the width follows the file's own ratio. */
   header.topbar .brand img { display: block; width: auto; height: 30px; border-radius: 8px; }
-  header.topbar .bar-nav { display: flex; align-items: center; justify-content: center; gap: 2px; }
+  /* The pill lives on the navigation until the bar swallows it: same glass, same
+     shadow, so the handover on scroll reads as one object widening. */
+  header.topbar .bar-nav { display: flex; align-items: center; justify-content: center; gap: 2px;
+                           height: 40px; padding: 0 6px; border-radius: var(--r-pill);
+                           background: rgba(255, 255, 255, .70);
+                           -webkit-backdrop-filter: saturate(1.2) blur(10px);
+                           backdrop-filter: saturate(1.2) blur(10px);
+                           box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
+                           transition: background-color 240ms cubic-bezier(.4, 0, .2, 1),
+                                       box-shadow 240ms cubic-bezier(.4, 0, .2, 1),
+                                       backdrop-filter 240ms cubic-bezier(.4, 0, .2, 1); }
+  header.topbar.is-scrolled .bar-nav { background: transparent; box-shadow: none;
+                                       -webkit-backdrop-filter: none; backdrop-filter: none; }
   /* "You are here" is one ink wash behind the label -- the same wash at rest and
      after the capsule narrows, so the item does not change colour under the
      user's eye while the shell animates. */
@@ -506,6 +527,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   @media (max-width: 900px) {
     header.topbar { width: calc(100% - 32px); max-width: none; padding: 0 14px; gap: 10px; }
     header.topbar.is-scrolled { max-width: none; }
+    /* No room for a pill inside the bar on a phone: the bar itself becomes the
+       glass once the page scrolls, and stays invisible before that. */
+    header.topbar .bar-nav { background: transparent; box-shadow: none; padding: 0;
+                             -webkit-backdrop-filter: none; backdrop-filter: none; }
     header.topbar .brand .wordmark { display: none; }
     header.topbar .bar-nav a { padding: 0 10px; }
     header.topbar .who .who-role { display: none; }
