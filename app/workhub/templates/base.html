@@ -361,11 +361,31 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                        min-width: 0; max-width: 100%; white-space: nowrap;
                        color: #525252; font-size: 12px; }
   header.topbar .who .who-role { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  header.topbar .who .avatar { width: 30px; height: 30px; border-radius: 999px;
-                               background: var(--accent); color: #fafafa;
-                               display: grid; place-items: center; font-size: 12px; font-weight: 500; }
-  header.topbar .who button.link { color: var(--muted); font-size: 12px; padding: 0; }
-  header.topbar .who button.link:hover { color: var(--ink); background: none; }
+  /* The avatar IS the account menu. It is a fixed 30px circle: inside a flex
+     row a long job title otherwise squeezed it into an ellipse. */
+  header.topbar .account { position: relative; flex: 0 0 auto; }
+  header.topbar .account > summary { list-style: none; cursor: pointer; }
+  header.topbar .account > summary::-webkit-details-marker { display: none; }
+  header.topbar .account .avatar { width: 30px; min-width: 30px; height: 30px; flex: 0 0 30px;
+                                   border-radius: 999px; background: var(--accent); color: #fafafa;
+                                   display: grid; place-items: center; font-size: 12px;
+                                   font-weight: 500; }
+  header.topbar .account > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  header.topbar .account[open] .avatar { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14); }
+  header.topbar .account-menu { position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
+                               min-width: 208px; padding: 6px; border-radius: 12px; background: #fff;
+                               box-shadow: 0 12px 32px -12px rgba(15, 23, 42, .28),
+                                           0 1px 2px rgba(15, 23, 42, .06); text-align: left; }
+  header.topbar .account-menu .menu-head { padding: 8px 10px 10px; margin-bottom: 6px;
+                                          border-bottom: 1px solid var(--line); }
+  header.topbar .account-menu .menu-name { color: var(--ink); font-size: 13px; font-weight: 500; }
+  header.topbar .account-menu .menu-role { margin-top: 2px; color: var(--muted); font-size: 12px;
+                                          overflow: hidden; text-overflow: ellipsis; }
+  header.topbar .account-menu .menu-item { display: block; width: 100%; height: 32px; padding: 0 10px;
+                                          border: 0; border-radius: 8px; background: none;
+                                          color: var(--ink); font-size: 13px; font-weight: 400;
+                                          line-height: 32px; text-align: left; cursor: pointer; }
+  header.topbar .account-menu .menu-item:hover { background: var(--subtle); color: var(--ink); }
   /* The rail holds the current section's views, centred on the screen rather
      than stacked from the top: the bottom padding is the bar's height, so the
      group reads as centred in the window instead of drooping below the bar. */
@@ -584,10 +604,22 @@ body { margin: 0; background: var(--bg); color: var(--ink);
          bar is looking at the same app, and the name adds nothing to that. The
          initial on the avatar still says who it is. #}
       <span class="who-role">{{ member.position_title or member.display_name }}</span>
-      <span class="avatar" aria-hidden="true">{{ member.display_name[:1] }}</span>
-      <form method="post" action="/logout" class="inline">
-        <button type="submit" class="link">退出</button>
-      </form>
+      {# Signing out lives behind the avatar, not beside it: the bar keeps one
+         object on the right, and account actions belong in the account menu.
+         <details> so the menu opens without script; the listeners at the bottom
+         only add click-outside and Escape. #}
+      <details class="account" id="account">
+        <summary class="avatar" aria-haspopup="menu" aria-label="账号菜单" title="账号菜单">{{ member.display_name[:1] }}</summary>
+        <div class="account-menu" role="menu" aria-label="账号">
+          <div class="menu-head">
+            <div class="menu-name">{{ member.display_name }}</div>
+            <div class="menu-role">{{ member.position_title or '未分配岗位' }}</div>
+          </div>
+          <form method="post" action="/logout" class="inline">
+            <button type="submit" class="menu-item" role="menuitem">退出登录</button>
+          </form>
+        </div>
+      </details>
     {% else %}
       <a href="/login">登录</a>
     {% endif %}
@@ -631,6 +663,23 @@ body { margin: 0; background: var(--bg); color: var(--ink);
         bar.classList.toggle('is-scrolled', !entries[i].isIntersecting);
       }
     }, { root: scroller, threshold: 0 }).observe(marker);
+  })();
+  // The account menu is <details>, so it opens and closes on its own; these two
+  // listeners only add what a menu is expected to do -- close on an outside
+  // click and on Escape, so it cannot be left open behind the page.
+  (function () {
+    var account = document.getElementById('account');
+    if (!account) return;
+    document.addEventListener('click', function (event) {
+      if (account.open && !account.contains(event.target)) account.open = false;
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && account.open) {
+        account.open = false;
+        var summary = account.querySelector('summary');
+        if (summary) summary.focus();
+      }
+    });
   })();
 </script>
 </body>
