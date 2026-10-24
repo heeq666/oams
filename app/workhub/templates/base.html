@@ -288,10 +288,19 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     --accent: #171717; --blocked: #dc2626; --decision: #d97706; --done: #16a34a;
     --info: #2563eb; --agent: #7c3aed; --agent-soft: #f5f3ff;
     --success-soft: #f0fdf4; --warning-soft: #fffbeb; --danger-soft: #fef2f2;
-    --r-sm: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 14px;
-    /* one radius per role, read off the canvas: modules 28, buttons and pills
-       fully rounded, controls 8, the login card 14. */
-    --r-card: 28px; --r-pill: 999px; --r-control: 8px;
+    /* Radius is four levels and every step is 8, which is also the gap between
+       a container and the block inside it -- so a nested corner is concentric by
+       arithmetic instead of by eye: inner = outer - 8.
+         L1 28  container      card, modal, menu panel, content shell
+         L2 20  control        40px tall: input, select, button, alert, empty
+         L3 12  small control  32px tall: tooltip, pagination, menu row, rail row
+         L4 4   micro          checkbox box, dots, swatches
+       Pill (999) only for badges and progress that never reach 20px tall. */
+    --r-card: 28px; --r-control: 20px; --r-small: 12px; --r-micro: 4px;
+    --r-pill: 999px;
+    /* legacy names, mapped onto the scale so older rules keep a sane value */
+    --r-sm: var(--r-micro); --r-md: 8px; --r-lg: var(--r-small);
+    --r-xl: var(--r-card);
     --ring: #a1a1a1; --rail-w: 127px;
   }
   body { font-size: 14px; -webkit-font-smoothing: antialiased; }
@@ -374,8 +383,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   header.topbar .account[open] .avatar { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14); }
   header.topbar .account-menu { position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
                                min-width: 208px; padding: 6px; border-radius: 12px; background: #fff;
-                               box-shadow: 0 12px 32px -12px rgba(15, 23, 42, .28),
-                                           0 1px 2px rgba(15, 23, 42, .06); text-align: left; }
+                               box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); text-align: left; }
   header.topbar .account-menu .menu-head { padding: 8px 10px 10px; margin-bottom: 6px;
                                           border-bottom: 1px solid var(--line); }
   header.topbar .account-menu .menu-name { color: var(--ink); font-size: 13px; font-weight: 500; }
@@ -405,17 +413,17 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .app-rail .rail-item.on .mark { background: var(--accent); }
   /* The content area sits on the same ground as the rail: on the canvas the
      white belongs to the panels inside it, not to a big white sheet. */
-  .app-frame > main { background: var(--bg); border-radius: 20px 0 0 20px;
+  .app-frame > main { background: var(--bg); border-radius: var(--r-card) 0 0 var(--r-card);
                       padding: 32px 32px 40px; }
   h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
   h2 { font-size: 15px; font-weight: 600; }
   .sub { font-size: 13px; color: var(--muted); }
-  .card { border-radius: 28px; padding: 20px 24px; border: 0; }
+  .card { border-radius: var(--r-card); padding: 20px 24px; border: 0; }
   .card + .card { margin-top: 20px; }
   .card > h2:first-child { margin-top: 0; }
   .card-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .card-head .spacer { margin-left: auto; }
-  button, .btn { background: var(--accent); border-radius: var(--r-md); padding: 8px 16px;
+  button, .btn { background: var(--accent); border-radius: var(--r-pill); padding: 8px 16px;
                  font-size: 14px; font-weight: 500; }
   button:hover, .btn:hover { opacity: .9; }
   .btn-ghost, button.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
@@ -423,7 +431,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .btn-danger, button.danger { background: var(--card); color: var(--blocked); border: 1px solid var(--line); }
   .btn-danger:hover, button.danger:hover { background: var(--danger-soft); opacity: 1; }
   .btn-sm, button.sm { padding: 6px 12px; font-size: 13px; }
-  input, select, textarea { border-radius: var(--r-md); padding: 9px 12px; font-size: 14px;
+  input, select, textarea { border-radius: var(--r-control); padding: 9px 12px; font-size: 14px;
                             border-color: var(--line); }
   input:focus, select:focus, textarea:focus { outline: none; border-color: #a3a3a3;
                                               box-shadow: 0 0 0 3px rgba(0,0,0,.04); }
@@ -442,7 +450,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .pill.danger  { background: var(--danger-soft);  color: var(--blocked); }
   .pill.info    { background: #eff6ff; color: var(--info); }
   .pill.agent   { background: var(--agent-soft); color: var(--agent); }
-  .strip { padding: 8px 12px; border-radius: var(--r-md); font-size: 12px; line-height: 1.6; }
+  .strip { padding: 8px 12px; border-radius: var(--r-control); font-size: 12px; line-height: 1.6; }
   .strip.warning { background: var(--warning-soft); color: #92400e; }
   .strip.neutral { background: var(--subtle); color: var(--muted); }
   .stack-12 { display: flex; flex-direction: column; gap: 12px; }
@@ -450,7 +458,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .row .spacer { margin-left: auto; }
   .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--subtle);
-         border-radius: var(--r-lg); }
+         border-radius: var(--r-small); }
   .seg a, .seg button { padding: 6px 14px; border-radius: var(--r-md); font-size: 13px;
                         color: var(--muted); text-decoration: none; background: transparent; font-weight: 400; }
   .seg a.on { background: var(--card); color: var(--ink); font-weight: 500;
@@ -505,13 +513,22 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     .decide .controls select, .decide .controls button { width: 100%; }
     .app-frame > main { padding: 20px 16px 48px; }
   }
-  /* One radius per role, applied last so the older per-component rules above
-     cannot leave a 8px module next to a 28px one. */
-  .card, .metric, .channel-scorecard, .detail, .panel { border-radius: var(--r-card); }
+  /* Radius by role, applied last so the older per-component rules above cannot
+     leave an 8px block next to a 28px one. Read the token comment at the top of
+     :root for the four levels; this block is the only place that picks one. */
+  .card, .metric, .channel-scorecard, .detail, .panel, .auth-card,
+  header.topbar .account-menu { border-radius: var(--r-card); }
   button, .btn, .btn-ghost, .btn-danger, .btn-sm, button.ghost, button.danger,
-  button.sm, .pill, .badge { border-radius: var(--r-pill); }
-  input, select, textarea, .strip, .flash, .diff-block { border-radius: var(--r-control); }
-  .auth-card { border-radius: var(--r-xl); }
+  button.sm, .pill, .badge, .tabs a, .flowstrip .stage { border-radius: var(--r-pill); }
+  input, select, textarea, .strip, .flash, .diff-block, ul.items > li,
+  .wh-interface .wh-container { border-radius: var(--r-control); }
+  /* 32px-tall controls and the small blocks that sit inside a card */
+  .seg, .orgnav, .app-rail .rail-item, .tabs.layers a, td input, td select,
+  td textarea, header.topbar .account-menu .menu-item,
+  .wh-interface .wh-input, .wh-interface .wh-tabpanel { border-radius: var(--r-small); }
+  /* A 16px box cannot take the 20px control radius -- it would become a circle. */
+  input[type="checkbox"] { border-radius: var(--r-micro); }
+  input[type="radio"] { border-radius: var(--r-pill); }
   thead tr:first-child th { border-radius: 0; }
   /* No outline anywhere: every surface is a filled panel on the page ground.
      Separation comes from the ground colour and the radius, never from a
@@ -537,21 +554,25 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                   pointer-events: none; }
   .app-rail { padding-top: 56px; }
   /* Buttons: one pill, four roles -- solid ink primary, quiet grey secondary,
-     red destructive, and a bare text link. Every one is 36px tall, so a row of
-     them shares a baseline instead of stepping. */
-  button, .btn { height: 36px; padding: 0 16px; border-radius: var(--r-pill);
+     red destructive, and a bare text link. Every one is 40px tall -- the same
+     height as an input, so a button beside a field lines up exactly, and the
+     pill radius is exactly half the height. */
+  button, .btn { height: 40px; padding: 0 16px; border-radius: var(--r-pill);
                  background: var(--accent); color: #fafafa; border: 0;
-                 font-size: 13px; font-weight: 500; line-height: 34px; }
+                 font-size: 13px; font-weight: 500; line-height: 38px; }
   button:hover, .btn:hover { background: #404040; opacity: 1; }
   .btn-ghost, button.ghost { background: var(--subtle); color: var(--ink); border: 0; }
   .btn-ghost:hover, button.ghost:hover { background: #ececec; opacity: 1; }
   .btn-danger, button.danger { background: var(--blocked); color: #fafafa; border: 0; }
   .btn-danger:hover, button.danger:hover { background: #b91c1c; opacity: 1; }
-  .btn-sm, button.sm { height: 30px; line-height: 28px; padding: 0 12px; font-size: 12px; }
+  .btn-sm, button.sm { height: 32px; line-height: 30px; padding: 0 12px; font-size: 12px; }
   button.link, .link { background: none; border: 0; height: auto; line-height: inherit;
                        padding: 0; color: var(--muted); font-size: 12px; font-weight: 400; }
   button.link:hover, .link:hover { background: none; color: var(--ink); opacity: 1; }
   .badge, .pill { min-height: 20px; padding: 1px 8px; font-size: 11.5px; line-height: 18px; }
+  /* A control inside a table row is one level down: 12, not 20, or the radius
+     eats the 32px row it lives in. */
+  td input, td select, td textarea { height: 32px; padding: 0 10px; font-size: 13px; }
   @media (max-width: 900px) {
     header.topbar { width: 100%; padding: 0 16px; gap: 10px; }
     header.topbar.is-scrolled { width: 100%; padding: 0 16px; }
