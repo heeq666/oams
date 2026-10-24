@@ -48,12 +48,12 @@ MEASURE_JS = """(() => {
     // because the top bar floats over it instead of taking a row of it.
     railSpansViewport: Math.abs(r.top) <= 2
       && Math.abs(r.bottom - window.innerHeight) <= 2,
-    // The capsule sits below the top edge, is 40px tall, and leaves room on
-    // both sides instead of running edge to edge.
+    // The capsule sits below the top edge and is 40px tall.
     barFloatsOnTop: Math.round(b.top) >= 8 && Math.round(b.top) <= 28
       && Math.round(b.height) === 40,
-    // At rest it is the wide capsule; the content column slides underneath it.
-    barWideAtRest: Math.round(b.width) >= window.innerWidth - 120,
+    // At rest the bar runs edge to edge (40px gutter), so the logo and the
+    // account sit at the screen edges; the content column slides underneath.
+    barWideAtRest: Math.round(b.width) >= window.innerWidth - 2,
     position: getComputedStyle(rail).position,
   };
 })()"""
@@ -136,7 +136,7 @@ def test_layout_persistent_rail(site) -> None:
     for path in DEFAULT_PATHS:
         before, after = report[path]["before"], report[path]["afterScroll"]
         narrowed = (not before.get("scrolls")) or (
-            after.get("barScrolled") and after.get("barWidth", 9999) <= 882)
+            after.get("barScrolled") and after.get("barWidth", 9999) <= 722)
         ok = (before.get("railIsLeftOfContent") and before.get("railSpansViewport")
               and before.get("barFloatsOnTop") and before.get("barWideAtRest")
               and narrowed
