@@ -89,11 +89,6 @@ DEV_AUTOLOGIN_ADMIN_CODE = "ADMIN001"
 # rewriting .env and restarting the server: a design review is exactly the moment
 # you need to see the same page as a manager, then as somebody with no rights.
 DEV_WORKER_COOKIE = "workhub_dev_worker"
-# One-shot message left behind by a redirect. A page somebody may not open is not
-# an error screen, it is a detour: the server sends them to a screen they can
-# read and puts the reason in this cookie, which the next page renders once.
-NOTICE_COOKIE = "workhub_notice"
-
 # Three levels and only three: the company administrator, the administrator of
 # one or more departments, and everybody else. A level is read from the grants --
 # what the pages will actually let somebody do -- never from a job title, because

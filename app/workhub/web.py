@@ -47,7 +47,7 @@ from workhub.descriptor import validate_descriptor
 from workhub.render import RenderError, render_interface, render_read_only
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, WorkItemCreate)
-from workhub.security import (DEV_WORKER_COOKIE, NOTICE_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
+from workhub.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
                               active_org_unit_ids, admin_level, administered_org_unit_ids,
                               dev_autologin_target, dev_identities, dev_principal, has_company_scope,
                               has_permission, issue_session, principal_from_request,
@@ -187,22 +187,17 @@ def _denied(request: Request, message: str):
     A screen somebody may not open used to answer 403 with a page whose only exit
     was "回看板". That page is a door closing in their face: the menu never shows
     these links, so the only way here is a stale bookmark or a typed URL, and the
-    useful answer is the screen they *can* read plus one line saying why.
+    useful answer is the first screen they *can* read.
+
+    The detour says nothing. A line explaining "you are an administrator" or
+    "only your departments" is noise on a page whose rows already answer it.
 
     Form submissions keep the page: a POST that silently redirects would look
     like the click did nothing, and the flash is the only way to say which grant
     is missing.
     """
     if request.method == "GET":
-        response = RedirectResponse(url=_landing_url(request), status_code=303)
-        response.set_cookie(
-            key=NOTICE_COOKIE,
-            # Quoted because the message is Chinese: cookie headers are latin-1 and
-            # the middleware decodes it again before the template sees it.
-            value=urllib.parse.quote(message, safe=""),
-            max_age=60, httponly=True, samesite="lax", path="/",
-        )
-        return response
+        return RedirectResponse(url=_landing_url(request), status_code=303)
     return TEMPLATES.TemplateResponse(request, "denied.html",
                                       {"message": message, "member": _member(request)}, status_code=403)
 
@@ -1227,7 +1222,7 @@ def interface_board(request: Request, stale_days: int = Query(default=7, ge=1, l
                ORDER BY o.name, i.name""", params).fetchall()
     return TEMPLATES.TemplateResponse(request, "interface_board.html", {
         "rows": rows, "member": _member(request), "stale_days": stale_days,
-        "role_label": level, "status_labels": STATUS_LABELS})
+        "status_labels": STATUS_LABELS})
 
 @router.get("/interfaces/{interface_id}", response_class=HTMLResponse)
 def interface_fill(request: Request, interface_id: UUID, saved: str | None = None,
@@ -1419,7 +1414,6 @@ def progress_center(request: Request, stale_days: int = Query(default=7, ge=1, l
               for key in ("open_items", "blocked", "needs_decision", "never_reported", "overdue")}
     return TEMPLATES.TemplateResponse(request, "progress.html", {
         "member": _member(request), "departments": shown, "totals": totals,
-        "role_label": level, "hidden_departments": len(boards) - len(shown),
         "stale_days": stale_days, "status_labels": STATUS_LABELS,
         "channel_labels": CHANNEL_LABELS})
 

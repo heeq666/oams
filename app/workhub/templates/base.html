@@ -81,9 +81,6 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .field { display: flex; flex-direction: column; gap: 4px; }
   .flash { padding: 8px 12px; border-radius: var(--r-small); margin-bottom: 12px; font-size: 14px; background: var(--success-soft); color: var(--done); }
   .flash.error { background: var(--danger-soft); color: var(--blocked); }
-  /* A detour, not a failure: neutral ink on the muted surface, so it reads as the
-     app explaining itself rather than as something that broke. */
-  .flash.notice { background: var(--subtle); color: var(--ink-2); }
   .pagehead { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
   .pagehead h1 { margin: 0; }
   /* Department navigation is a segmented control on purpose: it navigates space,
@@ -747,12 +744,6 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      Watching a marker beats listening to scroll -- no rAF loop, no jank, and a
      page that does not scroll never fires it at all. #}
   <div class="bar-sentinel" aria-hidden="true"></div>
-  {# Why this page and not the one you asked for. Set by a redirect from a screen
-     this session may not open; the middleware drops the cookie as it renders, so
-     it appears once and never again. #}
-  {% if request.state.notice %}
-  <div class="flash notice" role="status">{{ request.state.notice }}</div>
-  {% endif %}
   {% block content %}{% endblock %}
   </main>
 </div>
