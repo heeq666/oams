@@ -1,22 +1,26 @@
 /* 下拉框：把原生 <select> 的展开层换成我们自己的玻璃面板（design-system-v1 §7.3）。
  *
  * 为什么还留着原生 <select>：它才是表单的主人。值是它提交的、name/required/
- * disabled 是它说了算、没有 JS 时它还照常能用；我们只接管「点开」这一步，
- * 把系统画的弹出层换成和菜单同一套玻璃（不落遮罩，见设计规范 §7.3）。所以增强是纯增量：脚本挂了，
- * 页面退化成系统下拉，不会坏。
+ * disabled 是它说了算、没有 JS 时它还照常能用；我们只接管「点开」这一步，把系统
+ * 画的弹出层换成和菜单同一套玻璃。
  *
- * 用事件委托而不是初始化扫描：htmx 会把表格整块换掉，office-editor 还会在
- * 运行时造 <select>，逐个绑定必然漏。点在谁身上就给谁开。
+ * 摆放、层级、点外部/Esc 关闭全归 static/wh-popover.js（浮层载体），这里只管
+ * select 自己的事：选项行的内容、键盘导航、typeahead、把值写回表单。以前这些
+ * 「面板该长在哪」的逻辑在本文件和 base.html 里各写了一遍，两处都漏过同一类坑。
+ *
+ * 用事件委托而不是初始化扫描：htmx 会把表格整块换掉，office-editor 还会在运行
+ * 时造 <select>，逐个绑定必然漏。点在谁身上就给谁开。
  */
 (function () {
   'use strict';
 
-  var list = null;        // 当前展开的面板
+  var inst = null;        // 当前展开的浮层实例（wh-popover 的）
   var owner = null;       // 面板属于哪个 <select>
   var rows = [];          // [{ el, value, disabled }]
   var active = -1;        // 键盘高亮行
   var typeahead = '';
   var typeaheadAt = 0;
+  var closing = false;
   var seq = 0;
 
   // 触屏保留系统选择器：iOS / Android 的滚轮比一块 320 高的浮层好用，而且手指
@@ -34,34 +38,39 @@
     for (var i = 0; i < select.options.length; i++) {
       var opt = select.options[i];
       out.push({
-        el: null,
         value: opt.value,
         label: (opt.label || opt.textContent || '').trim(),
         disabled: opt.disabled,
         selected: opt.selected,
-        index: i,
         group: opt.parentNode && opt.parentNode.tagName === 'OPTGROUP' ? opt.parentNode.label : ''
       });
     }
     return out;
   }
 
-  function position(select) {
-    var rect = select.getBoundingClientRect();
-    var margin = 8;
-    var width = Math.max(rect.width, 168);
-    width = Math.min(width, window.innerWidth - margin * 2);
-    var left = Math.min(Math.max(rect.left, margin), window.innerWidth - width - margin);
-    var natural = Math.min(list.scrollHeight, 320);
-    var below = window.innerHeight - rect.bottom - margin;
-    var above = rect.top - margin;
-    var openAbove = below < Math.min(natural, 140) && above > below;
-    list.style.width = width + 'px';
-    list.style.left = left + 'px';
-    list.style.top = (openAbove ? Math.max(margin, rect.top - natural - 6) : rect.bottom + 6) + 'px';
+  // 面板关掉之后的收尾。由载体调用：它管开合，这里管自己的 DOM 与 aria。
+  function teardown() {
+    document.removeEventListener('keydown', onKeydown, true);
+    if (owner) {
+      owner.classList.remove('is-open');
+      owner.removeAttribute('aria-controls');
+      owner.removeAttribute('aria-activedescendant');
+    }
+    var panel = inst && inst.panel;
+    if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+    inst = null; owner = null; rows = []; active = -1;
   }
 
-  function setActive(index, focusSelect) {
+  function close(restoreFocus) {
+    if (!inst || closing) return;
+    var select = owner;
+    closing = true;
+    inst.close(false);          // 载体会回调 teardown
+    closing = false;
+    if (restoreFocus !== false && select) select.focus({ preventScroll: true });
+  }
+
+  function setActive(index) {
     if (!rows.length) return;
     var step = index < active ? -1 : 1;
     var next = index;
@@ -71,7 +80,8 @@
     active = next;
     rows[active].classList.add('is-active');
     rows[active].scrollIntoView({ block: 'nearest' });
-    if (focusSelect !== false) owner.focus({ preventScroll: true });
+    if (owner && rows[active].id) owner.setAttribute('aria-activedescendant', rows[active].id);
+    if (owner) owner.focus({ preventScroll: true });
   }
 
   function commit(index) {
@@ -81,44 +91,15 @@
     select.value = row.dataset.value;
     select.dispatchEvent(new Event('input', { bubbles: true }));
     select.dispatchEvent(new Event('change', { bubbles: true }));
-    close();
+    close(false);
     select.focus({ preventScroll: true });
   }
 
-  function close() {
-    if (!list) return;
-    document.removeEventListener('keydown', onKeydown, true);
-    document.removeEventListener('mousedown', onOutside, true);
-    document.removeEventListener('scroll', onScroll, true);
-    window.removeEventListener('resize', close);
-    if (owner) {
-      owner.classList.remove('is-open');
-      owner.setAttribute('aria-expanded', 'false');
-      owner.removeAttribute('aria-controls');
-      owner.removeAttribute('aria-activedescendant');
-    }
-    list.remove();
-    list = null; owner = null; rows = []; active = -1;
-  }
-
-  function onOutside(event) {
-    if (!list) return;
-    var path = event.composedPath ? event.composedPath() : [];
-    if (path.indexOf(list) >= 0) return;
-    close();          // 点外面先收面板，这一次点击照常落到页面上
-  }
-
-  function onScroll(event) {
-    if (!list) return;
-    if (list.contains(event.target)) return;   // 面板自己滚动不算
-    close();
-  }
-
   function onKeydown(event) {
-    if (!list) return;
+    if (!inst) return;
     var key = event.key;
-    if (key === 'Escape') { event.preventDefault(); var s = owner; close(); s.focus(); return; }
-    if (key === 'Tab') { close(); return; }
+    // Esc 归载体管（它还要把焦点还给触发器），这里不抢。
+    if (key === 'Tab') { close(false); return; }
     if (key === 'ArrowDown') { event.preventDefault(); setActive(Math.min(active + 1, rows.length - 1)); return; }
     if (key === 'ArrowUp') { event.preventDefault(); setActive(Math.max(active - 1, 0)); return; }
     if (key === 'Home') { event.preventDefault(); setActive(0); return; }
@@ -136,10 +117,11 @@
   }
 
   function open(select) {
-    close();
+    close(false);
     var options = optionsOf(select);
     if (!options.length) return;
-    list = document.createElement('div');
+
+    var list = document.createElement('div');
     list.className = 'wh-list';
     list.id = 'wh-list-' + (++seq);
     list.setAttribute('role', 'listbox');
@@ -158,8 +140,8 @@
       lastGroup = opt.group || null;
       var row = document.createElement('div');
       row.className = 'wh-opt';
+      row.id = list.id + '-opt-' + i;
       row.setAttribute('role', 'option');
-      row.dataset.index = i;
       row.dataset.value = opt.value;
       row.setAttribute('aria-selected', opt.selected ? 'true' : 'false');
       if (opt.disabled) row.setAttribute('aria-disabled', 'true');
@@ -173,21 +155,31 @@
       rows.push(row);
       if (opt.selected) active = i;
     }
-    document.body.appendChild(list);
+
     owner = select;
-    owner.classList.add('is-open');
-    owner.setAttribute('aria-expanded', 'true');
-    owner.setAttribute('aria-controls', list.id);
-    position(select);
+    inst = window.whPopover.attach({
+      trigger: select,
+      panel: list,
+      align: 'start',
+      side: 'auto',
+      gap: 6,
+      minWidth: 168,
+      matchTrigger: true,
+      manual: true,          // 开关由下面的委托管
+      onClose: teardown
+    });
+    if (!inst) return;
+    inst.open();
+    select.classList.add('is-open');
+    select.setAttribute('aria-controls', list.id);
     if (active >= 0) {
       rows[active].classList.add('is-active');
       rows[active].scrollIntoView({ block: 'nearest' });
+      select.setAttribute('aria-activedescendant', rows[active].id);
     }
     document.addEventListener('keydown', onKeydown, true);
-    document.addEventListener('mousedown', onOutside, true);
-    document.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', close);
-    select.focus({ preventScroll: true });
+    // 打开后再定位一次：行是刚插进去的，第一次测到的高度可能还是 0。
+    inst.place();
   }
 
   // 点一下原生 select：拦掉系统弹出层，改用我们的面板。
@@ -195,7 +187,7 @@
     var select = event.target.closest ? event.target.closest('select') : null;
     if (!isEnhanceable(select)) return;
     event.preventDefault();
-    if (owner === select) { close(); return; }
+    if (owner === select) { close(true); return; }
     open(select);
   }, true);
 
@@ -204,7 +196,7 @@
     var select = event.target.closest ? event.target.closest('select') : null;
     if (!isEnhanceable(select)) return;
     if (event.altKey && event.key === 'ArrowDown') { event.preventDefault(); open(select); return; }
-    if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if (!inst && (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
       event.preventDefault();
       open(select);
     }
@@ -212,14 +204,12 @@
 
   // 面板里的行：mouseup 提交（mousedown 被文档级监听用掉，别在这里抢）。
   document.addEventListener('mouseup', function (event) {
-    if (!list) return;
+    if (!inst) return;
     var row = event.target.closest ? event.target.closest('.wh-opt') : null;
-    if (!row || !list.contains(row)) return;
+    if (!row || !inst.panel.contains(row)) return;
     event.preventDefault();
     commit(rows.indexOf(row));
   }, true);
 
-  // htmx 换块之前先收面板，否则它会在旧节点上悬着。
-  document.addEventListener('htmx:beforeSwap', close);
   window.whSelect = { close: close, open: open };
 })();
