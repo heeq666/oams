@@ -46,7 +46,7 @@ from workhub.db import connection
 from workhub.descriptor import validate_descriptor
 from workhub.render import RenderError, render_interface, render_read_only
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
-                             ReportCreate, SpaceUpsert, WorkItemCreate)
+                             ReportCreate, WorkItemCreate)
 from workhub.security import (DEV_WORKER_COOKIE, NOTICE_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
                               active_org_unit_ids, admin_level, administered_org_unit_ids,
                               dev_autologin_target, dev_identities, dev_principal, has_company_scope,
@@ -1624,52 +1624,6 @@ def metrics_home_json(request: Request):
     return JSONResponse(content=company_metrics_panel())
 
 
-@router.get("/office", response_class=HTMLResponse)
-def office(request: Request, org: UUID | None = None, stale_days: int = Query(default=7, ge=1, le=365)):
-    try:
-        _require(request, "workforce.work_items", "read")
-    except _NotSignedIn:
-        return RedirectResponse(url="/login?next=/office", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "查看办公室平面图需要 workforce.work_items/read 权限。")
-    with connection() as conn:
-        # 办公室 is one of the things every level sees; what the floor plan shows
-        # is already the same card the progress centre would show them.
-        floor = api.build_office(conn, stale_days)
-    # With ?org= the room renders server-side on first paint, so the deep link and
-    # the no-JavaScript path show the same thing the click does.
-    unit = next((u for u in floor["units"] if str(u["org_unit_id"]) == str(org)), None) if org else None
-    return TEMPLATES.TemplateResponse(request, "office.html", {
-        "floor": floor, "org": str(org) if org else None, "unit": unit, "stale_days": stale_days,
-        "member": _member(request), "status_labels": STATUS_LABELS,
-        "channel_labels": CHANNEL_LABELS,
-    })
-
-
-@router.get("/office/zoom", response_class=HTMLResponse)
-def office_zoom(request: Request, org: UUID, stale_days: int = Query(default=7, ge=1, le=365)):
-    """One department blown up: its room, its desks, and its own flow strip. This
-    is where the user's original idea lands -- click a department, see inside it."""
-    try:
-        _require(request, "workforce.work_items", "read")
-    except _NotSignedIn:
-        return RedirectResponse(url="/login?next=/office", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "查看办公室平面图需要 workforce.work_items/read 权限。")
-    with connection() as conn:
-        floor = api.build_office(conn, stale_days)
-    unit = next((unit for unit in floor["units"] if str(unit["org_unit_id"]) == str(org)), None)
-    if unit is None:
-        return HTMLResponse(
-            "<p class=\"empty\">这个部门还没有画到平面图上。先到「布置」页给它一块区域。</p>",
-            status_code=404)
-    return TEMPLATES.TemplateResponse(request, "office_zoom.html", {
-        "unit": unit, "stale_days": stale_days, "member": _member(request),
-        "status_labels": STATUS_LABELS, "channel_labels": CHANNEL_LABELS,
-    })
-
-
-
 PILOT_REPORTING_GRANTS = (
     ("workforce.org_units", "read"),
     ("workforce.positions", "read"),
@@ -1808,99 +1762,6 @@ def setup_pilot_member(request: Request, csrf: str = Form(...), display_name: st
     return RedirectResponse(url="/setup?saved=pilot&member_id=" + str(member_id)
                             + "&login=" + urllib.parse.quote(token)
                             + "&expires=" + urllib.parse.quote(expires_at.isoformat()), status_code=303)
-
-
-@router.get("/admin/spaces", response_class=HTMLResponse)
-def admin_spaces(request: Request, org: UUID | None = None,
-                 saved: str | None = None, error: str | None = None):
-    try:
-        principal = _require(request, "workforce.positions", "read")
-    except _NotSignedIn:
-        return RedirectResponse(url="/login?next=/admin/spaces", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "查看办公室布置需要 workforce.positions/read 权限。")
-    with connection() as conn:
-        can_manage = has_permission(conn, principal["member_id"], "workforce.positions", "manage")
-        org_units = conn.execute(
-            """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
-                WHERE status = 'active' ORDER BY unit_type DESC, org_code""").fetchall()
-        positions = conn.execute(
-            """SELECT p.position_id, p.position_code, p.title, o.org_code, o.name AS org_name
-               FROM workhub.positions p JOIN workhub.org_units o USING (org_unit_id)
-              WHERE p.status = 'active' ORDER BY o.org_code, p.position_code""").fetchall()
-        spaces = conn.execute(
-            """SELECT s.space_id, s.kind, s.org_unit_id, s.position_id, s.label, s.x, s.y, s.w, s.h,
-                      s.calibrated, o.name AS org_name, p.title AS position_title
-                 FROM workhub.spaces s
-                 JOIN workhub.org_units o USING (org_unit_id)
-                 LEFT JOIN workhub.positions p ON p.position_id = s.position_id
-                ORDER BY s.kind, o.org_code, s.position_id""").fetchall()
-        # Two levels of the same canvas: the floor holds department zones, and ?org=
-        # drops into one department where desks are laid out in coordinates local to
-        # that room -- so moving a room never drags its furniture along.
-        selected = None
-        if org is not None:
-            selected = conn.execute(
-                """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
-                    WHERE org_unit_id = %s AND status = 'active'""", (org,)).fetchone()
-    placed = {row["org_unit_id"] for row in spaces if row["kind"] == "zone"}
-    unplaced = [u for u in org_units if u["org_unit_id"] not in placed]
-    return TEMPLATES.TemplateResponse(request, "admin_spaces.html", {
-        "org_units": org_units, "positions": positions, "spaces": spaces,
-        "selected": selected, "unplaced": unplaced,
-        "can_manage": can_manage, "saved": saved, "error": error, "member": _member(request),
-        "csrf": _form_token(request, "workhub:space-form:v1")})
-
-
-@router.post("/admin/spaces")
-def admin_save_space(request: Request,
-                     csrf: str = Form(...),
-                     kind: str = Form(...),
-                     org_unit_id: UUID = Form(...),
-                     position_id: str = Form(default=""),
-                     label: str = Form(default=""),
-                     x: int = Form(...), y: int = Form(...),
-                     w: int = Form(...), h: int = Form(...),
-                     calibrated: str = Form(default="")):
-    try:
-        principal = _require(request, "workforce.positions", "manage")
-    except _NotSignedIn:
-        return RedirectResponse(url="/login?next=/admin/spaces", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "修改办公室布置需要 workforce.positions/manage 权限。")
-    _check_form_token(request, csrf, "workhub:space-form:v1")
-    try:
-        payload = SpaceUpsert(
-            kind=kind, org_unit_id=org_unit_id,
-            position_id=UUID(position_id) if position_id.strip() else None,
-            label=label.strip() or None,
-            x=x, y=y, w=w, h=h, calibrated=calibrated == "on")
-    except (ValidationError, ValueError):
-        return RedirectResponse(url="/admin/spaces?error=geometry", status_code=303)
-    try:
-        with connection() as conn:
-            api.upsert_space(conn, payload, principal["member_id"])
-    except HTTPException as exc:
-        if exc.status_code == 409:
-            return RedirectResponse(url="/admin/spaces?error=department", status_code=303)
-        raise
-    except CheckViolation:
-        return RedirectResponse(url="/admin/spaces?error=geometry", status_code=303)
-    return RedirectResponse(url="/admin/spaces?saved=1", status_code=303)
-
-
-@router.post("/admin/spaces/{space_id}/remove")
-def admin_remove_space(request: Request, space_id: UUID, csrf: str = Form(...)):
-    try:
-        principal = _require(request, "workforce.positions", "manage")
-    except _NotSignedIn:
-        return RedirectResponse(url="/login?next=/admin/spaces", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "修改办公室布置需要 workforce.positions/manage 权限。")
-    _check_form_token(request, csrf, "workhub:space-form:v1")
-    with connection() as conn:
-        api.remove_space(conn, space_id, principal["member_id"])
-    return RedirectResponse(url="/admin/spaces?saved=1", status_code=303)
 
 
 @router.get("/admin/work-items", response_class=HTMLResponse)

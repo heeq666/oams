@@ -132,32 +132,3 @@ class ReportCreate(BaseModel):
 
 class ReportRetract(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
-
-
-class SpaceUpsert(BaseModel):
-    """A room or a desk on the floor plan.
-
-    Geometry is entered by hand against the actual floor, so it carries a
-    `calibrated` flag: false means nobody has checked these numbers yet, and the
-    plan draws it dashed rather than pretending it reflects the office.
-    """
-    kind: Literal["zone", "desk"]
-    org_unit_id: UUID
-    position_id: UUID | None = None
-    label: str | None = None
-    x: int = Field(ge=0, le=999)
-    y: int = Field(ge=0, le=999)
-    w: int = Field(gt=0, le=1000)
-    h: int = Field(gt=0, le=1000)
-    calibrated: bool = False
-    sort_order: int = 0
-
-    @model_validator(mode="after")
-    def geometry_and_reference(self):
-        if self.x + self.w > 1000 or self.y + self.h > 1000:
-            raise ValueError("space does not fit on the 1000x1000 floor canvas")
-        if self.kind == "desk" and self.position_id is None:
-            raise ValueError("a desk needs a position")
-        if self.kind == "zone" and self.position_id is not None:
-            raise ValueError("a zone belongs to a department, not a position")
-        return self
