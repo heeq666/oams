@@ -21,8 +21,14 @@
 
   function scrim() { return window.whScrim || null; }
 
+  // 触屏保留系统选择器：iOS / Android 的滚轮比一块 320 高的浮层好用，而且手指
+  // 点按会合成 mousedown，不排除就会把系统弹层顶掉。只增强鼠标环境。
+  function coarsePointer() {
+    return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+
   function isEnhanceable(el) {
-    return el && el.tagName === 'SELECT' && !el.multiple && el.size <= 1 && !el.disabled;
+    return el && el.tagName === 'SELECT' && !el.multiple && el.size <= 1 && !el.disabled && !coarsePointer();
   }
 
   function optionsOf(select) {
