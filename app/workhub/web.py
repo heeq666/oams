@@ -47,7 +47,7 @@ from workhub.descriptor import validate_descriptor
 from workhub.render import RenderError, render_interface, render_read_only
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, SpaceUpsert, WorkItemCreate)
-from workhub.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
+from workhub.security import (DEV_WORKER_COOKIE, NOTICE_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
                               active_org_unit_ids, admin_level, administered_org_unit_ids,
                               dev_autologin_target, dev_identities, dev_principal, has_company_scope,
                               has_permission, issue_session, principal_from_request,
@@ -166,7 +166,43 @@ def _login(request: Request, error: str | None = None, next_url: str = "/board")
                                       {"error": error, "next": next_url}, status_code=200)
 
 
+def _landing_url(request: Request) -> str:
+    """The first screen this person can actually read.
+
+    Same order the brand link uses, so a detour never lands on a second 403. The
+    navigation dictionary is the server's own answer about what this session may
+    open -- asking it here means the detour cannot drift from the menu.
+    """
+    caps = getattr(request.state, "nav", None) or {}
+    for flag, href in (("progress", "/progress"), ("review", "/reviews"),
+                       ("admin", "/settings"), ("departments", "/departments")):
+        if caps.get(flag):
+            return href
+    return "/board"
+
+
 def _denied(request: Request, message: str):
+    """Refuse -- by taking the person somewhere they can go, not to a dead end.
+
+    A screen somebody may not open used to answer 403 with a page whose only exit
+    was "回看板". That page is a door closing in their face: the menu never shows
+    these links, so the only way here is a stale bookmark or a typed URL, and the
+    useful answer is the screen they *can* read plus one line saying why.
+
+    Form submissions keep the page: a POST that silently redirects would look
+    like the click did nothing, and the flash is the only way to say which grant
+    is missing.
+    """
+    if request.method == "GET":
+        response = RedirectResponse(url=_landing_url(request), status_code=303)
+        response.set_cookie(
+            key=NOTICE_COOKIE,
+            # Quoted because the message is Chinese: cookie headers are latin-1 and
+            # the middleware decodes it again before the template sees it.
+            value=urllib.parse.quote(message, safe=""),
+            max_age=60, httponly=True, samesite="lax", path="/",
+        )
+        return response
     return TEMPLATES.TemplateResponse(request, "denied.html",
                                       {"message": message, "member": _member(request)}, status_code=403)
 
