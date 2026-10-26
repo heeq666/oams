@@ -379,9 +379,14 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                                    font-weight: 500; }
   header.topbar .account > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   header.topbar .account[open] .avatar { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14); }
+  /* 浮层一律玻璃态（design-system-v1 §7.3）：与顶栏胶囊同一份 70% 白 + blur 10 + 一层淡投影，
+     所以点开时它看起来像胶囊自己长出来的一块，而不是一张贴上去的白纸。 */
   header.topbar .account-menu { position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
-                               min-width: 208px; padding: 6px; border-radius: var(--r-card); background: var(--card);
-                               box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); text-align: left; }
+                               min-width: 208px; padding: 6px; border-radius: var(--r-card); text-align: left;
+                               background: rgba(255, 255, 255, .70);
+                               -webkit-backdrop-filter: saturate(1.2) blur(10px);
+                               backdrop-filter: saturate(1.2) blur(10px);
+                               box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
   header.topbar .account-menu .menu-head { padding: 8px 10px 10px; margin-bottom: 6px;
                                           border-bottom: 1px solid var(--line); }
   header.topbar .account-menu .menu-name { color: var(--ink); font-size: 13px; font-weight: 500; }
@@ -443,9 +448,12 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                                               box-shadow: 0 0 0 3px rgba(15, 23, 42, .04); }
   label { font-size: 13px; color: var(--ink); }
   table { border: none; border-radius: 0; background: transparent; }
+  /* 行高 41 = 20px 行盒 + 上下各 10px + 1px 分隔线，与 Figma「Table 表格行」一致（分隔线
+     算在 41 里面，所以行盒压到 20）。内容不折行，超宽靠省略号，不靠缩字号（design-system-v1 §7.6）。 */
   th { background: transparent; color: var(--muted); font-size: 12px; font-weight: 500;
-       text-transform: none; padding: 10px 12px; border-bottom: 1px solid var(--line); }
-  td { padding: 14px 12px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+       text-transform: none; padding: 10px 12px; line-height: 20px;
+       border-bottom: 1px solid var(--line); }
+  td { padding: 10px 12px; line-height: 20px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
   tr:last-child td { border-bottom: none; }
   /* pills: one look for every discrete state, colour only for what it means */
   .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--r-pill);
@@ -581,7 +589,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   button.link, .link { background: none; border: 0; height: auto; line-height: inherit;
                        padding: 0; color: var(--muted); font-size: 12px; font-weight: 400; }
   button.link:hover, .link:hover { background: none; color: var(--ink); opacity: 1; }
-  .badge, .pill { min-height: 20px; padding: 1px 8px; font-size: 11.5px; line-height: 18px; }
+  .badge, .pill { min-height: 20px; padding: 1px 8px; font-size: 12px; line-height: 18px; }
   /* A control inside a table row is one level down: 12, not 20, or the radius
      eats the 32px row it lives in. */
   td input, td select, td textarea { height: 32px; padding: 0 10px; font-size: 13px; }
@@ -630,7 +638,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .dev-badge::-webkit-details-marker { display: none; }
   .dev-switch[open] > .dev-badge { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14), 0 4px 12px -2px rgba(15, 23, 42, .10); }
   .dev-badge .dot { width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--done); }
-  .dev-badge .caret { margin-left: 2px; opacity: .65; font-size: 10px; }
+  .dev-badge .caret { margin-left: 2px; opacity: .65; font-size: 11px; }
   .dev-menu {
     position: absolute;
     right: 0;
@@ -638,7 +646,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     min-width: 268px;
     padding: 6px;
     border-radius: var(--r-card);
-    background: var(--card);
+    background: rgba(255, 255, 255, .70);
+    -webkit-backdrop-filter: saturate(1.2) blur(10px);
+    backdrop-filter: saturate(1.2) blur(10px);
     box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
   }
   .dev-menu-head {
