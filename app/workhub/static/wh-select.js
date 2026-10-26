@@ -2,7 +2,7 @@
  *
  * 为什么还留着原生 <select>：它才是表单的主人。值是它提交的、name/required/
  * disabled 是它说了算、没有 JS 时它还照常能用；我们只接管「点开」这一步，
- * 把系统画的弹出层换成和菜单同一套玻璃 + 薄雾。所以增强是纯增量：脚本挂了，
+ * 把系统画的弹出层换成和菜单同一套玻璃（不落遮罩，见设计规范 §7.3）。所以增强是纯增量：脚本挂了，
  * 页面退化成系统下拉，不会坏。
  *
  * 用事件委托而不是初始化扫描：htmx 会把表格整块换掉，office-editor 还会在
@@ -18,8 +18,6 @@
   var typeahead = '';
   var typeaheadAt = 0;
   var seq = 0;
-
-  function scrim() { return window.whScrim || null; }
 
   // 触屏保留系统选择器：iOS / Android 的滚轮比一块 320 高的浮层好用，而且手指
   // 点按会合成 mousedown，不排除就会把系统弹层顶掉。只增强鼠标环境。
@@ -93,7 +91,6 @@
     document.removeEventListener('mousedown', onOutside, true);
     document.removeEventListener('scroll', onScroll, true);
     window.removeEventListener('resize', close);
-    if (scrim()) scrim().off();
     if (owner) {
       owner.classList.remove('is-open');
       owner.setAttribute('aria-expanded', 'false');
@@ -181,7 +178,6 @@
     owner.classList.add('is-open');
     owner.setAttribute('aria-expanded', 'true');
     owner.setAttribute('aria-controls', list.id);
-    if (scrim()) scrim().on();
     position(select);
     if (active >= 0) {
       rows[active].classList.add('is-active');

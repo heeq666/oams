@@ -301,10 +301,6 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     --r-sm: var(--r-micro); --r-md: 8px; --r-lg: var(--r-small);
     --r-xl: var(--r-card);
     --ring: #a1a1a1; --rail-w: 127px;
-    /* 浮层遮罩两档（design-system-v1 §7.3）：菜单这类小浮层只要一层薄雾把底下
-       正文压下去；模态要挡住整页注意力，所以 .32。遮罩自身不加 blur —— 模糊
-       是面板的事，两层 blur 叠在一起会把底图糊成一块灰。 */
-    --scrim-soft: rgba(10, 10, 10, .12); --scrim: rgba(10, 10, 10, .32);
   }
   body { font-size: 14px; -webkit-font-smoothing: antialiased; }
   /* The bar is a floating capsule, not a full-width strip: it sits 20px below
@@ -721,18 +717,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .dev-item .nm { font-weight: 500; }
   .dev-item .role { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
   .dev-menu .sep { height: 1px; margin: 6px 4px; background: var(--line); }
-  /* 浮层底下的薄雾。它必须挂在 body 上，不能塞进 <details> 里：顶栏是
-     translateX(-50%) 的定位祖先，fixed 子元素会被它关在 1440×40 的盒子里，
-     遮罩就只能盖住顶栏自己。z-index 25 是刻意的：压在正文上，顶栏(30)和
-     开发角标(60)仍在雾外，所以打开菜单时那两块不发灰。 */
-  .menu-scrim { position: fixed; inset: 0; z-index: 25; background: var(--scrim-soft);
-                opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
-  .menu-scrim.is-on { opacity: 1; pointer-events: auto; }
 </style>
 </head>
 {% set path = request.url.path %}
 <body class="{% block bodyclass %}{% endblock %}">
-<div class="menu-scrim" id="menu-scrim" aria-hidden="true"></div>
 {# Design stage says the login screen is off. Saying so on every page is the cheap
    insurance against shipping that state: nobody can look at the app and not know
    why it never asked who they are. #}
@@ -866,7 +854,6 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   // click and on Escape, so it cannot be left open behind the page. One loop for
   // both, because "the account menu does it" is not a reason for the next menu
   // not to.
-  var scrim = document.getElementById('menu-scrim');
   var menus = [];
   ['account', 'dev-switch'].forEach(function (id) {
     var menu = document.getElementById(id);
@@ -883,25 +870,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       }
     });
   });
-  // 雾是公共的：菜单和下拉框（wh-select.js）都会借它。用引用计数而不是布尔——
-  // 否则关掉菜单会把下拉框底下的雾一起撤了。点雾本身关掉所有浮层：雾盖在正文上，
-  // 点到它就说明视线已经离开面板。
-  var scrimHolds = 0;
-  window.whScrim = {
-    on: function () { scrimHolds += 1; if (scrim) scrim.classList.add('is-on'); },
-    off: function () { scrimHolds = Math.max(0, scrimHolds - 1); if (scrim && !scrimHolds) scrim.classList.remove('is-on'); }
-  };
-  menus.forEach(function (menu) {
-    var held = false;
-    menu.addEventListener('toggle', function () {
-      if (menu.open && !held) { held = true; window.whScrim.on(); }
-      else if (!menu.open && held) { held = false; window.whScrim.off(); }
-    });
-  });
-  if (scrim) scrim.addEventListener('click', function () {
-    menus.forEach(function (menu) { menu.open = false; });
-    if (window.whSelect) window.whSelect.close();
-  });
+  // 之前这里落过一层 rgba(10,10,10,.12) 的薄雾（.menu-scrim）。撤了：玻璃本身
+  // 已经把底下压下去，再盖一层灰会让整页发闷，菜单反而显得脏。没有遮罩就靠
+  // 上面那两个监听兜住「点到别处要关掉」，别让人把面板留在页面上。
 </script>
 </body>
 </html>
