@@ -197,7 +197,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .editor-side { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 16px; }
   .inspector h2 { font-size: 15px; }
   .inspector .field { display: block; margin-bottom: 10px; }
-  .inspector .field.check { display: flex; align-items: center; gap: 6px; }
+  .inspector .field.check { display: flex; align-items: center; gap: 8px; }
   .btn { display: inline-block; padding: 7px 12px; border-radius: 8px; background: var(--accent);
          color: #fff; text-decoration: none; font-size: 14px; }
   .link.danger { color: var(--blocked); }
@@ -205,7 +205,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .seatlist li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
                  background: var(--subtle); border: 0; border-radius: 8px; padding: 8px 12px; }
   .stack { margin-bottom: 20px; }
-  .form-row .check { flex-direction: row; align-items: center; gap: 6px; }
+  .form-row .check { flex-direction: row; align-items: center; gap: 8px; }
   .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; }
   .bar > span { display: block; height: 100%; background: var(--accent); }
   .flowstrip .clear:hover { color: var(--ink); text-decoration: underline; }
@@ -529,6 +529,12 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   /* A 16px box cannot take the 20px control radius -- it would become a circle. */
   input[type="checkbox"] { border-radius: var(--r-micro); }
   input[type="radio"] { border-radius: var(--r-pill); }
+  /* The box is 16px and its label sits 8px away -- the same 8px step that
+     separates a card from the block inside it, so tick + text never touch. */
+  input[type="checkbox"], input[type="radio"] {
+    width: 16px; height: 16px; margin: 0; flex: 0 0 auto;
+    accent-color: var(--accent); vertical-align: -2px;
+  }
   thead tr:first-child th { border-radius: 0; }
   /* No outline anywhere: every surface is a filled panel on the page ground.
      Separation comes from the ground colour and the radius, never from a
@@ -592,10 +598,40 @@ body { margin: 0; background: var(--bg); color: var(--ink);
        the capsule would think the page had already scrolled on first paint. */
     .bar-sentinel { height: 1px; }
   }
+
+  /* Design-stage shortcut marker. Fixed to the corner and pointer-events:none so
+     it cannot shift or block the capsule, the rails or a page's own controls --
+     it only has to be impossible to miss. */
+  .dev-badge {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: #171717;
+    color: #fafafa;
+    font-size: 12px;
+    line-height: 28px;
+    letter-spacing: .01em;
+    box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
+    pointer-events: none;
+  }
+  .dev-badge .dot { width: 6px; height: 6px; border-radius: 999px; background: #16a34a; }
 </style>
 </head>
 {% set path = request.url.path %}
 <body class="{% block bodyclass %}{% endblock %}">
+{# Design stage says the login screen is off. Saying so on every page is the cheap
+   insurance against shipping that state: nobody can look at the app and not know
+   why it never asked who they are. #}
+{% if dev_mode() %}
+<div class="dev-badge" role="status" title="设计开发阶段：已跳过登录。去掉 WORKHUB_DEV_AUTOLOGIN 并重启即恢复登录。"><span class="dot" aria-hidden="true"></span>开发模式 · 免登录{% if member %} · {{ member.display_name }}{% endif %}</div>
+{% endif %}
 {# The shell is one block so a page without navigation (login) can replace it
    wholesale instead of fighting the layout with `display:none`. #}
 {% block shell %}

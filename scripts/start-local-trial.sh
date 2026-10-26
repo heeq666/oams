@@ -12,6 +12,10 @@ if ! docker ps --format '{{.Names}}' | grep -q '^workhub-live$'; then
 fi
 
 export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
+# 设计开发阶段免登录：这个脚本启动的是本机演示站，登录只会挡自己。它只决定「我是谁」，
+# 权限、部门范围、审计一条不少，页面右下角会一直显示「开发模式 · 免登录」角标。
+# 恢复登录：WORKHUB_DEV_AUTOLOGIN=0 ./scripts/start-local-trial.sh
+export WORKHUB_DEV_AUTOLOGIN="${WORKHUB_DEV_AUTOLOGIN:-1}"
 echo "网站即将启动： http://127.0.0.1:8000"
 echo "按 Ctrl+C 停止网站（数据库继续运行）。"
 exec .venv/bin/python -m uvicorn workhub.api:app --host 127.0.0.1 --port 8000

@@ -1103,8 +1103,10 @@ def list_audit_events(limit: int = 100, _actor: dict = Depends(require_permissio
 
 @app.post("/v1/sessions/current/revoke", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_current_session(principal: dict = Depends(current_principal)):
-    with connection() as conn:
-        revoke_session(conn, principal["session_id"], principal["member_id"])
+    # Shortcut principals carry no session row; there is nothing to revoke.
+    if principal.get("session_id") is not None:
+        with connection() as conn:
+            revoke_session(conn, principal["session_id"], principal["member_id"])
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

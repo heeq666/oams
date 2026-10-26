@@ -691,6 +691,25 @@ def hr_site(db_ready):
 
 
 @pytest.fixture(autouse=True)
+def no_dev_autologin():
+    """The design-stage shortcut is always off unless a test turns it on.
+
+    WORKHUB_DEV_AUTOLOGIN signs in session-less requests.  A suite that asserts
+    "the board redirects an unauthenticated caller" would pass for the wrong
+    reason with it on -- and worse, a logout that clears nothing would look fine.
+    The conversation between the two is exactly the regression nobody notices, so
+    the switch is forced off here; tests/test_dev_autologin.py sets it back itself.
+    """
+
+    from workhub.config import settings
+
+    previous = getattr(settings, "dev_autologin", None)
+    settings.dev_autologin = None
+    yield
+    settings.dev_autologin = previous
+
+
+@pytest.fixture(autouse=True)
 def settings_follow_the_test(request):
     """Point the process-wide settings at the database of the server in use.
 

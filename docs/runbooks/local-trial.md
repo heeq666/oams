@@ -41,9 +41,23 @@ export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/work
 
 保持这个终端开着。
 
+## 设计开发阶段：免登录
+
+现在还在设计开发阶段，每天反复签登录链接只是挡自己。`scripts/start-local-trial.sh` 启动时默认打开免登录（等价于 `export WORKHUB_DEV_AUTOLOGIN=1`）：没有登录态时服务按 `ADMIN001` 认人，页面右下角常驻一枚「开发模式 · 免登录 · 姓名」角标，「退出登录」也会明确告诉你退不掉。
+
+它只决定「我是谁」，不决定「我能干什么」：权限、部门范围、表单令牌、审计一条都不少，所以看到的页面和登录后完全一致。
+
+恢复真实登录：
+
+```sh
+WORKHUB_DEV_AUTOLOGIN=0 ./scripts/start-local-trial.sh
+```
+
+想让免登录认别人就写工号，例如 `WORKHUB_DEV_AUTOLOGIN=DESIGN001`。工号不存在或已离职时会停在登录页并给出提示，不会静默当成管理员。
+
 ## 拿到登录链接
 
-另开一个终端：
+免登录开着时这一步可以跳过。需要真实会话时，另开一个终端：
 
 ```sh
 export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
