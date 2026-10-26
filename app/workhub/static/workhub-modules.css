@@ -5,22 +5,35 @@
  * table / input rules in base.html. No inline styles anywhere in the markup, so
  * every value that varies (column count, bar width, status tone) is a class here.
  *
- * Visual language: shadcn/ui -- neutral greys, 8px radius, hairline borders,
+ * Visual language: shadcn/ui -- neutral greys, five-step radius, hairline borders,
  * one accent, no shadows on surfaces, numbers in tabular figures.
  */
 
 .wh-interface {
-  --wh-radius: 8px;
-  --wh-line: #e5e7eb;
-  --wh-line-strong: #d4d4d8;
+  /* Same five tiers as the shell (base.html :root): 28 container / 20 control /
+     12 small control / 4 micro / 999 pill. A module never invents its own radius. */
+  --wh-radius-card: 28px;
+  --wh-radius: 20px;
+  --wh-radius-sm: 12px;
+  --wh-radius-micro: 4px;
+  --wh-radius-pill: 999px;
+  --wh-line: #E5E5E5;
+  --wh-line-strong: #D4D4D4;
   --wh-bg: #ffffff;
   --wh-bg-muted: #fafafa;
-  --wh-ink: #18181b;
-  --wh-muted: #71717a;
-  --wh-accent: #18181b;
-  --wh-blocked: #b91c1c;
-  --wh-decision: #b45309;
-  --wh-done: #15803d;
+  --wh-ink: #0A0A0A;
+  --wh-muted: #737373;
+  --wh-accent: #171717;
+  --wh-hover: #E5E5E5;
+  --wh-fill: #F5F5F5;
+  --wh-info: #2563EB;
+  --wh-done-soft: #F0FDF4; --wh-done-line: #BBF7D0;
+  --wh-warning-soft: #FFFBEB; --wh-warning-line: #FDE68A;
+  --wh-danger-soft: #FEF2F2; --wh-danger-line: #FECACA;
+  --wh-info-soft: #EFF6FF; --wh-info-line: #BFDBFE;
+  --wh-blocked: #DC2626;
+  --wh-decision: #D97706;
+  --wh-done: #16A34A;
   --wh-gap: 12px;
   color: var(--wh-ink);
   font-variant-numeric: tabular-nums;
@@ -128,7 +141,7 @@
 .wh-tab {
   font-size: 12px;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--wh-radius-pill);
   border: 1px solid var(--wh-line);
   background: var(--wh-bg);
   color: var(--wh-muted);
@@ -243,7 +256,7 @@
   display: inline-block;
   margin-top: 6px;
   font-size: 13px;
-  color: #2563eb;
+  color: var(--wh-info);
   text-decoration: none;
   overflow-wrap: anywhere;
 }
@@ -280,7 +293,7 @@
   color: var(--wh-ink);
   background: var(--wh-bg);
   border: 1px solid var(--wh-line-strong);
-  border-radius: 6px;
+  border-radius: var(--wh-radius-sm);
 }
 
 .wh-input:focus-visible {
@@ -311,16 +324,16 @@
   font-size: 12px;
   line-height: 1.6;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--wh-radius-pill);
   border: 1px solid var(--wh-line);
   color: var(--wh-muted);
   background: var(--wh-bg-muted);
   white-space: nowrap;
 }
 
-.wh-badge-progress { color: #1d4ed8; border-color: #bfdbfe; background: #eff6ff; }
-.wh-badge-done { color: var(--wh-done); border-color: #bbf7d0; background: #f0fdf4; }
-.wh-badge-blocked { color: var(--wh-blocked); border-color: #fecaca; background: #fef2f2; }
+.wh-badge-progress { color: var(--wh-info); border-color: var(--wh-info-line); background: var(--wh-info-soft); }
+.wh-badge-done { color: var(--wh-done); border-color: var(--wh-done-line); background: var(--wh-done-soft); }
+.wh-badge-blocked { color: var(--wh-blocked); border-color: var(--wh-danger-line); background: var(--wh-danger-soft); }
 .wh-badge-planned { color: var(--wh-muted); }
 .wh-badge-empty { color: var(--wh-muted); }
 
@@ -328,7 +341,7 @@
 .wh-bar {
   margin-top: 10px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--wh-radius-pill);
   background: var(--wh-line);
   overflow: hidden;
 }
@@ -337,7 +350,7 @@
   display: block;
   height: 100%;
   background: var(--wh-accent);
-  border-radius: 999px;
+  border-radius: var(--wh-radius-pill);
 }
 
 .wh-bar-p0 > span { width: 0; }
@@ -408,7 +421,7 @@
 
 .wh-dot-done { background: var(--wh-done); }
 .wh-dot-blocked { background: var(--wh-blocked); }
-.wh-dot-progress { background: #2563eb; }
+.wh-dot-progress { background: var(--wh-info); }
 .wh-dot-planned { background: var(--wh-line-strong); }
 
 .wh-timeline-text { flex: 1; }
@@ -465,7 +478,7 @@
   gap: 8px;
   padding: 6px 12px;
   border: 1px solid var(--wh-line);
-  border-radius: 999px;
+  border-radius: var(--wh-radius-pill);
   background: var(--wh-bg);
 }
 
@@ -494,21 +507,21 @@
 
 .wh-track {
   height: 8px;
-  border-radius: 999px;
-  background: #f4f4f5;
+  border-radius: var(--wh-radius-pill);
+  background: var(--wh-fill);
   overflow: hidden;
 }
 
 .wh-fill {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--wh-radius-pill);
   background: var(--wh-line-strong);
 }
 
 .wh-fill-done { background: var(--wh-done); }
 .wh-fill-blocked { background: var(--wh-blocked); }
-.wh-fill-in_progress { background: #2563eb; }
+.wh-fill-in_progress { background: var(--wh-info); }
 .wh-fill-planned { background: var(--wh-line-strong); }
 
 /* an aggregate key with no standard mapping still gets a neutral bar */
@@ -612,12 +625,12 @@
 }
 
 .wh-tag-on {
-  background: #f0fdf4;
+  background: var(--wh-done-soft);
   color: var(--wh-done);
 }
 
 .wh-tag-off {
-  background: #fef2f2;
+  background: var(--wh-danger-soft);
   color: var(--wh-blocked);
 }
 

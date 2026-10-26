@@ -49,7 +49,7 @@
    different things and must never share a row of cards. #}
 {% if company_metrics and company_metrics.available %}
 <h2 style="margin-top:0">公司指标{% if company_metrics.wave %} <span class="sub" style="display:inline;margin:0">{{ company_metrics.wave }}</span>{% endif %}</h2>
-<div class="grid">
+<div class="grid metrics">
   {% for metric in company_metrics.metrics %}
     <div class="metric">
       <div class="n">{{ metric.formatted }}</div>
@@ -65,7 +65,7 @@
 </div>
 {% endif %}
 
-<div class="grid">
+<div class="grid metrics">
   <div class="metric"><div class="n">{{ board.summary.open_items }}</div><div class="k">未完成工作项</div></div>
   <div class="metric {% if board.summary.blocked %}alert{% endif %}">
     <div class="n">{{ board.summary.blocked }}</div><div class="k">阻塞</div></div>
