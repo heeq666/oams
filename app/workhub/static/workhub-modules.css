@@ -440,7 +440,8 @@
 }
 
 .wh-metric-value {
-  font-size: 22px;
+  /* 24 与外壳 .metric .n 同号，模块层与外壳的指标卡看着才是一套。 */
+  font-size: 24px;
   font-weight: 600;
   line-height: 1.25;
 }
