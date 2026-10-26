@@ -39,7 +39,6 @@ CAPABILITY_NOUNS = {
     "workforce.reports": "汇报",
     "workforce.interfaces": "界面",
     "workforce.audit": "审计",
-    "workforce.spaces": "工位",
 }
 
 # action -> the verb. `read` is "查看" and not "读", because the sentence is

@@ -5,8 +5,8 @@ or more departments, and everybody else. The level is read from the grants, neve
 from a job title, and the two progress screens are the places where the difference
 has to be visible:
 
-* progress centre -- everybody sees the company roll-up, the office floor and the
-  detail of their own departments; administrators see every department;
+* progress centre -- everybody sees the company roll-up and the detail of their
+  own departments; administrators see every department;
 * reports centre -- staff see what they themselves submitted, department
   administrators see their departments, the company administrator sees everything.
 
@@ -241,16 +241,6 @@ def test_a_staff_member_reads_the_entry_they_submitted(shortcut, site):
         _unpublish(mine)
         _unpublish(theirs)
 
-
-# ---------------------------------------------------------------------------
-# Office floor: a company-wide picture, open to everybody
-# ---------------------------------------------------------------------------
-
-@pytest.mark.db
-def test_the_office_floor_is_open_to_staff(shortcut, site):
-    status, body = _open(site + "/office", "MVP1002")
-    assert status == 200
-    assert "办公室" in body
 
 # ---------------------------------------------------------------------------
 # A door that does not open is a detour, not a dead end

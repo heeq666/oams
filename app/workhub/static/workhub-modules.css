@@ -60,7 +60,7 @@
 }
 
 .wh-container,
-.wh-input,
+.wh-m.wh-input,
 .wh-display {
   background: var(--wh-bg);
   border: 1px solid var(--wh-line);
@@ -286,6 +286,11 @@
   padding: 2px 0;
 }
 
+/* 真控件才走这一档：6/8 内距 + 12 圆角。模块外壳也带 wh-input 这个类
+   （section.wh-m.wh-input），所以上面面板那一组用 .wh-m.wh-input 双类名提权——
+   两个类名同时命中外壳，优先级高于这里的单类名，外壳的内距和 20 圆角不会被
+   压成 6/8 + 12；真控件只有单类名，照旧落在这一档。别改成 input.wh-input：那会把
+   类名约定破在选择器层（tests/test_render_modules.py 要求每个选择器以 .wh- 开头）。 */
 .wh-input {
   width: 100%;
   padding: 6px 8px;
@@ -366,10 +371,13 @@
 .wh-bar-p100 > span { width: 100%; }
 
 /* --- table --- */
+/* 明细表：全站唯一密度 —— 6/8 内距 + 18 行盒 = 行高 30（外壳表 base.html 的
+   td/th 也照这一档，见 design-system-v1 §6）。字号 13，表头 12 + 底色 F5F5F5。 */
 .wh-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  line-height: 18px;
 }
 
 .wh-table th,

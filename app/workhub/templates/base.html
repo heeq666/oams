@@ -8,6 +8,9 @@
 {# 浮层载体必须先加载：下拉框与菜单都挂在它上面。 #}
 <script src="/static/wh-popover.js" defer></script>
 <script src="/static/wh-select.js" defer></script>
+{# 模块层样式（部门自建界面里的 wh-m / wh-input / wh-table ……）。
+   放在内联 <style> 之前：同一个元素上两边都有声明时，以外壳的为准。 #}
+<link rel="stylesheet" href="/static/workhub-modules.css">
 <style>
   * { box-sizing: border-box; }
   /* The shell owns the viewport: the top bar and the rail never move, and only the
@@ -138,67 +141,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .flowstrip .stage.terminal.zero .cnt { color: var(--muted); }
   .flowstrip .clear { margin-left: auto; font-size: 13px; color: var(--muted); text-decoration: none; align-self: center; padding: 7px 0; }
   .flowstrip .clear:hover { color: var(--ink); text-decoration: underline; }
-  .office-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-  @media (max-width: 1000px) { .office-layout { grid-template-columns: minmax(0, 1fr); } }
-  .floor > svg.plan { width: 100%; height: auto; background: var(--card);
-                      border: 1px solid var(--line); border-radius: var(--r-card); display: block; }
-  /* One colour per room, answering one question: does this need me today. */
-  .zone { fill: #eef2ef; stroke: #cfe3d6; stroke-width: 2; }
-  .zone.warn { fill: #fdf6e8; stroke: #e8cf94; }
-  .zone.alert { fill: #fdf1ef; stroke: #eeb2a8; }
-  .zone.uncalibrated { fill: #f7f8f9; stroke: #b8bec4; }
-  .plan a:hover .zone { stroke: var(--accent); }
-  .plan a:focus-visible .zone { stroke: var(--accent); stroke-width: 3; }
-  .zone-name { font-size: 28px; font-weight: 600; fill: var(--ink); }
-  .zone-num { font-size: 48px; font-weight: 600; fill: var(--ink); }
-  .zone-numlabel { font-size: 20px; fill: var(--muted); }
-  .zone-flag { font-size: 22px; fill: var(--blocked); font-weight: 500; }
-  .zone-calib { font-size: 18px; fill: #98a0a8; }
-  .detail { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); padding: 16px; }
-  .zoom-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  .zoom-head h2 { margin: 0; }
-  .badge.heat.ok { color: var(--done); background: var(--success-soft); }
-  .badge.heat.warn { color: var(--decision); background: var(--warning-soft); }
-  .badge.heat.alert { color: var(--blocked); background: var(--danger-soft); }
-  svg.room { width: 100%; height: auto; background: var(--bg); border: 1px solid var(--line);
-             border-radius: var(--r-card); margin-bottom: 12px; }
-  .desk rect { fill: #fff; stroke: #d3d9de; stroke-width: 2; }
-  .desk.warn rect { fill: #fdf6e8; stroke: #e8cf94; }
-  .desk.alert rect { fill: #fdf1ef; stroke: #eeb2a8; }
-  .desk.vacant rect { fill: #f6f7f8; stroke: #d9dde1; stroke-dasharray: 10 8; }
-  .desk-name { font-size: 26px; font-weight: 600; fill: var(--ink); }
-  .desk-num { font-size: 22px; fill: var(--muted); }
-  .desk-flag { font-size: 20px; fill: var(--blocked); font-weight: 500; }
-  /* Floor plan editor: the canvas is a view, the data attributes are the truth.
-     Handles stay invisible until hover or selection so the plan reads as a plan
-     first and as a set of controls second. */
-  .crumbs { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 14px; }
-  .crumbs a { color: var(--muted); text-decoration: none; }
-  .crumbs a:hover { color: var(--ink); text-decoration: underline; }
-  .crumbs [aria-current] { font-weight: 600; }
-  .editor { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
-  @media (max-width: 900px) { .editor { grid-template-columns: minmax(0, 1fr); } }
-  .editor-canvas svg { width: 100%; height: auto; background: var(--card);
-                       border: 1px solid var(--line); border-radius: var(--r-card); display: block; }
-  .floor-bg { fill: #fbfcfd; }
-  .floor-hint { font-size: 22px; fill: var(--muted); }
-  .editor .item { cursor: grab; outline: none; }
-  .editor .item rect { fill: #eef2ef; stroke: #cbd5cf; stroke-width: 2; }
-  .editor .item.uncalibrated rect { fill: #f7f8f9; stroke: #b8bec4; }
-  .editor .item.selected rect, .editor .item:focus-visible rect { stroke: var(--accent); stroke-width: 3; }
-  .editor .item .handle { fill: #fff; stroke: var(--accent); stroke-width: 3; opacity: 0; cursor: nwse-resize; }
-  .editor .item:hover .handle, .editor .item.selected .handle,
-  .editor .item:focus-visible .handle { opacity: 1; }
-  .editor-side { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 16px; }
-  .inspector h2 { font-size: 15px; }
-  .inspector .field { display: block; margin-bottom: 10px; }
-  .inspector .field.check { display: flex; align-items: center; gap: 8px; }
   .btn { display: inline-block; padding: 7px 12px; border-radius: var(--r-pill); background: var(--accent);
          color: var(--on-accent); text-decoration: none; font-size: 14px; }
   .link.danger { color: var(--blocked); }
-  .seatlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-  .seatlist li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-                 background: var(--subtle); border: 0; border-radius: var(--r-small); padding: 8px 12px; }
   .stack { margin-bottom: 20px; }
   .form-row .check { flex-direction: row; align-items: center; gap: 8px; }
   .bar { height: 4px; background: var(--line); border-radius: var(--r-pill); margin-top: 6px; overflow: hidden; }
@@ -496,12 +441,15 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                                               box-shadow: 0 0 0 3px rgba(15, 23, 42, .04); }
   label { font-size: 13px; color: var(--ink); }
   table { border: none; border-radius: 0; background: transparent; }
-  /* 行高 41 = 20px 行盒 + 上下各 10px + 1px 分隔线，与 Figma「Table 表格行」一致（分隔线
-     算在 41 里面，所以行盒压到 20）。内容不折行，超宽靠省略号，不靠缩字号（design-system-v1 §7.6）。 */
-  th { background: transparent; color: var(--muted); font-size: 12px; font-weight: 500;
-       text-transform: none; padding: 10px 12px; line-height: 20px;
-       border-bottom: 1px solid var(--line); }
-  td { padding: 10px 12px; line-height: 20px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+  /* 行高 30 = 18px 行盒 + 上下各 6px（分隔线算在 30 里）：与模块明细表 .wh-table 同一档，
+     全站只有一种表格密度（2026-10-26 统一）。字号 13、表头 12 + bg/subtle 底；
+     内容不折行，超宽靠省略号，不靠缩字号（design-system-v1 §6）。 */
+  th { background: var(--subtle); color: var(--muted); font-size: 12px; font-weight: 500;
+       text-transform: none; padding: 6px 8px; line-height: 18px;
+       border-bottom: 1px solid var(--line);
+       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+  td { padding: 6px 8px; line-height: 18px; border-bottom: 1px solid var(--line-soft); font-size: 13px;
+       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
   tr:last-child td { border-bottom: none; }
   /* pills: one look for every discrete state, colour only for what it means */
   .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--r-pill);
@@ -587,7 +535,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   /* 32px-tall controls and the small blocks that sit inside a card */
   .seg, .orgnav, .app-rail .rail-item, .tabs.layers a, td input, td select,
   td textarea, .account-menu .menu-item,
-  .wh-interface .wh-input, .wh-interface .wh-tabpanel { border-radius: var(--r-small); }
+  .wh-interface .wh-tabpanel, .wh-interface input.wh-input,
+  .wh-interface textarea.wh-input, .wh-interface select.wh-input { border-radius: var(--r-small); }
   /* A 16px box cannot take the 20px control radius -- it would become a circle. */
   input[type="checkbox"] { border-radius: var(--r-micro); }
   input[type="radio"] { border-radius: var(--r-pill); }
