@@ -111,11 +111,18 @@ def _script() -> None:
     status, page, _ = lead("/reviews")
     check("reviewer permission opens the review queue", status == 200 and "页面审核" in page, status)
 
-    # Cannot do administrator work.
-    status, _, _ = lead("/setup")
-    check("reviewer cannot open the guided setup page", status == 403, status)
-    status, _, _ = lead("/admin/audit")
-    check("reviewer cannot read the audit log", status == 403, status)
+    # Cannot do administrator work. A page they may not read is not an error
+    # screen: they are sent on to one they can read, with the reason in a short
+    # notice cookie (the POST below still has to explain itself in place).
+    def location(headers):
+        return next((v for k, v in headers.items() if k.lower() == "location"), "")
+
+    status, body, headers = lead("/setup")
+    check("reviewer is steered away from the guided setup page",
+          status == 303 and "没有权限" not in body, f"{status} {location(headers)}")
+    status, body, headers = lead("/admin/audit")
+    check("reviewer is steered away from the audit log",
+          status == 303 and "没有权限" not in body, f"{status} {location(headers)}")
 
     # Full review cycle driven by this non-administrator reviewer.
     status, form, _ = lead(f"/departments/{org}/new")

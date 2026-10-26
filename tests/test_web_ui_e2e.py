@@ -386,8 +386,13 @@ def _script(base: str) -> None:
     check("specialist can sign in", code == 302 and "workhub_session=" in hdr(headers, "Set-Cookie") or "", str(code))
     code, body, _ = call("/board")
     check("specialist sees the board", code == 200 and "进度看板" in body, str(code))
-    code, body, _ = call("/admin/audit")
-    check("specialist is refused the audit page", code == 403 and "没有权限" in body, str(code))
+    # A page they may not read is not an error screen: it is a detour to one they
+    # can read, carrying the reason in a short-lived notice cookie.
+    code, body, headers = call("/admin/audit")
+    landed = hdr(headers, "Location") or ""
+    check("a page the specialist may not read sends them somewhere they can go",
+          code == 303 and landed.endswith("/progress") and "没有权限" not in body,
+          f"{code} {landed}")
     # A well-formed form with the specialist's own token: the refusal has to come
     # from the missing grant, not from a validation error about a missing field.
     code, body, _ = call("/admin/positions", method="POST", form={
