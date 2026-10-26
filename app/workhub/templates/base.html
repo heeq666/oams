@@ -395,11 +395,13 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                                    font-weight: 500; }
   header.topbar .account > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   header.topbar .account[open] .avatar { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14); }
-  /* 浮层一律玻璃态（design-system-v1 §7.3）。面板档比条状档更雾：菜单里要读字，底下的
-     正文必须退到雾里，否则两层字叠在一起谁也读不清。所以白 78% + blur 16，投影仍只有一层。 */
+  /* 浮层一律玻璃态（design-system-v1 §7.3）。面板档的白要更厚：条状档靠 blur 把底下的字糊成
+    一片灰，面板档做不到——面板里有自己要读的字，读者分不清哪层字是自己的，两层叠在一起
+    就成了「透得太明显」。所以不指望 blur 兜底（有的机器根本不上 backdrop-filter），改用
+     白 92% 保证「只透一点点」，blur 16 只是锦上添花。投影仍只有一层。 */
   header.topbar .account-menu { position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
                                min-width: 208px; padding: 6px; border-radius: var(--r-card); text-align: left;
-                               background: rgba(255, 255, 255, .78);
+                               background: rgba(255, 255, 255, .92);
                                -webkit-backdrop-filter: saturate(1.3) blur(16px);
                                backdrop-filter: saturate(1.3) blur(16px);
                                box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
@@ -470,7 +472,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      选中行加勾；一行只放一条选项，不折行。 */
   .wh-list { position: fixed; z-index: 45; padding: 6px; max-height: 320px; overflow-y: auto;
              overscroll-behavior: contain; border-radius: var(--r-card);
-             background: rgba(255, 255, 255, .78);
+             background: rgba(255, 255, 255, .92);
              -webkit-backdrop-filter: saturate(1.3) blur(16px);
              backdrop-filter: saturate(1.3) blur(16px);
              box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
@@ -684,7 +686,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     min-width: 268px;
     padding: 6px;
     border-radius: var(--r-card);
-    background: rgba(255, 255, 255, .78);
+    background: rgba(255, 255, 255, .92);
     -webkit-backdrop-filter: saturate(1.3) blur(16px);
     backdrop-filter: saturate(1.3) blur(16px);
     box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
