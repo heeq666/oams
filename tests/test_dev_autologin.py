@@ -13,6 +13,7 @@ Pure parsing tests run without a database; the rest need one and skip otherwise.
 """
 import http.cookiejar
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import pytest
@@ -21,14 +22,18 @@ from fastapi.security import HTTPAuthorizationCredentials
 from starlette.requests import Request
 
 from workhub.config import settings
-from workhub.security import (current_principal, dev_autologin_target, dev_principal,
-                              principal_for_token, principal_from_request)
+from workhub.security import (DEV_ROLE_ADMIN, DEV_ROLE_MANAGER, DEV_ROLE_STAFF, DEV_WORKER_COOKIE,
+                              current_principal, dev_autologin_target, dev_identities, dev_principal,
+                              dev_role_label, principal_for_token, principal_from_request)
 
 
-def _request(path: str = "/board", cookie: str | None = None) -> Request:
+def _request(path: str = "/board", cookie: str | None = None,
+             dev_cookie: str | None = None) -> Request:
     headers = []
     if cookie:
         headers.append((b"cookie", f"{settings.web_session_cookie}={cookie}".encode()))
+    if dev_cookie is not None:
+        headers.append((b"cookie", f"{DEV_WORKER_COOKIE}={dev_cookie}".encode()))
     return Request({
         "type": "http",
         "method": "GET",
@@ -81,6 +86,56 @@ def test_off_means_nobody_is_signed_in(monkeypatch):
     monkeypatch.setattr(settings, "dev_autologin", None, raising=False)
     assert dev_principal() is None
     assert principal_from_request(_request()) is None
+
+
+# ---------------------------------------------------------------------------
+# The identity switch: a cookie that only ever names a *who*
+# ---------------------------------------------------------------------------
+
+def test_the_chosen_identity_beats_the_environment_default(monkeypatch):
+    monkeypatch.setattr(settings, "dev_autologin", "ADMIN001", raising=False)
+    request = _request(dev_cookie="STAFF001")
+    assert dev_autologin_target(request) == "STAFF001"
+
+
+def test_the_choice_is_ignored_while_the_shortcut_is_off(monkeypatch):
+    # A cookie left in the browser from yesterday must not sign anybody in once the
+    # switch is off -- otherwise "restore login" would depend on clearing cookies.
+    monkeypatch.setattr(settings, "dev_autologin", "0", raising=False)
+    request = _request(dev_cookie="STAFF001")
+    assert dev_autologin_target(request) is None
+    assert dev_principal(request) is None
+
+
+def test_no_roster_is_exposed_while_the_shortcut_is_off(monkeypatch):
+    monkeypatch.setattr(settings, "dev_autologin", None, raising=False)
+    assert dev_identities() == []
+
+
+@pytest.mark.parametrize("grants, expected", [
+    ({"workforce.members:manage", "work_items:manage"}, DEV_ROLE_ADMIN),
+    ({"workforce.members:read"}, DEV_ROLE_STAFF),
+    ({"work_items:manage"}, DEV_ROLE_MANAGER),
+    ({"interfaces:review", "reports:submit"}, DEV_ROLE_STAFF),
+    (set(), DEV_ROLE_STAFF),
+    (None, DEV_ROLE_STAFF),
+])
+def test_role_label_reads_the_grants(grants, expected):
+    # The label has to describe what the page will actually let them do, so it is
+    # derived from grants -- not from the position title somebody typed.
+    assert dev_role_label(grants) == expected
+
+
+def test_switch_is_not_reachable_without_the_shortcut(monkeypatch):
+    # api imports the web router at the bottom of its module; importing web first
+    # would meet a half-built module, so load the app module the way serve does.
+    import workhub.api  # noqa: F401
+    from workhub.web import dev_switch_identity
+
+    monkeypatch.setattr(settings, "dev_autologin", None, raising=False)
+    with pytest.raises(HTTPException) as excinfo:
+        dev_switch_identity(_request(), code="ADMIN001", next="/board")
+    assert excinfo.value.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -199,3 +254,71 @@ def test_revoke_without_a_session_is_a_no_op(shortcut, site):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with opener.open(request, timeout=10) as response:
         assert response.status == 204
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Hand the 303 back instead of following it, so Set-Cookie is inspectable."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _post_form(url: str, data: dict[str, str]):
+    body = urllib.parse.urlencode(data).encode()
+    request = urllib.request.Request(url, data=body, method="POST",
+                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+    opener = urllib.request.build_opener(_NoRedirect(), urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=10) as response:
+            return response.status, response.headers, response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.headers, exc.read().decode("utf-8", "replace")
+
+
+@pytest.mark.db
+def test_switching_identity_changes_who_the_app_recognises(shortcut, site):
+    people = dev_identities()
+    if len(people) < 2:
+        pytest.skip("needs at least two active members to switch between")
+    chosen = people[-1]
+
+    status, headers, _ = _post_form(site + "/dev/identity",
+                                    {"code": chosen["employee_code"], "next": "/board"})
+    assert status == 303
+    assert f"{DEV_WORKER_COOKIE}={chosen['employee_code']}" in (headers.get("Set-Cookie") or "")
+
+    # The cookie is the whole mechanism: the next request renders as that person.
+    principal = principal_from_request(_request(dev_cookie=chosen["employee_code"]))
+    assert principal is not None
+    assert principal["member_id"] == chosen["member_id"]
+    assert principal["employee_code"] == chosen["employee_code"]
+
+
+@pytest.mark.db
+def test_the_roster_labels_each_person_by_what_they_can_do(shortcut, site):
+    people = dev_identities()
+    if not people:
+        pytest.skip("no active members in this database")
+    for person in people:
+        assert person["role_label"] == dev_role_label(person["grants"])
+        assert person["role_label"] in {DEV_ROLE_ADMIN, DEV_ROLE_MANAGER, DEV_ROLE_STAFF}
+    # Strongest first: the switcher's first row should be the one with everything.
+    order = {DEV_ROLE_ADMIN: 0, DEV_ROLE_MANAGER: 1, DEV_ROLE_STAFF: 2}
+    ranks = [order[person["role_label"]] for person in people]
+    assert ranks == sorted(ranks)
+
+
+@pytest.mark.db
+def test_an_unknown_code_never_becomes_a_cookie(shortcut, site):
+    status, headers, _ = _post_form(site + "/dev/identity",
+                                    {"code": "NO-SUCH-EMPLOYEE-404", "next": "/board"})
+    assert status == 303
+    assert DEV_WORKER_COOKIE not in (headers.get("Set-Cookie") or "")
+
+
+@pytest.mark.db
+def test_choosing_nothing_restores_the_startup_default(shortcut, site):
+    status, headers, _ = _post_form(site + "/dev/identity", {"code": "", "next": "/board"})
+    assert status == 303
+    cookie = headers.get("Set-Cookie") or ""
+    assert DEV_WORKER_COOKIE in cookie and "max-age=0" in cookie.lower()
