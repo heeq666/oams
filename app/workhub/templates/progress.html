@@ -4,7 +4,6 @@
 <div class="pagehead"><div><h1>公司进度中心</h1><p class="sub">部门汇报汇聚在这里。先看风险，再进入部门看每项工作的进度和依据。</p></div><a class="btn" href="/reports">去汇报进度 →</a></div>
 {# The totals are the company for everybody; the department detail below them
    is what this person's level is allowed to open. #}
-<p class="meta scope-note">{% if role_label == '系统管理员' %}你是系统管理员，能看到所有部门的进度。{% elif role_label == '部门管理员' %}你是部门管理员，能看到所有部门的进度。{% else %}公司总览是全公司的汇总；下面的明细只显示你所属的部门{% if hidden_departments %}（另有 {{ hidden_departments }} 个部门的进度仅管理员可见）{% endif %}。{% endif %}</p>
 <div class="grid metrics" aria-label="公司进度概览">
   <div class="metric"><div class="n">{{ totals.open_items }}</div><div class="k">未完成事项</div></div>
   <div class="metric {% if totals.blocked %}alert{% endif %}"><div class="n">{{ totals.blocked }}</div><div class="k">卡住的事项</div></div>

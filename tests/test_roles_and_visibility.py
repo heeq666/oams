@@ -24,9 +24,8 @@ import uuid
 import pytest
 
 from workhub.config import settings
-from workhub.security import (DEV_WORKER_COOKIE, NOTICE_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF,
-                              ROLE_SYSTEM, admin_level, administered_org_unit_ids,
-                              forget_dev_identities)
+from workhub.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
+                              admin_level, administered_org_unit_ids, forget_dev_identities)
 
 
 @pytest.fixture
@@ -168,15 +167,16 @@ def test_progress_centre_limits_staff_to_their_own_department(shortcut, site):
     # The roll-up numbers stay company-wide -- that is the point of the top band --
     # but the per-department detail below them must not leak another department.
     assert "业务部" not in body
-    assert "只显示你所属的部门" in body
+    # No narration about who the reader is: the department cards are the answer.
+    assert "你是" not in body
 
 
 @pytest.mark.db
-def test_progress_centre_tells_each_level_what_it_is_looking_at(shortcut, site):
-    _, admin_body = _open(site + "/progress", "ADMIN001")
-    assert "你是系统管理员" in admin_body
-    _, manager_body = _open(site + "/progress", "MVP1001")
-    assert "你是部门管理员" in manager_body
+def test_progress_centre_does_not_narrate_the_readers_level(shortcut, site):
+    # The page shows what each level may see; it does not tell them what they are.
+    for code in ("ADMIN001", "MVP1001"):
+        _, body = _open(site + "/progress", code)
+        assert "你是" not in body, code
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ def test_reports_centre_shows_every_department_to_the_company_administrator(shor
         status, body = _open(site + "/interfaces/board", "ADMIN001")
         assert status == 200
         assert name in body
-        assert "能看到所有部门的汇报" in body
+        assert "你是" not in body
     finally:
         _unpublish(interface_id)
 
@@ -204,7 +204,7 @@ def test_reports_centre_shows_their_departments_to_a_department_administrator(sh
         assert status == 200
         assert mine_name in body
         assert elsewhere_name not in body
-        assert "只能看到你负责的部门的汇报" in body
+        assert "你是" not in body
     finally:
         _unpublish(mine)
         _unpublish(elsewhere)
@@ -219,7 +219,7 @@ def test_reports_centre_hides_other_departments_from_staff(shortcut, site):
         # Staff see submissions, not departments: somebody else's report is invisible
         # to them even though it is a perfectly ordinary live entry.
         assert name not in body
-        assert "只能看到自己提交的汇报" in body
+        assert "你是" not in body
     finally:
         _unpublish(interface_id)
 
@@ -314,8 +314,8 @@ def test_a_page_you_may_not_open_sends_you_to_one_you_can(shortcut, site):
     status, headers, body = _open_head(site + "/settings", "MVP1002")
     assert status == 303
     assert headers["location"].endswith("/progress")
-    # The reason travels as a one-shot cookie, not as a wall of 403.
-    assert NOTICE_COOKIE in (headers.get("set-cookie") or "")
+    # Silent detour: no reason banner, no cookie to carry one.
+    assert "workhub_notice" not in (headers.get("set-cookie") or "")
     assert "没有权限" not in body
 
 
@@ -327,19 +327,16 @@ def test_the_administrator_still_gets_the_page_they_asked_for(shortcut, site):
 
 
 @pytest.mark.db
-def test_the_detour_explains_itself_once(shortcut, site):
-    # The redirect carries the reason in a cookie; the landing page prints it and
-    # clears it in the same response. Following the hop by hand (rather than with
-    # an opener) is what makes both halves observable.
+def test_the_detour_lands_without_a_note_attached(shortcut, site):
+    # Landing on a page you *can* read needs no explanation. The only leftover
+    # would be a cookie the next render would print, so there must not be one.
     _, headers, _ = _open_head(site + "/settings", "MVP1002")
-    notice = (headers.get("set-cookie") or "").split(";")[0]
-    assert notice.startswith(f"{NOTICE_COOKIE}=")
+    assert not [line for line in (headers.get_all("set-cookie") or [])
+                if "workhub_notice" in line]
 
     status, landed_headers, body = _open_head(
-        site + "/progress", cookie=f"{DEV_WORKER_COOKIE}=MVP1002; {notice}")
+        site + "/progress", cookie=f"{DEV_WORKER_COOKIE}=MVP1002")
     assert status == 200
-    assert "设置页只有管理员可以打开" in body
-    # One shot: the page that shows the line also expires the cookie, so a reload
-    # does not repeat a message about a click that already went nowhere.
-    assert "workhub_notice=" in (landed_headers.get("set-cookie") or "")
+    assert "设置页只有管理员可以打开" not in body
+    assert "没有权限" not in body
 

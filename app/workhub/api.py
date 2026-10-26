@@ -1,4 +1,3 @@
-import urllib.parse
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1394,7 +1393,7 @@ def list_open_work_items(conn, org_unit_id=None, company_scope=False, limit=100)
 # functions the bearer scheme uses. Nothing here grants anything by itself.
 # ---------------------------------------------------------------------------
 from workhub.web import router as web_router  # noqa: E402
-from workhub.security import (NOTICE_COOKIE, active_org_unit_ids, has_company_scope,  # noqa: E402
+from workhub.security import (active_org_unit_ids, has_company_scope,  # noqa: E402
                               has_permission, principal_from_request)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
@@ -1463,11 +1462,6 @@ async def attach_browser_principal(request, call_next):
     request.state.dept_rail = []
     request.state.rail = []
     request.state.dept_active = None
-    # A redirect from a page this person may not open leaves one line behind; it
-    # is read here and consumed by whichever page renders next, so the notice
-    # cannot be replayed by refreshing or by pasting a URL with text in it.
-    raw_notice = request.cookies.get(NOTICE_COOKIE)
-    request.state.notice = urllib.parse.unquote(raw_notice) if raw_notice else None
     # Highlight the department the URL is inside, so the sidebar shows where you are.
     parts = [p for p in request.url.path.split("/") if p]
     if len(parts) >= 2 and parts[0] == "departments":
@@ -1513,10 +1507,4 @@ async def attach_browser_principal(request, call_next):
             }
             request.state.rail = _shell_rail(request.url.path, nav, request.state.dept_rail,
                                              request.state.dept_active, caps)
-    response = await call_next(request)
-    # Only a rendered page consumes the line. A stylesheet or a 404 in between must
-    # not eat it, or the person lands on the page with no idea why they are there.
-    if raw_notice and response.status_code == 200 and \
-            response.headers.get("content-type", "").startswith("text/html"):
-        response.delete_cookie(NOTICE_COOKIE, path="/")
-    return response
+    return await call_next(request)
