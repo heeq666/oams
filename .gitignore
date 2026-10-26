@@ -17,3 +17,6 @@ dist/
 # Real department seed data may contain employee names; keep it out of git.
 data/*.local.json
 data/live-design-*.json
+
+# macOS 目录元数据
+.DS_Store

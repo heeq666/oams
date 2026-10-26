@@ -1671,9 +1671,12 @@ async def attach_browser_principal(request, call_next):
     if request.state.member is not None:
         member_id = request.state.member["member_id"]
         with connection() as conn:
+            # 进度中心 and 汇报中心 are open to everybody; the pages themselves
+            # decide how much detail each level gets. 页面审核 and 设置 stay behind
+            # their own grants.
             nav = {
                 "departments": has_permission(conn, member_id, "workforce.reports", "read"),
-                "progress": has_company_scope(conn, member_id),
+                "progress": has_permission(conn, member_id, "workforce.work_items", "read"),
                 "review": has_permission(conn, member_id, "workforce.interfaces", "review"),
                 "admin": has_company_scope(conn, member_id),
             }

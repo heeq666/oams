@@ -23,6 +23,7 @@ from starlette.requests import Request
 
 from workhub.config import settings
 from workhub.security import (DEV_ROLE_ADMIN, DEV_ROLE_MANAGER, DEV_ROLE_STAFF, DEV_WORKER_COOKIE,
+                              ROLE_DEPARTMENT, ROLE_RANK, ROLE_STAFF, ROLE_SYSTEM,
                               current_principal, dev_autologin_target, dev_identities, dev_principal,
                               dev_role_label, principal_for_token, principal_from_request)
 
@@ -113,10 +114,15 @@ def test_no_roster_is_exposed_while_the_shortcut_is_off(monkeypatch):
 
 
 @pytest.mark.parametrize("grants, expected", [
-    ({"workforce.members:manage", "work_items:manage"}, DEV_ROLE_ADMIN),
-    ({"workforce.members:read"}, DEV_ROLE_STAFF),
-    ({"work_items:manage"}, DEV_ROLE_MANAGER),
-    ({"interfaces:review", "reports:submit"}, DEV_ROLE_STAFF),
+    ({"workforce.grants:manage", "workforce.members:manage"}, DEV_ROLE_ADMIN),
+    # Managing people or work items inside a department is department administration;
+    # it never reaches company administration, because the settings pages stay shut.
+    ({"workforce.members:manage"}, DEV_ROLE_MANAGER),
+    ({"workforce.work_items:manage"}, DEV_ROLE_MANAGER),
+    ({"workforce.interfaces:manage", "workforce.work_items:manage"}, DEV_ROLE_MANAGER),
+    # Reviewing a page is reading, so it does not lift anybody out of the staff level.
+    ({"workforce.interfaces:review", "workforce.reports:submit"}, DEV_ROLE_STAFF),
+    ({"workforce.work_items:read"}, DEV_ROLE_STAFF),
     (set(), DEV_ROLE_STAFF),
     (None, DEV_ROLE_STAFF),
 ])
@@ -124,6 +130,11 @@ def test_role_label_reads_the_grants(grants, expected):
     # The label has to describe what the page will actually let them do, so it is
     # derived from grants -- not from the position title somebody typed.
     assert dev_role_label(grants) == expected
+
+
+def test_the_three_levels_rank_from_company_to_staff():
+    assert [ROLE_SYSTEM, ROLE_DEPARTMENT, ROLE_STAFF] == sorted(
+        ROLE_RANK, key=lambda role: ROLE_RANK[role])
 
 
 def test_switch_is_not_reachable_without_the_shortcut(monkeypatch):

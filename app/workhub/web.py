@@ -47,10 +47,11 @@ from workhub.descriptor import validate_descriptor
 from workhub.render import RenderError, render_interface, render_read_only
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, SpaceUpsert, WorkItemCreate)
-from workhub.security import (DEV_WORKER_COOKIE, active_org_unit_ids, dev_autologin_target, dev_identities,
-                              dev_principal, has_company_scope, has_permission, issue_session,
-                              principal_from_request, principal_for_token, require_org_unit_access,
-                              revoke_session)
+from workhub.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
+                              active_org_unit_ids, admin_level, administered_org_unit_ids,
+                              dev_autologin_target, dev_identities, dev_principal, has_company_scope,
+                              has_permission, issue_session, principal_from_request,
+                              principal_for_token, require_org_unit_access, revoke_session)
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 router = APIRouter()
@@ -1148,16 +1149,31 @@ def interfaces(request: Request, saved: str | None = None, error: str | None = N
 def interface_board(request: Request, stale_days: int = Query(default=7, ge=1, le=365)):
     """Manager view: what each department last reported through its own screen."""
     try:
-        principal = _require(request, "workforce.reports", "read")
+        principal = _require(request, "workforce.work_items", "read")
     except _NotSignedIn:
         return RedirectResponse(url="/login?next=/interfaces/board", status_code=302)
     except _NotPermitted:
-        return _denied(request, "查看部门汇报汇总需要 workforce.reports/read 权限。")
+        return _denied(request, "查看汇报中心需要工作项查看权限。")
+    member_id = principal["member_id"]
     with connection() as conn:
-        company_scope = has_company_scope(conn, principal["member_id"])
-        scoped = list(active_org_unit_ids(conn, principal["member_id"]))
+        # What you can see here follows your level: everything, your own
+        # departments, or only the entries you reported yourself.
+        level = admin_level(conn, member_id)
+        where = "i.status = 'active'"
+        # Staff look at their own submissions, so the "latest entry" they read has
+        # to be the latest *theirs* -- otherwise a colleague's newer entry would
+        # hide their own from them.
+        entry_filter = ""
+        params: list[Any] = []
+        if level == ROLE_DEPARTMENT:
+            where = where + " AND i.org_unit_id = ANY(%s::uuid[])"
+            params.append(list(administered_org_unit_ids(conn, member_id)))
+        elif level == ROLE_STAFF:
+            entry_filter = " AND reported_by = %s"
+            where = where + " AND e.entry_id IS NOT NULL"
+            params.append(member_id)
         rows = conn.execute(
-            """SELECT i.interface_id, i.name, i.slug, o.name AS org_name, p.title AS position_title,
+            f"""SELECT i.interface_id, i.name, i.slug, o.name AS org_name, p.title AS position_title,
                       e.title, e.status, e.blocked_reason, e.needs_decision, e.progress_value,
                       e.note, e.evidence, e.reported_at, m.display_name AS reporter,
                       e.extra
@@ -1167,15 +1183,15 @@ def interface_board(request: Request, stale_days: int = Query(default=7, ge=1, l
                LEFT JOIN LATERAL (
                    SELECT * FROM workhub.interface_entries
                     WHERE interface_id = i.interface_id AND status_entry = 'active'
-                      AND entry_mode = 'live'
+                      AND entry_mode = 'live'{entry_filter}
                     ORDER BY reported_at DESC, entry_id DESC LIMIT 1
                ) e ON true
                LEFT JOIN workhub.workforce_members m ON m.member_id = e.reported_by
-               WHERE i.status = 'active' AND (%s OR i.org_unit_id = ANY(%s))
-               ORDER BY o.name, i.name""", (company_scope, scoped)).fetchall()
+               WHERE {where}
+               ORDER BY o.name, i.name""", params).fetchall()
     return TEMPLATES.TemplateResponse(request, "interface_board.html", {
         "rows": rows, "member": _member(request), "stale_days": stale_days,
-        "status_labels": STATUS_LABELS})
+        "role_label": level, "status_labels": STATUS_LABELS})
 
 @router.get("/interfaces/{interface_id}", response_class=HTMLResponse)
 def interface_fill(request: Request, interface_id: UUID, saved: str | None = None,
@@ -1346,24 +1362,28 @@ def progress_center(request: Request, stale_days: int = Query(default=7, ge=1, l
         return RedirectResponse(url="/login?next=/progress", status_code=302)
     except _NotPermitted:
         return _denied(request, "查看进度中心需要工作项查看权限。")
+    member_id = request.state.member["member_id"]
     with connection() as conn:
-        if has_company_scope(conn, request.state.member["member_id"]):
-            units = conn.execute(
-                """SELECT DISTINCT o.org_unit_id, o.name FROM workhub.org_units o
-                   JOIN workhub.work_items w USING (org_unit_id)
-                   WHERE o.status = 'active' ORDER BY o.name""").fetchall()
+        level = admin_level(conn, member_id)
+        everyone = conn.execute(
+            """SELECT DISTINCT o.org_unit_id, o.name FROM workhub.org_units o
+               JOIN workhub.work_items w USING (org_unit_id)
+               WHERE o.status = 'active' ORDER BY o.name""").fetchall()
+        # The company totals are the whole company for everybody; what changes by
+        # role is the department detail underneath them. Building one board per
+        # department is what /board does anyway, and there are only a handful.
+        boards = [{"unit": unit, "board": api.build_board(conn, unit["org_unit_id"], stale_days)}
+                  for unit in everyone]
+        if level == ROLE_STAFF:
+            mine = active_org_unit_ids(conn, member_id)
+            shown = [entry for entry in boards if entry["unit"]["org_unit_id"] in mine]
         else:
-            units = conn.execute(
-                """SELECT DISTINCT o.org_unit_id, o.name FROM workhub.org_units o
-                   JOIN workhub.work_items w USING (org_unit_id)
-                   WHERE o.status = 'active' AND o.org_unit_id = ANY(%s)
-                   ORDER BY o.name""", (list(active_org_unit_ids(conn, request.state.member["member_id"])),)).fetchall()
-        departments = [{"unit": unit, "board": api.build_board(conn, unit["org_unit_id"], stale_days)}
-                       for unit in units]
-    totals = {key: sum(entry["board"]["summary"][key] for entry in departments)
+            shown = boards
+    totals = {key: sum(entry["board"]["summary"][key] for entry in boards)
               for key in ("open_items", "blocked", "needs_decision", "never_reported", "overdue")}
     return TEMPLATES.TemplateResponse(request, "progress.html", {
-        "member": _member(request), "departments": departments, "totals": totals,
+        "member": _member(request), "departments": shown, "totals": totals,
+        "role_label": level, "hidden_departments": len(boards) - len(shown),
         "stale_days": stale_days, "status_labels": STATUS_LABELS,
         "channel_labels": CHANNEL_LABELS})
 
@@ -1577,8 +1597,8 @@ def office(request: Request, org: UUID | None = None, stale_days: int = Query(de
     except _NotPermitted:
         return _denied(request, "查看办公室平面图需要 workforce.work_items/read 权限。")
     with connection() as conn:
-        if not has_company_scope(conn, request.state.member["member_id"]):
-            return _denied(request, "办公室总览目前仅对公司管理者开放。")
+        # 办公室 is one of the things every level sees; what the floor plan shows
+        # is already the same card the progress centre would show them.
         floor = api.build_office(conn, stale_days)
     # With ?org= the room renders server-side on first paint, so the deep link and
     # the no-JavaScript path show the same thing the click does.
