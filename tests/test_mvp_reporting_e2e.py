@@ -54,7 +54,13 @@ def _script() -> None:
     assert status==200 and '客户需求确认' in sales_page and '招聘进度汇报' not in sales_page
     print('PASS form lists only assigned positions')
     status,hr_center,_=request(hr,'/progress')
-    assert status==200 and '人事部' in hr_center and '业务部' not in hr_center,(status,hr_center[:500])
+    # MVP1001 manages 人事部, so as a department administrator they see every
+    # department's detail -- while the reads below still keep them out of Sales *data*.
+    assert status==200 and '人事部' in hr_center and '业务部' in hr_center,(status,hr_center[:500])
+    status,sales_center,_=request(sales,'/progress')
+    # MVP2001 has read and submit only: staff see the company roll-up plus their own
+    # department, and the detail of somebody else's department stays hidden.
+    assert status==200 and '业务部' in sales_center and '人事部' not in sales_center,(status,sales_center[:500])
     assert request(hr,'/board?org='+str(sales_org))[0]==403
     assert request(hr,'/board/body?org='+str(sales_org))[0]==403
     assert bearer(f'/v1/work-items/{items["MVP演示：客户需求确认"]}/reports')[0]==403

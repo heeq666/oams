@@ -3,6 +3,9 @@
 {% block content %}
 <h1>部门汇报汇总</h1>
 <p class="sub">每个部门用自己的界面汇报，这里按部门显示最近一次的标准字段。仅本部门可见的字段不会出现在这里。</p>
+{# Who sees which rows follows the member's level, and the page says so out
+   loud: an empty table is otherwise indistinguishable from "nothing reported". #}
+<p class="meta scope-note">{% if role_label == '系统管理员' %}你是系统管理员，能看到所有部门的汇报。{% elif role_label == '部门管理员' %}你是部门管理员，只能看到你负责的部门的汇报。{% else %}你的身份只能看到自己提交的汇报。{% endif %}</p>
 
 {% if rows %}
 <table>
@@ -22,7 +25,7 @@
   </tbody>
 </table>
 {% else %}
-<p class="empty">还没有启用任何部门界面。部门负责人用 AI 制作并启用后，这里会出现他们的汇报。</p>
+<p class="empty">{% if role_label == '普通员工' %}你还没有提交过汇报。去部门界面填一条，它就会出现在这里。{% else %}还没有启用任何部门界面。部门负责人用 AI 制作并启用后，这里会出现他们的汇报。{% endif %}</p>
 {% endif %}
 
 <p class="sub"><a href="/progress">← 回到公司进度中心</a></p>

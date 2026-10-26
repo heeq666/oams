@@ -90,9 +90,28 @@ DEV_AUTOLOGIN_ADMIN_CODE = "ADMIN001"
 # you need to see the same page as a manager, then as somebody with no rights.
 DEV_WORKER_COOKIE = "workhub_dev_worker"
 
-DEV_ROLE_ADMIN = "系统管理员"
-DEV_ROLE_MANAGER = "管理员"
-DEV_ROLE_STAFF = "普通员工"
+# Three levels and only three: the company administrator, the administrator of
+# one or more departments, and everybody else. A level is read from the grants --
+# what the pages will actually let somebody do -- never from a job title, because
+# a title is a label somebody typed.
+ROLE_SYSTEM = "系统管理员"
+ROLE_DEPARTMENT = "部门管理员"
+ROLE_STAFF = "普通员工"
+ROLE_RANK = {ROLE_SYSTEM: 0, ROLE_DEPARTMENT: 1, ROLE_STAFF: 2}
+# Company-wide administration is exactly the grant that opens the settings pages;
+# anything narrower lifts somebody to department administrator and no higher.
+COMPANY_ADMIN_GRANT = "workforce.grants:manage"
+# Changing other people's work -- rather than only your own -- is what makes
+# somebody a department administrator. Reviewing a page is not in this list: a
+# reviewer still only reads their own department.
+_ADMIN_RESOURCES = ("workforce.work_items", "workforce.members", "workforce.interfaces",
+                    "workforce.positions", "workforce.assignments", "workforce.org_units",
+                    "workforce.grants")
+_ADMIN_GRANT_KEYS = frozenset(f"{resource}:manage" for resource in _ADMIN_RESOURCES)
+# Kept under the old names for the callers that still say "DEV_ROLE".
+DEV_ROLE_ADMIN = ROLE_SYSTEM
+DEV_ROLE_MANAGER = ROLE_DEPARTMENT
+DEV_ROLE_STAFF = ROLE_STAFF
 
 _DEV_PRINCIPAL_SQL = """SELECT m.member_id, m.employee_code, m.display_name, m.employment_status, m.token_version,
           NULL::uuid AS session_id, m.token_version AS session_token_version,
@@ -137,15 +156,15 @@ _DEV_IDENTITIES_TTL = 15.0
 def dev_role_label(grants: list[str] | tuple[str, ...] | None) -> str:
     """Name the level a member's grants actually add up to.
 
-    Read from the grants rather than from a title, because a title is a label
-    somebody typed and a grant is what the page will actually let them do.
+    The same rule admin_level() applies against the database, evaluated on a list
+    of "resource:action" keys, so the badge and the pages can never disagree.
     """
     held = {str(grant) for grant in (grants or ())}
-    if "workforce.members:manage" in held:
-        return DEV_ROLE_ADMIN
-    if any(grant.endswith(":manage") for grant in held):
-        return DEV_ROLE_MANAGER
-    return DEV_ROLE_STAFF
+    if COMPANY_ADMIN_GRANT in held:
+        return ROLE_SYSTEM
+    if held & _ADMIN_GRANT_KEYS:
+        return ROLE_DEPARTMENT
+    return ROLE_STAFF
 
 
 def dev_identities() -> list[dict[str, Any]]:
@@ -166,9 +185,8 @@ def dev_identities() -> list[dict[str, Any]]:
             rows = conn.execute(_DEV_IDENTITY_SQL).fetchall()
     except Exception:  # pragma: no cover - a database that is not migrated yet
         return []
-    rank = {DEV_ROLE_ADMIN: 0, DEV_ROLE_MANAGER: 1, DEV_ROLE_STAFF: 2}
     people = [dict(row, role_label=dev_role_label(row["grants"])) for row in rows]
-    people.sort(key=lambda person: (rank.get(person["role_label"], 9), person["employee_code"]))
+    people.sort(key=lambda person: (ROLE_RANK.get(person["role_label"], 9), person["employee_code"]))
     _DEV_IDENTITIES[settings.database_url] = (now, people)
     return people
 
@@ -288,6 +306,32 @@ def active_org_unit_ids(conn, member_id: Any) -> set[Any]:
 def has_company_scope(conn, member_id: Any) -> bool:
     """Company-wide operational visibility is reserved for security administrators."""
     return has_permission(conn, member_id, "workforce.grants", "manage")
+
+
+def has_admin_rights(conn, member_id: Any) -> bool:
+    """Can this member change other people's work, or only their own?"""
+    return any(has_permission(conn, member_id, resource, "manage") for resource in _ADMIN_RESOURCES)
+
+
+def admin_level(conn, member_id: Any) -> str:
+    """The one place that decides which of the three levels a member sits at.
+
+    Company scope is the settings-page grant; anything else in the administrator
+    set makes them the administrator of their own departments; everybody else is
+    staff. Pages ask this rather than repeating the grant list in their SQL.
+    """
+    if has_company_scope(conn, member_id):
+        return ROLE_SYSTEM
+    if has_admin_rights(conn, member_id):
+        return ROLE_DEPARTMENT
+    return ROLE_STAFF
+
+
+def administered_org_unit_ids(conn, member_id: Any) -> set[Any]:
+    """The departments a member runs: their own departments, once they manage anything."""
+    if not has_admin_rights(conn, member_id):
+        return set()
+    return active_org_unit_ids(conn, member_id)
 
 
 def can_access_org_unit(conn, member_id: Any, org_unit_id: Any) -> bool:

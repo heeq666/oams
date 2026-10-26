@@ -110,9 +110,12 @@ def _script() -> None:
 
     status, html = follow(lead_call, "/departments")
     has_rail, names, links = shell(html)
-    check("reviewer column shows only the department they may enter",
-          has_rail and names == ["设计部"], names)
-    check("reviewer top bar hides administrator entries", links == ["页面审核"], links)
+    # A reviewer who manages no department is staff: the column shows the company
+    # overview, the office floor and the one department they belong to -- nothing else.
+    check("staff column shows the company overview, their department and the office",
+          has_rail and names == ["公司总览", "设计部", "办公室平面图"], names)
+    check("staff top bar keeps the pages they may read",
+          links == ["进度中心", "汇报中心", "页面审核"], links)
     check("department tabs are inside the content area, not the sidebar",
           'class="page-tabs"' in html and names.count("设计部") == 1, names)
 
