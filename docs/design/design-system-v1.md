@@ -13,7 +13,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 | 页面 | node id | 内容 |
 | --- | --- | --- |
 | `01 · 设计令牌` | `3:89` | 文件级变量与文本样式（83 项） |
-| `02 · 组件库` | `0:1` | 唯一真源：27 个组件组，按三层结构分段 |
+| `02 · 组件库` | `0:1` | 唯一真源：27 个组件组 + 14 个模块组件，按三层结构分段 |
 | `03 · 页面稿` | `3:88` | 8 张整页稿（1440 宽）+ 滚动时序 |
 
 组件库页只有两个 frame：
@@ -24,7 +24,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
   3. `140:4064 组件层 · 控件 / 反馈 / 数据` —— `148:5928 基础件`（Button `148:5936` / Badge `3:159`）、`140:3571 表单控件`、`140:3691 反馈与状态`、`140:3842 数据展示`、两张 `用法` 实例拼装稿
   4. `140:4060 浮层 · 气泡 / 菜单 / 弹窗` —— Tooltip `140:3759`、Menu `140:3953`、Modal `140:3839`
   5. `146:4401 协作 · 抽屉 / 消息条 / 入口` —— FAB `146:4418`、消息条 `146:4445`、Drawer `147:5015`
-  6. 模块层（建设计划中，见 §6 末尾）
+  6. `148:5948 模块层 · 与 MODULE_REGISTRY 对齐` —— 14 个模块组件（容器 4 / 录入 6 / 展示 4），另 3 个复用「数据展示」里的 Metric card / Metrics / FlowStrip，见 §6
 - `128:3402 归档 · 旧骨架说明` —— 早期外壳画布的说明文字，**不要引用、不要复制**（组件已全部迁入主库）。
 
 整页稿都在 `03 · 页面稿`（`3:88`）：汇报中心 `3:1086`、进度中心 `3:1087`、登录 `111:818`、页面审核 `111:844`、设置 `111:1148`、讨论抽屉 `147:5194` / `146:4686`、滚动时序 `128:3298`。
@@ -111,9 +111,14 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 
 协作（`146:4401`）：`147:5015` 协作抽屉（高度=默认 / 到顶）、`146:4418` 协作入口 FAB（状态=默认 / 悬停 / 未读）、`146:4445` 协作消息条（发言=我的 AI / 本人）。
 
-模块层（待建，`app/workhub/modules.py` 的 20 个 key 与视觉模块一一对应）：容器 7（columns / rows / grid / card / tabs / divider / spacer）、录入 6（progress_row / table / timeline / blocker_list / metric_input / evidence_gallery）、展示 7（metric_card / metric_grid / flow_strip / status_chart / rank_list / activity_feed / note_block）。现状：完成 3（metric_card、metric_grid、flow_strip）、半成品 4（card、tabs、table、metric_input）、缺 9（divider、progress_row、timeline、blocker_list、evidence_gallery、status_chart、rank_list、activity_feed、note_block）；columns / rows / grid / spacer 是排版结构，靠规范不建组件。
+模块层（`148:5948`，与 `app/workhub/modules.py` 的 20 个 key 一一对应；14 个新组件 + 3 个复用 = 20/20 覆盖）：容器 7（columns / rows / grid 是排版结构，靠规范不建组件；card `148:5953`、tabs `148:5967`、divider `148:5980`、spacer `148:5985`）、录入 6（progress_row `148:6238`、table `148:6183`、timeline `148:6223`、blocker_list `148:6079`、metric_input `148:5989`、evidence_gallery `148:6088`）、展示 7（metric_card `3:169`、metric_grid `58:689`、flow_strip `3:330` 三者复用「数据展示」下的既有件；status_chart `148:6249`、rank_list `148:6279`、activity_feed `148:6301`、note_block `148:6322`）。
 
-协作抽屉（`147:5015`，浮层，走 §7.3 的面板状浮层：白 92% + blur 16 + 唯一投影 + `radius/card`）：
+模块层的规格**逐条照 `static/workhub-modules.css` 落**，不是凭设计感画的：模块块面圆角 20（`radius/control`——它套在 28 的卡里，同层嵌套不重复用 28）、内距 16、子模块间距 8～10，字号 / 行高 / 列宽都对着 CSS 抄；每个组件的 description 里写了对应的 `wh-*` 类名，改代码时对着看。
+
+- 两套表格并存，别混：**外壳表**（`base.html:497` td 内距 10/12、行高 21、字号 14 → 行高 41，组件层 Table 行 `140:3902` 就是它）；**模块表**（`.wh-table` 内距 6/8、字号 13 → 行高 30，模块层 `148:6183`）。页面里的数据表用外壳表，embed 进部门模块的明细表用模块表。
+- 已知代码缺陷（待修）：`static/workhub-modules.css:289-297` 的 `.wh-input{width:100%;padding:6px 8px;border-radius:var(--wh-radius-sm)}` 与模块外壳类 `.wh-m.wh-input` **同名冲突**，input 类模块（metric_input、progress_row 编辑态）的外壳内距被压成 6/8、圆角被压成 12。
+
+协作抽屉（`147:5015`，浮层，走 §7.3 的面板状浮层：白 78% + blur 16 + 唯一投影 + `radius/card`）：
 
 - **它是页面上的讨论层，不是导航项**：不新增顶级菜单，每个页面右下角一颗 48 圆的 FAB 呼出；未读只有一种含义——「我正在看的这个页面上有 N 条没看过的讨论」。
 - **高度两档**：默认 480 定高、消息区内部滚动；「到顶」拉满视口高 − 上下各 24。消息一律 `primaryAxisAlignItems: MAX` 贴着输入框排，矮抽屉看不出差别，拉高才不露空。
@@ -134,15 +139,17 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
    backdrop-filter: saturate(1.2) blur(10px);
    box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);   /* 唯一的投影，别加第二层 */
 
-   /* 面板状浮层：菜单、下拉框展开层、Tooltip —— 白 92% + blur 16，基本不透 */
-   background: rgba(255, 255, 255, .92);
+   /* 面板状浮层：菜单、下拉框展开层、Tooltip —— 白 78% + blur 16，比条状浮层更雾 */
+   background: rgba(255, 255, 255, .78);
    backdrop-filter: saturate(1.3) blur(16px);
    box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
    ```
 
    为什么面板比条状浮层更雾：菜单里要读字，底下正文必须退到雾里，否则两层文字叠在一起谁也读不清；顶栏只承载导航，看得见底下流动的内容才是它存在的意义。两者的投影**同一值**，只差粒度。
 
-   **面板档靠白、不靠 blur**（2026-10-26 定，原 .78）：.78 的白压不住正文，字还剩 22% 的轮廓，肉眼就是「弹窗透得太明显」；而条状档看起来更实，差别不在数值，在于条状档底下是滚过去的内容，面板底下常是表格里的黑字。既然 `backdrop-filter` 不是所有机器都吃（老的 Intel Mac、部分集显浏览器会直接不上），就不拿它兜底：白提到 92%，保底「只透一点点」，blur 16 留作锦上添花。
+   **浮层不能长在 `<details>` 里**（2026-10-26 定，踩过）：账号菜单与身份菜单一度把面板塞在 `<details>` 内部，结果是「菜单透得比顶栏胶囊明显得多」。原因不在数值——`<details>` 是一个 backdrop root，里面的 `backdrop-filter` 只能采样这个 root 内部的绘制内容，拿不到页面背景，玻璃就退化成一层平白，底下的字照样清晰可读。同一份配方挂到 `<body>` 上立刻正常（同一块黑白条纹实测：`<details>` 里条纹残留 p2p 94，`<body>` 上 p2p 4）。所以浮层一律挂 `<body>`、`position: fixed`，触发器可以继续用 `<details>`（它自己会开合），面板交给脚本摆放。`static/wh-select.js` 的 `.wh-list` 一开始就是这么做的。
+
+   `<details>` 之外，也别把浮层塞进带 `transform` / `filter` / `opacity < 1` / `mask` 的容器：它们同样可能成为 backdrop root，玻璃就只剩一层白。
 
    **不落遮罩**（2026-10-26 定）：菜单和下拉框底下一度盖过一层 `rgba(10,10,10,.12)` 的薄雾，撤掉了——blur 已经把正文糊开，再压一层灰只会让整页发闷、面板显脏。代价是**「点到别处要关掉」得由脚本兜住**（`.account-menu` / `.dev-menu` 靠 document click + Esc，`.wh-list` 靠 document mousedown + scroll + Esc），谁加新浮层谁负责这一条，别指望遮罩替你收尾。将来的 Modal 要不要遮罩，等真做时单独定，不要顺手抄菜单。
 
@@ -199,8 +206,8 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 - `base.html`：删掉被 shadcn 皮肤块完全覆盖的旧 `:root`（旧暗色系 9 个变量），全文件只留一套令牌；新增 `--ink-2`、`--on-accent`、`--accent-hover`、`--hover`、`--blocked-strong`、`--warning-ink`、`--info-soft` 与 status line 四色；所有字面 hex / 字面圆角改成 `var(--*)`。
 - Figma 侧同步：Segmented 容器 8→20、段 6→12；Tabs 6→12；FlowStrip 容器 8→12、阶段块 6→20；RailItem 6→12。Figma 里不再有 6/8 两个档外值。
 - 浮层统一成玻璃态：账号菜单与开发模式身份菜单从「纯白 + 投影」改成玻璃 + `0 4px 12px -2px rgba(15,23,42,.10)`；此前只有顶栏有玻璃，菜单还是白纸，点开时像贴了一张卡片上去。
-- 浮层分两档：条状浮层 70% 白 + blur(10)，面板状浮层 92% 白 + blur(16)（菜单里要读字，blur 只是锦上添花，靠白兜底）。
-- 面板档白从 78% 提到 92%（同日）：78% 压不住正文，用户实测「弹窗透底部文字很明显」。详细理由见 §7.3。
+- 浮层分两档：条状浮层 70% 白 + blur(10)，面板状浮层 78% 白 + blur(16)（菜单里要读字，所以面板档更雾）。
+- 面板档一度加到 92% 白（同日，先加后撤）：当时误判成「白不够厚」，真因是 `<details>` 是 backdrop root，`backdrop-filter` 压根没生效。把面板挪到 `<body>` 后 blur 回来了，白退回 78%，两个档位重新只差粒度。详见 §7.3。
 - 遮罩撤掉（同日）：`.menu-scrim`、`--scrim-soft`、`--scrim`、`window.whScrim` 全部删除。理由见 §7.3——12% 的灰叠在 blur 之上只是让整页发闷，玻璃本身已经够分离；代价是关闭浮层必须靠脚本（document click / mousedown / scroll / Esc）兜住。
 - 顶栏玻璃搬家：`backdrop-filter` 从 `header.topbar` 移到内部 `.bar-glass` 层。带 `backdrop-filter` 的元素自己就是 backdrop root，玻璃长在顶栏上时，嵌在里面的账号菜单取不到页面背景，雾只剩一层白。
 - 字号与行高收口：徽章 `11.5px → 12px`、开发角标箭头 `10px → 11px`、模块层指标 `.wh-metric-value` `22px → 24px`（与外壳 `.metric .n` 同号）；表格 `th/td` 行盒固定 `line-height: 21px` + 上下 10px，实测行高 41，终于对上 §7.6。
@@ -210,7 +217,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 
 ### 8.3 已知例外（别照抄，也别改错）
 
-- **玻璃态的五个落点**（代码事实，改之前先确认）：顶栏 `header.topbar.is-scrolled .bar-glass`（720 胶囊，静止态透明）、静止态中间的 `.bar-nav` 胶囊、账号菜单 `.account-menu`、开发模式身份菜单 `.dev-menu`、下拉框展开层 `.wh-list`。前两处是条状档（70% 白 / blur 10），后三处是面板档（92% 白 / blur 16），投影全用同一值；档位混用会看出两种玻璃。**没有遮罩**：透明到能看见底下内容但不该盖一层灰，浮层靠 blur 与投影分离。
+- **玻璃态的五个落点**（代码事实，改之前先确认）：顶栏 `header.topbar.is-scrolled .bar-glass`（720 胶囊，静止态透明）、静止态中间的 `.bar-nav` 胶囊、账号菜单 `.account-menu`、开发模式身份菜单 `.dev-menu`、下拉框展开层 `.wh-list`。前两处是条状档（70% 白 / blur 10），后三处是面板档（78% 白 / blur 16），投影全用同一值；档位混用会看出两种玻璃。这三个面板都必须挂在 `<body>` 上（见 §7.3 的 backdrop root 那条），塞回 `<details>` 里玻璃就失效。**没有遮罩**：透明到能看见底下内容但不该盖一层灰，浮层靠 blur 与投影分离。
 - **楼层平面图 / 工位图**（`base.html` 的 `.zone` `.desk` `.floor-bg` `.editor .item`）用一组示意图专用色：#eef2ef/#cfe3d6、#fdf6e8/#e8cf94、#fdf1ef/#eeb2a8、#f7f8f9/#b8bec4、#f6f7f8/#d9dde1、#d3d9de、#fbfcfd、#98a0a8。它们是 SVG 图元填充，不进令牌；要改整组一起改。
 - `--r-sm`（=微 4）与 `--r-lg`（=小控件 12）是历史别名，新代码直接用 `--r-micro` / `--r-small`。
 - `radius/md`(8)、`radius/xl`(14) 留在 Figma 变量里但不再使用。

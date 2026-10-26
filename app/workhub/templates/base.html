@@ -395,26 +395,27 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                                    font-weight: 500; }
   header.topbar .account > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   header.topbar .account[open] .avatar { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14); }
-  /* 浮层一律玻璃态（design-system-v1 §7.3）。面板档的白要更厚：条状档靠 blur 把底下的字糊成
-    一片灰，面板档做不到——面板里有自己要读的字，读者分不清哪层字是自己的，两层叠在一起
-    就成了「透得太明显」。所以不指望 blur 兜底（有的机器根本不上 backdrop-filter），改用
-     白 92% 保证「只透一点点」，blur 16 只是锦上添花。投影仍只有一层。 */
-  header.topbar .account-menu { position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
-                               min-width: 208px; padding: 6px; border-radius: var(--r-card); text-align: left;
-                               background: rgba(255, 255, 255, .92);
-                               -webkit-backdrop-filter: saturate(1.3) blur(16px);
-                               backdrop-filter: saturate(1.3) blur(16px);
-                               box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
-  header.topbar .account-menu .menu-head { padding: 8px 10px 10px; margin-bottom: 6px;
-                                          border-bottom: 1px solid var(--line); }
-  header.topbar .account-menu .menu-name { color: var(--ink); font-size: 13px; font-weight: 500; }
-  header.topbar .account-menu .menu-role { margin-top: 2px; color: var(--muted); font-size: 12px;
-                                          overflow: hidden; text-overflow: ellipsis; }
-  header.topbar .account-menu .menu-item { display: block; width: 100%; height: 32px; padding: 0 10px;
-                                          border: 0; border-radius: var(--r-small); background: none;
-                                          color: var(--ink); font-size: 13px; font-weight: 400;
-                                          line-height: 32px; text-align: left; cursor: pointer; }
-  header.topbar .account-menu .menu-item:hover { background: var(--subtle); color: var(--ink); }
+  /* 浮层一律玻璃态（design-system-v1 §7.3）。面板档与条状档同一份配方，只多半档白。
+     位置由脚本算（fixed + 贴着头像的右下沿），因为这个面板在 DOM 里挂在 body 上——
+     不能在 <details> 里：details 会成为 backdrop root，里面的 backdrop-filter 拿不到
+     页面背景，玻璃就退化成一层白，底下的字照样透出来。见页尾的 wirePanel()。 */
+  .account-menu { position: fixed; z-index: 40; min-width: 208px; padding: 6px;
+                  border-radius: var(--r-card); text-align: left;
+                  background: rgba(255, 255, 255, .78);
+                  -webkit-backdrop-filter: saturate(1.3) blur(16px);
+                  backdrop-filter: saturate(1.3) blur(16px);
+                  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
+  .account-menu[hidden] { display: none; }
+  .account-menu .menu-head { padding: 8px 10px 10px; margin-bottom: 6px;
+                             border-bottom: 1px solid var(--line); }
+  .account-menu .menu-name { color: var(--ink); font-size: 13px; font-weight: 500; }
+  .account-menu .menu-role { margin-top: 2px; color: var(--muted); font-size: 12px;
+                             overflow: hidden; text-overflow: ellipsis; }
+  .account-menu .menu-item { display: block; width: 100%; height: 32px; padding: 0 10px;
+                             border: 0; border-radius: var(--r-small); background: none;
+                             color: var(--ink); font-size: 13px; font-weight: 400;
+                             line-height: 32px; text-align: left; cursor: pointer; }
+  .account-menu .menu-item:hover { background: var(--subtle); color: var(--ink); }
   /* The rail holds the current section's views, centred on the screen rather
      than stacked from the top: the bottom padding is the bar's height, so the
      group reads as centred in the window instead of drooping below the bar. */
@@ -571,14 +572,14 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      leave an 8px block next to a 28px one. Read the token comment at the top of
      :root for the five tiers; this block is the only place that picks one. */
   .card, .metric, .channel-scorecard, .detail, .panel, .auth-card,
-  header.topbar .account-menu { border-radius: var(--r-card); }
+  .account-menu { border-radius: var(--r-card); }
   button, .btn, .btn-ghost, .btn-danger, .btn-sm, button.ghost, button.danger,
   button.sm, .pill, .badge, .tabs a, .flowstrip .stage { border-radius: var(--r-pill); }
   input, select, textarea, .strip, .flash, .diff-block, ul.items > li,
   .wh-interface .wh-container { border-radius: var(--r-control); }
   /* 32px-tall controls and the small blocks that sit inside a card */
   .seg, .orgnav, .app-rail .rail-item, .tabs.layers a, td input, td select,
-  td textarea, header.topbar .account-menu .menu-item,
+  td textarea, .account-menu .menu-item,
   .wh-interface .wh-input, .wh-interface .wh-tabpanel { border-radius: var(--r-small); }
   /* A 16px box cannot take the 20px control radius -- it would become a circle. */
   input[type="checkbox"] { border-radius: var(--r-micro); }
@@ -679,18 +680,19 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .dev-switch[open] > .dev-badge { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14), 0 4px 12px -2px rgba(15, 23, 42, .10); }
   .dev-badge .dot { width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--done); }
   .dev-badge .caret { margin-left: 2px; opacity: .65; font-size: 11px; }
+  /* 同 .account-menu：挂在 body 上、由脚本定位，绝不能塞回 <details>。 */
   .dev-menu {
-    position: absolute;
-    right: 0;
-    bottom: calc(100% + 8px);
+    position: fixed;
+    z-index: 60;
     min-width: 268px;
     padding: 6px;
     border-radius: var(--r-card);
-    background: rgba(255, 255, 255, .92);
+    background: rgba(255, 255, 255, .78);
     -webkit-backdrop-filter: saturate(1.3) blur(16px);
     backdrop-filter: saturate(1.3) blur(16px);
     box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
   }
+  .dev-menu[hidden] { display: none; }
   .dev-menu-head {
     margin: 0;
     padding: 8px 10px 6px;
@@ -731,27 +733,6 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   <summary class="dev-badge" aria-haspopup="menu" title="设计开发阶段：已跳过登录。点开可以换成别的身份看同一页；去掉 WORKHUB_DEV_AUTOLOGIN 并重启即恢复登录。">
     <span class="dot" aria-hidden="true"></span>开发模式 · 免登录{% if member %} · {{ member.display_name }}{% endif %}<span class="caret" aria-hidden="true">▼</span>
   </summary>
-  <div class="dev-menu" role="menu">
-    <p class="dev-menu-head">切换身份看这一页（仅开发开关打开时出现）</p>
-    {% for person in dev_identities() %}
-    <form method="post" action="/dev/identity">
-      <input type="hidden" name="code" value="{{ person.employee_code }}">
-      <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
-      <button type="submit" class="dev-item{% if member and member.member_id == person.member_id %} is-on{% endif %}" role="menuitem">
-        <span class="nm">{{ person.display_name }}</span>
-        <span class="role">{{ person.role_label }}</span>
-      </button>
-    </form>
-    {% endfor %}
-    {% if request.cookies.get(dev_cookie_name) %}
-    <div class="sep"></div>
-    <form method="post" action="/dev/identity">
-      <input type="hidden" name="code" value="">
-      <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
-      <button type="submit" class="dev-item" role="menuitem"><span class="nm">恢复默认身份</span><span class="role">按启动参数</span></button>
-    </form>
-    {% endif %}
-  </div>
 </details>
 {% endif %}
 {# The shell is one block so a page without navigation (login) can replace it
@@ -791,15 +772,6 @@ body { margin: 0; background: var(--bg); color: var(--ink);
          only add click-outside and Escape. #}
       <details class="account" id="account">
         <summary class="avatar" aria-haspopup="menu" aria-label="账号菜单" title="账号菜单">{{ member.display_name[:1] }}</summary>
-        <div class="account-menu" role="menu" aria-label="账号">
-          <div class="menu-head">
-            <div class="menu-name">{{ member.display_name }}</div>
-            <div class="menu-role">{{ member.position_title or '未分配岗位' }}</div>
-          </div>
-          <form method="post" action="/logout" class="inline">
-            <button type="submit" class="menu-item" role="menuitem">退出登录</button>
-          </form>
-        </div>
       </details>
     {% else %}
       <a href="/login">登录</a>
@@ -835,6 +807,47 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   </main>
 </div>
 {% endblock %}
+{# The two menus live down here, not inside their triggers. A <details> element is a
+   backdrop root: a panel nested in it can only sample what paints inside that root,
+   so its backdrop-filter had nothing to blur -- the glass degraded to a flat white
+   sheet and the page's own text stayed readable through it. That is why the account
+   menu looked "much more see-through" than the top-bar capsule, which is not in a
+   details. Kept at body level the same recipe blurs the page like the capsule does.
+   The triggers are still <details>, so they still open without script. #}
+{% if member %}
+<div class="account-menu" id="account-menu" role="menu" aria-label="账号" hidden>
+  <div class="menu-head">
+    <div class="menu-name">{{ member.display_name }}</div>
+    <div class="menu-role">{{ member.position_title or '未分配岗位' }}</div>
+  </div>
+  <form method="post" action="/logout" class="inline">
+    <button type="submit" class="menu-item" role="menuitem">退出登录</button>
+  </form>
+</div>
+{% endif %}
+{% if dev_mode() %}
+<div class="dev-menu" id="dev-menu" role="menu" hidden>
+  <p class="dev-menu-head">切换身份看这一页（仅开发开关打开时出现）</p>
+  {% for person in dev_identities() %}
+  <form method="post" action="/dev/identity">
+    <input type="hidden" name="code" value="{{ person.employee_code }}">
+    <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+    <button type="submit" class="dev-item{% if member and member.member_id == person.member_id %} is-on{% endif %}" role="menuitem">
+      <span class="nm">{{ person.display_name }}</span>
+      <span class="role">{{ person.role_label }}</span>
+    </button>
+  </form>
+  {% endfor %}
+  {% if request.cookies.get(dev_cookie_name) %}
+  <div class="sep"></div>
+  <form method="post" action="/dev/identity">
+    <input type="hidden" name="code" value="">
+    <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+    <button type="submit" class="dev-item" role="menuitem"><span class="nm">恢复默认身份</span><span class="role">按启动参数</span></button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
 {% block tail %}{% endblock %}
 <script>
   (function () {
@@ -851,27 +864,40 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       }
     }, { root: scroller, threshold: 0 }).observe(marker);
   })();
-  // Both menus are <details>, so they open and close on their own; these two
-  // listeners only add what a menu is expected to do -- close on an outside
-  // click and on Escape, so it cannot be left open behind the page. One loop for
-  // both, because "the account menu does it" is not a reason for the next menu
-  // not to.
-  var menus = [];
-  ['account', 'dev-switch'].forEach(function (id) {
-    var menu = document.getElementById(id);
-    if (!menu) return;
-    menus.push(menu);
+  // The triggers are still <details>, so they open and close on their own. What
+  // they no longer own is the panel: it sits at body level (see the note by the
+  // markup), so opening has to position it by hand, and closing has to be watched
+  // for here, because the panel is outside the element whose "did the click land
+  // inside me" test would otherwise cover it.
+  function wireMenu(detailsId, panelId, above) {
+    var host = document.getElementById(detailsId);
+    var panel = document.getElementById(panelId);
+    if (!host || !panel) return;
+    var trigger = host.querySelector('summary');
+    function place() {
+      if (!trigger) return;
+      var r = trigger.getBoundingClientRect();
+      panel.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+      panel.style.top = (above ? Math.max(8, r.top - panel.offsetHeight - 8)
+                               : r.bottom + 10) + 'px';
+    }
+    host.addEventListener('toggle', function () {
+      panel.hidden = !host.open;
+      if (host.open) place();
+    });
+    window.addEventListener('resize', function () { if (host.open) place(); });
     document.addEventListener('click', function (event) {
-      if (menu.open && !menu.contains(event.target)) menu.open = false;
+      if (host.open && !host.contains(event.target) && !panel.contains(event.target)) host.open = false;
     });
     document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && menu.open) {
-        menu.open = false;
-        var summary = menu.querySelector('summary');
-        if (summary) summary.focus();
+      if (event.key === 'Escape' && host.open) {
+        host.open = false;
+        if (trigger) trigger.focus();
       }
     });
-  });
+  }
+  wireMenu('account', 'account-menu', false);
+  wireMenu('dev-switch', 'dev-menu', true);
   // 之前这里落过一层 rgba(10,10,10,.12) 的薄雾（.menu-scrim）。撤了：玻璃本身
   // 已经把底下压下去，再盖一层灰会让整页发闷，菜单反而显得脏。没有遮罩就靠
   // 上面那两个监听兜住「点到别处要关掉」，别让人把面板留在页面上。
