@@ -300,6 +300,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     --r-sm: var(--r-micro); --r-md: 8px; --r-lg: var(--r-small);
     --r-xl: var(--r-card);
     --ring: #a1a1a1; --rail-w: 127px;
+    /* 浮层遮罩两档（design-system-v1 §7.3）：菜单这类小浮层只要一层薄雾把底下
+       正文压下去；模态要挡住整页注意力，所以 .32。遮罩自身不加 blur —— 模糊
+       是面板的事，两层 blur 叠在一起会把底图糊成一块灰。 */
+    --scrim-soft: rgba(10, 10, 10, .12); --scrim: rgba(10, 10, 10, .32);
   }
   body { font-size: 14px; -webkit-font-smoothing: antialiased; }
   /* The bar is a floating capsule, not a full-width strip: it sits 20px below
@@ -329,11 +333,26 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                               background-color 240ms cubic-bezier(.4, 0, .2, 1),
                               box-shadow 240ms cubic-bezier(.4, 0, .2, 1),
                               backdrop-filter 240ms cubic-bezier(.4, 0, .2, 1); }
-  header.topbar.is-scrolled { width: 720px; padding: 0 20px;
-                              background: rgba(255, 255, 255, .70);
-                              -webkit-backdrop-filter: saturate(1.2) blur(10px);
-                              backdrop-filter: saturate(1.2) blur(10px);
-                              box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
+  header.topbar.is-scrolled { width: 720px; padding: 0 20px; }
+  /* The glass lives on this inner layer, not on <header>, for one reason:
+     an element that carries backdrop-filter becomes a backdrop root, and any
+     dropdown nested inside it can then only sample what is painted *within*
+     that root -- the page behind it stays sharp. Measured: the account menu kept
+     ~50-76% of the background's edge energy while nested in the bar, ~4-13% when
+     moved out of it. So the bar paints its own glass on a sibling layer and the
+     menus get a clean backdrop again. Keep it that way: never put
+     backdrop-filter back on header.topbar. */
+  header.topbar .bar-glass { position: absolute; inset: 0; z-index: 0; pointer-events: none;
+                             border-radius: var(--r-pill); background: rgba(255, 255, 255, 0);
+                             transition: background-color 240ms cubic-bezier(.4, 0, .2, 1),
+                                         box-shadow 240ms cubic-bezier(.4, 0, .2, 1),
+                                         backdrop-filter 240ms cubic-bezier(.4, 0, .2, 1); }
+  header.topbar.is-scrolled .bar-glass { background: rgba(255, 255, 255, .70);
+                                         -webkit-backdrop-filter: saturate(1.2) blur(10px);
+                                         backdrop-filter: saturate(1.2) blur(10px);
+                                         box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
+  /* Everything else in the bar sits above that layer. */
+  header.topbar > *:not(.bar-glass) { position: relative; z-index: 1; }
   header.topbar a { color: var(--ink); text-decoration: none; }
   header.topbar .brand { justify-self: start; display: flex; align-items: center; gap: 10px;
                          font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
@@ -379,13 +398,13 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                                    font-weight: 500; }
   header.topbar .account > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   header.topbar .account[open] .avatar { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14); }
-  /* 浮层一律玻璃态（design-system-v1 §7.3）：与顶栏胶囊同一份 70% 白 + blur 10 + 一层淡投影，
-     所以点开时它看起来像胶囊自己长出来的一块，而不是一张贴上去的白纸。 */
+  /* 浮层一律玻璃态（design-system-v1 §7.3）。面板档比条状档更雾：菜单里要读字，底下的
+     正文必须退到雾里，否则两层字叠在一起谁也读不清。所以白 78% + blur 16，投影仍只有一层。 */
   header.topbar .account-menu { position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
                                min-width: 208px; padding: 6px; border-radius: var(--r-card); text-align: left;
-                               background: rgba(255, 255, 255, .70);
-                               -webkit-backdrop-filter: saturate(1.2) blur(10px);
-                               backdrop-filter: saturate(1.2) blur(10px);
+                               background: rgba(255, 255, 255, .78);
+                               -webkit-backdrop-filter: saturate(1.3) blur(16px);
+                               backdrop-filter: saturate(1.3) blur(16px);
                                box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
   header.topbar .account-menu .menu-head { padding: 8px 10px 10px; margin-bottom: 6px;
                                           border-bottom: 1px solid var(--line); }
@@ -646,9 +665,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     min-width: 268px;
     padding: 6px;
     border-radius: var(--r-card);
-    background: rgba(255, 255, 255, .70);
-    -webkit-backdrop-filter: saturate(1.2) blur(10px);
-    backdrop-filter: saturate(1.2) blur(10px);
+    background: rgba(255, 255, 255, .78);
+    -webkit-backdrop-filter: saturate(1.3) blur(16px);
+    backdrop-filter: saturate(1.3) blur(16px);
     box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
   }
   .dev-menu-head {
@@ -679,10 +698,18 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .dev-item .nm { font-weight: 500; }
   .dev-item .role { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
   .dev-menu .sep { height: 1px; margin: 6px 4px; background: var(--line); }
+  /* 浮层底下的薄雾。它必须挂在 body 上，不能塞进 <details> 里：顶栏是
+     translateX(-50%) 的定位祖先，fixed 子元素会被它关在 1440×40 的盒子里，
+     遮罩就只能盖住顶栏自己。z-index 25 是刻意的：压在正文上，顶栏(30)和
+     开发角标(60)仍在雾外，所以打开菜单时那两块不发灰。 */
+  .menu-scrim { position: fixed; inset: 0; z-index: 25; background: var(--scrim-soft);
+                opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
+  .menu-scrim.is-on { opacity: 1; pointer-events: auto; }
 </style>
 </head>
 {% set path = request.url.path %}
 <body class="{% block bodyclass %}{% endblock %}">
+<div class="menu-scrim" id="menu-scrim" aria-hidden="true"></div>
 {# Design stage says the login screen is off. Saying so on every page is the cheap
    insurance against shipping that state: nobody can look at the app and not know
    why it never asked who they are. #}
@@ -722,6 +749,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
    the middle, the account on the right. It floats over the frame instead of
    taking a row of it, so the content scrolls underneath the glass. #}
 <header class="topbar" id="topbar">
+  {# Glass on its own layer: see the note on .bar-glass in the stylesheet. #}
+  <span class="bar-glass" aria-hidden="true"></span>
   {# The logo goes to the first screen this person can actually use: a link that
      answers 403 is worse than no link at all. #}
   <a class="brand" href="{% if caps.progress %}/progress{% elif caps.review %}/reviews{% elif caps.admin %}/settings{% else %}/departments{% endif %}" aria-label="Workhub 首页">
@@ -814,9 +843,12 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   // click and on Escape, so it cannot be left open behind the page. One loop for
   // both, because "the account menu does it" is not a reason for the next menu
   // not to.
+  var scrim = document.getElementById('menu-scrim');
+  var menus = [];
   ['account', 'dev-switch'].forEach(function (id) {
     var menu = document.getElementById(id);
     if (!menu) return;
+    menus.push(menu);
     document.addEventListener('click', function (event) {
       if (menu.open && !menu.contains(event.target)) menu.open = false;
     });
@@ -827,6 +859,20 @@ body { margin: 0; background: var(--bg); color: var(--ink);
         if (summary) summary.focus();
       }
     });
+  });
+  // 任何菜单打开就落雾，全部关上就撤雾；点雾本身也关菜单（雾是盖在正文上的，
+  // 点到它就说明视线已经离开面板）。
+  function syncScrim() {
+    if (!scrim) return;
+    var open = menus.some(function (menu) { return menu.open; });
+    scrim.classList.toggle('is-on', open);
+  }
+  menus.forEach(function (menu) {
+    menu.addEventListener('toggle', syncScrim);
+    syncScrim();
+  });
+  if (scrim) scrim.addEventListener('click', function () {
+    menus.forEach(function (menu) { menu.open = false; });
   });
 </script>
 </body>
