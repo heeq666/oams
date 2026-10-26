@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Workhub{% endblock %}</title>
 <script src="/static/vendor/htmx.min.js" defer></script>
+<script src="/static/wh-select.js" defer></script>
 <style>
   * { box-sizing: border-box; }
   /* The shell owns the viewport: the top bar and the rail never move, and only the
@@ -463,6 +464,28 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .btn-sm, button.sm { padding: 6px 12px; font-size: 13px; }
   input, select, textarea { border-radius: var(--r-control); padding: 9px 12px; font-size: 14px;
                             border-color: var(--line); }
+  /* 下拉框的收起态：系统箭头换成同一支 12px 的细线箭头（text/muted），给箭头留出
+     34px 的右内边距，否则长选项会顶到箭头上。展开态由 wh-select.js 接管。 */
+  select:not([multiple]) { appearance: none; -webkit-appearance: none; padding-right: 34px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4.5 6 8.5l4-4' fill='none' stroke='%23737373' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat; background-position: right 12px center; background-size: 12px 12px; }
+  select.is-open { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(15, 23, 42, .04); }
+  /* 展开层：和菜单同一套玻璃（design-system-v1 §7.3 面板档）。行 32 高、圆角 12、
+     选中行加勾；一行只放一条选项，不折行。 */
+  .wh-list { position: fixed; z-index: 45; padding: 6px; max-height: 320px; overflow-y: auto;
+             overscroll-behavior: contain; border-radius: var(--r-card);
+             background: rgba(255, 255, 255, .78);
+             -webkit-backdrop-filter: saturate(1.3) blur(16px);
+             backdrop-filter: saturate(1.3) blur(16px);
+             box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
+  .wh-list .wh-opt { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px;
+                     border-radius: var(--r-small); color: var(--ink); font-size: 13px; line-height: 32px;
+                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .wh-list .wh-opt .tick { flex: 0 0 12px; width: 12px; color: var(--accent); font-size: 12px; }
+  .wh-list .wh-opt.is-active { background: var(--subtle); }
+  .wh-list .wh-opt[aria-selected="true"] { font-weight: 500; }
+  .wh-list .wh-opt[aria-disabled="true"] { color: var(--muted); cursor: default; }
+  .wh-list .wh-group { padding: 8px 10px 4px; color: var(--muted); font-size: 11px; line-height: 14px; }
   input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ring);
                                               box-shadow: 0 0 0 3px rgba(15, 23, 42, .04); }
   label { font-size: 13px; color: var(--ink); }
@@ -860,19 +883,24 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       }
     });
   });
-  // 任何菜单打开就落雾，全部关上就撤雾；点雾本身也关菜单（雾是盖在正文上的，
-  // 点到它就说明视线已经离开面板）。
-  function syncScrim() {
-    if (!scrim) return;
-    var open = menus.some(function (menu) { return menu.open; });
-    scrim.classList.toggle('is-on', open);
-  }
+  // 雾是公共的：菜单和下拉框（wh-select.js）都会借它。用引用计数而不是布尔——
+  // 否则关掉菜单会把下拉框底下的雾一起撤了。点雾本身关掉所有浮层：雾盖在正文上，
+  // 点到它就说明视线已经离开面板。
+  var scrimHolds = 0;
+  window.whScrim = {
+    on: function () { scrimHolds += 1; if (scrim) scrim.classList.add('is-on'); },
+    off: function () { scrimHolds = Math.max(0, scrimHolds - 1); if (scrim && !scrimHolds) scrim.classList.remove('is-on'); }
+  };
   menus.forEach(function (menu) {
-    menu.addEventListener('toggle', syncScrim);
-    syncScrim();
+    var held = false;
+    menu.addEventListener('toggle', function () {
+      if (menu.open && !held) { held = true; window.whScrim.on(); }
+      else if (!menu.open && held) { held = false; window.whScrim.off(); }
+    });
   });
   if (scrim) scrim.addEventListener('click', function () {
     menus.forEach(function (menu) { menu.open = false; });
+    if (window.whSelect) window.whSelect.close();
   });
 </script>
 </body>

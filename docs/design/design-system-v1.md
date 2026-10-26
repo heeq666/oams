@@ -40,7 +40,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 
 状态色一律三件套 `status/{语义}` + `-subtle`（底）+ `-line`（边）：success #16A34A / warning #D97706 / danger #DC2626 / info #2563EB / neutral #525252。
 
-`heat/*` 是看板热度格；`data/agent` #7C3AED 只用来区分「AI 产出」与「人产出」，别拿它当品牌色。
+`heat/*` 是看板热度格；`data/agent` #7C3AED 只用来区分「AI 产出」与「人产出」，别拿它当品牌色。配套的 `data/agent-subtle` #F5F3FF 与 `data/agent-line` #DDD6FE 是 `model` 徽章的底与边（浅紫底紫字），别单独拿去刷卡片。
 
 ## 3. 圆角：五档，不许发明第六档
 
@@ -89,6 +89,8 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 
 表单（`140:3571`）：`140:3585` Input 5v、`140:3594` Textarea 3v、`140:3612` Select 3v、`140:3625` Search 2v、`140:3643` Checkbox 4v、`140:3656` Radio 3v、`140:3671` Switch 3v、`140:3688` Field 2v。
 
+- **Select 的展开层归我们管**（`static/wh-select.js`，约 150 行）：原生 `<select>` 仍是表单主人——值、`name`、`required`、`disabled`、无脚本兜底全归它；脚本只在 `mousedown` 上拦掉系统弹出层，自己画一个 `.wh-list` 面板（面板档浮层：白 78% + blur 16 + `radius/card` 28，行高 32、行圆角 `radius/small` 12、选中行 500 字重 + ✓，`z-index` 45）。20 处 `<select>` 不用改一个标记就统一了；脚本挂了页面退化成系统下拉，不会坏——这是它敢用事件委托而不是初始化扫描的原因（htmx 会整块换表、办公室编辑器运行时造 select，逐个绑定必漏）。
+
 反馈（`140:3691`）：`140:3754` Alert 4v、`140:3783` Progress 3v、`140:3797` Skeleton 2v、`140:3804` Empty 1v。
 
 数据（`140:3842`）：`140:4378` Link 操作 2v、`140:3902` Table 行 4v、`140:4194` Table 弹性列 4v、`140:3918` Pagination、`140:3973` Avatar 3v、`140:3940` Breadcrumb。
@@ -99,7 +101,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 
 - **它是页面上的讨论层，不是导航项**：不新增顶级菜单，每个页面右下角一颗 48 圆的 FAB 呼出；未读只有一种含义——「我正在看的这个页面上有 N 条没看过的讨论」。
 - **高度两档**：默认 480 定高、消息区内部滚动；「到顶」拉满视口高 − 上下各 24。消息一律 `primaryAxisAlignItems: MAX` 贴着输入框排，矮抽屉看不出差别，拉高才不露空。
-- **发言人标注 = 用户名 + 模型名**：AI 代发时在人名后跟一枚 `model` 变体徽章（紫底白字，写 Codex / WorkBuddy / Claude…），本人发言不带徽章。不复用「AI 代笔」这四个字当发言人标签——看板上「AI 代笔占比」是统计口径，两者别混。
+- **发言人标注 = 用户名 + 模型名**：AI 代发时在人名后跟一枚 `model` 变体徽章（写 Codex / WorkBuddy / Claude…），本人发言不带徽章。走**浅紫底紫字**：`data/agent-subtle` 底 + 1px `data/agent-line` 描边 + `data/agent` 紫字，高 20、`radius/pill`。不用实心紫底——徽章的视觉重量不该超过它标注的正文（一屏 3 枚实心紫块会把消息压下去）。不复用「AI 代笔」这四个字当发言人标签——看板上「AI 代笔占比」是统计口径，两者别混。
 - **不做「采纳到页面」**：抽屉只讨论、只解决口径互通，真改页面回员工自己的 AI 软件里做。留一个「转成条目」的入口，抽屉就会长成车间入口。
 
 > 容器内 = 卡片/面板里的东西；容器外 = 浮在整个页面之上的东西。新组件先判断属于哪一类，再进对应分区。
@@ -169,6 +171,8 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 | `status/*-subtle` | `--success-soft` `--warning-soft` `--danger-soft` `--info-soft` | `--wh-*-soft` | 见 §2 |
 | `status/*-line` | `--success-line` `--warning-line` `--danger-line` `--info-line` | `--wh-*-line` | 见 §2 |
 | `data/agent` | `--agent` | — | #7C3AED |
+| `data/agent-subtle` | `--agent-soft` | — | #F5F3FF（`model` 徽章底） |
+| `data/agent-line` | `--agent-line` | — | #DDD6FE（`model` 徽章边） |
 | `radius/card` | `--r-card` | `--wh-radius-card` | 28 |
 | `radius/control` | `--r-control` | `--wh-radius` | 20 |
 | `radius/lg` | `--r-small` | `--wh-radius-sm` | 12 |
@@ -184,12 +188,13 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 - 浮层分两档并补遮罩（同一轮）：条状浮层 70% 白 + blur(10)，面板状浮层 78% 白 + blur(16)（菜单里要读字）；菜单打开时落一层 `rgba(10,10,10,.12)` 薄雾 `.menu-scrim`，模态用 `rgba(10,10,10,.32)`。遮罩挂在 body 上而不是 `<details>` 里——顶栏是 `translateX(-50%)` 的定位祖先，fixed 子元素会被关进 1440×40 的盒子。
 - 顶栏玻璃搬家：`backdrop-filter` 从 `header.topbar` 移到内部 `.bar-glass` 层。带 `backdrop-filter` 的元素自己就是 backdrop root，玻璃长在顶栏上时，嵌在里面的账号菜单取不到页面背景，雾只剩一层白。
 - 字号与行高收口：徽章 `11.5px → 12px`、开发角标箭头 `10px → 11px`、模块层指标 `.wh-metric-value` `22px → 24px`（与外壳 `.metric .n` 同号）；表格 `th/td` 行盒固定 `line-height: 21px` + 上下 10px，实测行高 41，终于对上 §7.6。
+- 下拉框统一（同一轮）：20 处原生 `<select>` 的展开层改成 `.wh-list` 面板，收起态加自绘 12×12 细线箭头（`appearance:none` + `padding-right:34px`）；遮罩从布尔改成引用计数 `window.whScrim`，菜单与下拉框共用一个 `.menu-scrim`，否则关掉菜单会把下拉框底下的雾一起撤了。
 - 看板「AI 代笔 / 人工」图例的两个内联色（`#4c51bf`、`#4a5568`）换成 `data/agent` 与 `text/muted`：它们是令牌化时漏掉的旧调色板，也是模板里最后一处文档外颜色。
 - 截图自检发现并修掉一处**竖向节奏缺失**：看板页「指标暂不可用」卡片 ↔ 指标行、指标行 ↔ 渠道条之间是 0 间距，白卡片粘成一整块（换成 28 圆角后格外明显）。补 `.card + .grid`、`.grid + .grid`、`.grid + .channel-scorecard`、`.card + .channel-scorecard`、`.grid + .card` 的 `margin-top: 16px`，实测 16px。
 
 ### 8.3 已知例外（别照抄，也别改错）
 
-- **玻璃态的五个落点**（代码事实，改之前先确认）：顶栏 `header.topbar.is-scrolled .bar-glass`（720 胶囊，静止态透明）、静止态中间的 `.bar-nav` 胶囊、账号菜单 `.account-menu`、开发模式身份菜单 `.dev-menu`、菜单遮罩 `.menu-scrim`。前三处是条状档（70% 白 / blur 10），后两处是面板档（78% 白 / blur 16），投影全用同一值；档位混用会看出两种玻璃。
+- **玻璃态的六个落点**（代码事实，改之前先确认）：顶栏 `header.topbar.is-scrolled .bar-glass`（720 胶囊，静止态透明）、静止态中间的 `.bar-nav` 胶囊、账号菜单 `.account-menu`、开发模式身份菜单 `.dev-menu`、下拉框展开层 `.wh-list`、菜单遮罩 `.menu-scrim`。前三处是条状档（70% 白 / blur 10），中间两处加 `.wh-list` 是面板档（78% 白 / blur 16），投影全用同一值；档位混用会看出两种玻璃。遮罩本身不加 blur，只有 `.12` 一档给菜单/下拉框、`.32` 留给将来的模态。
 - **楼层平面图 / 工位图**（`base.html` 的 `.zone` `.desk` `.floor-bg` `.editor .item`）用一组示意图专用色：#eef2ef/#cfe3d6、#fdf6e8/#e8cf94、#fdf1ef/#eeb2a8、#f7f8f9/#b8bec4、#f6f7f8/#d9dde1、#d3d9de、#fbfcfd、#98a0a8。它们是 SVG 图元填充，不进令牌；要改整组一起改。
 - `--r-sm`（=微 4）与 `--r-lg`（=小控件 12）是历史别名，新代码直接用 `--r-micro` / `--r-small`。
 - `radius/md`(8)、`radius/xl`(14) 留在 Figma 变量里但不再使用。
