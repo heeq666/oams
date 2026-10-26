@@ -599,14 +599,12 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     .bar-sentinel { height: 1px; }
   }
 
-  /* Design-stage shortcut marker. Fixed to the corner and pointer-events:none so
-     it cannot shift or block the capsule, the rails or a page's own controls --
-     it only has to be impossible to miss. */
+  /* Design-stage shortcut marker. Pinned to the corner, out of the layout, so it
+     cannot shift the capsule or a page's own controls. It doubles as the identity
+     switch: the same marker that says "you are not signed in" is the one that
+     lets you look at the page as somebody else, which is when you need it. */
+  .dev-switch { position: fixed; right: 16px; bottom: 16px; z-index: 60; }
   .dev-badge {
-    position: fixed;
-    right: 16px;
-    bottom: 16px;
-    z-index: 60;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -619,9 +617,52 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     line-height: 28px;
     letter-spacing: .01em;
     box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
-    pointer-events: none;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
   }
+  .dev-badge::-webkit-details-marker { display: none; }
+  .dev-switch[open] > .dev-badge { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14), 0 4px 12px -2px rgba(15, 23, 42, .10); }
   .dev-badge .dot { width: 6px; height: 6px; border-radius: 999px; background: #16a34a; }
+  .dev-badge .caret { margin-left: 2px; opacity: .65; font-size: 10px; }
+  .dev-menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    min-width: 268px;
+    padding: 6px;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
+  }
+  .dev-menu-head {
+    margin: 0;
+    padding: 8px 10px 6px;
+    color: #737373;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .dev-menu form { margin: 0; }
+  .dev-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    height: 34px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: #0a0a0a;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .dev-item:hover, .dev-item.is-on { background: #f5f5f5; }
+  .dev-item .nm { font-weight: 500; }
+  .dev-item .role { margin-left: auto; color: #737373; font-size: 12px; white-space: nowrap; }
+  .dev-menu .sep { height: 1px; margin: 6px 4px; background: #e5e5e5; }
 </style>
 </head>
 {% set path = request.url.path %}
@@ -630,7 +671,32 @@ body { margin: 0; background: var(--bg); color: var(--ink);
    insurance against shipping that state: nobody can look at the app and not know
    why it never asked who they are. #}
 {% if dev_mode() %}
-<div class="dev-badge" role="status" title="设计开发阶段：已跳过登录。去掉 WORKHUB_DEV_AUTOLOGIN 并重启即恢复登录。"><span class="dot" aria-hidden="true"></span>开发模式 · 免登录{% if member %} · {{ member.display_name }}{% endif %}</div>
+<details class="dev-switch" id="dev-switch">
+  <summary class="dev-badge" aria-haspopup="menu" title="设计开发阶段：已跳过登录。点开可以换成别的身份看同一页；去掉 WORKHUB_DEV_AUTOLOGIN 并重启即恢复登录。">
+    <span class="dot" aria-hidden="true"></span>开发模式 · 免登录{% if member %} · {{ member.display_name }}{% endif %}<span class="caret" aria-hidden="true">▼</span>
+  </summary>
+  <div class="dev-menu" role="menu">
+    <p class="dev-menu-head">切换身份看这一页（仅开发开关打开时出现）</p>
+    {% for person in dev_identities() %}
+    <form method="post" action="/dev/identity">
+      <input type="hidden" name="code" value="{{ person.employee_code }}">
+      <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+      <button type="submit" class="dev-item{% if member and member.member_id == person.member_id %} is-on{% endif %}" role="menuitem">
+        <span class="nm">{{ person.display_name }}</span>
+        <span class="role">{{ person.role_label }}</span>
+      </button>
+    </form>
+    {% endfor %}
+    {% if request.cookies.get(dev_cookie_name) %}
+    <div class="sep"></div>
+    <form method="post" action="/dev/identity">
+      <input type="hidden" name="code" value="">
+      <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+      <button type="submit" class="dev-item" role="menuitem"><span class="nm">恢复默认身份</span><span class="role">按启动参数</span></button>
+    </form>
+    {% endif %}
+  </div>
+</details>
 {% endif %}
 {# The shell is one block so a page without navigation (login) can replace it
    wholesale instead of fighting the layout with `display:none`. #}
@@ -721,23 +787,25 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       }
     }, { root: scroller, threshold: 0 }).observe(marker);
   })();
-  // The account menu is <details>, so it opens and closes on its own; these two
+  // Both menus are <details>, so they open and close on their own; these two
   // listeners only add what a menu is expected to do -- close on an outside
-  // click and on Escape, so it cannot be left open behind the page.
-  (function () {
-    var account = document.getElementById('account');
-    if (!account) return;
+  // click and on Escape, so it cannot be left open behind the page. One loop for
+  // both, because "the account menu does it" is not a reason for the next menu
+  // not to.
+  ['account', 'dev-switch'].forEach(function (id) {
+    var menu = document.getElementById(id);
+    if (!menu) return;
     document.addEventListener('click', function (event) {
-      if (account.open && !account.contains(event.target)) account.open = false;
+      if (menu.open && !menu.contains(event.target)) menu.open = false;
     });
     document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && account.open) {
-        account.open = false;
-        var summary = account.querySelector('summary');
+      if (event.key === 'Escape' && menu.open) {
+        menu.open = false;
+        var summary = menu.querySelector('summary');
         if (summary) summary.focus();
       }
     });
-  })();
+  });
 </script>
 </body>
 </html>

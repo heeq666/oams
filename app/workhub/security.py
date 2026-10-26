@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -84,8 +85,16 @@ def principal_for_token(token: str) -> dict[str, Any] | None:
 DEV_AUTOLOGIN_ON = {"1", "true", "yes", "on"}
 DEV_AUTOLOGIN_OFF = {"", "0", "false", "no", "off", "none"}
 DEV_AUTOLOGIN_ADMIN_CODE = "ADMIN001"
+# The switcher in the badge writes the chosen employee_code here rather than
+# rewriting .env and restarting the server: a design review is exactly the moment
+# you need to see the same page as a manager, then as somebody with no rights.
+DEV_WORKER_COOKIE = "workhub_dev_worker"
 
-_DEV_PRINCIPAL_SQL = """SELECT m.member_id, m.display_name, m.employment_status, m.token_version,
+DEV_ROLE_ADMIN = "系统管理员"
+DEV_ROLE_MANAGER = "管理员"
+DEV_ROLE_STAFF = "普通员工"
+
+_DEV_PRINCIPAL_SQL = """SELECT m.member_id, m.employee_code, m.display_name, m.employment_status, m.token_version,
           NULL::uuid AS session_id, m.token_version AS session_token_version,
           (SELECT p.title FROM workhub.position_assignments a
              JOIN workhub.positions p USING (position_id)
@@ -97,20 +106,97 @@ _DEV_PRINCIPAL_SQL = """SELECT m.member_id, m.display_name, m.employment_status,
    FROM workhub.workforce_members m
   WHERE m.employee_code = %s AND m.employment_status = 'active'"""
 
+_DEV_IDENTITY_SQL = """SELECT m.member_id, m.employee_code, m.display_name,
+          (SELECT p.title FROM workhub.position_assignments a
+             JOIN workhub.positions p USING (position_id)
+            WHERE a.member_id = m.member_id
+              AND a.status IN ('active', 'scheduled')
+              AND a.starts_at <= now()
+              AND (a.ends_at IS NULL OR now() < a.ends_at)
+            ORDER BY a.starts_at DESC LIMIT 1) AS position_title,
+          (SELECT coalesce(array_agg(DISTINCT g.resource || ':' || g.action), '{}')
+             FROM workhub.permission_grants g
+            WHERE g.revoked_at IS NULL
+              AND g.effect = 'allow'
+              AND g.valid_from <= now()
+              AND (g.valid_until IS NULL OR now() < g.valid_until)
+              AND ((g.subject_type = 'member' AND g.member_id = m.member_id)
+                OR (g.subject_type = 'position' AND EXISTS (
+                     SELECT 1 FROM workhub.position_assignments a
+                      WHERE a.position_id = g.position_id
+                        AND a.member_id = m.member_id
+                        AND a.status IN ('active', 'scheduled'))))) AS grants
+   FROM workhub.workforce_members m
+  WHERE m.employment_status = 'active'"""
+
 _DEV_WARNED = False
+_DEV_IDENTITIES: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_DEV_IDENTITIES_TTL = 15.0
 
 
-def dev_autologin_target() -> str | None:
-    """The employee_code to sign in as, or None when the shortcut is off."""
+def dev_role_label(grants: list[str] | tuple[str, ...] | None) -> str:
+    """Name the level a member's grants actually add up to.
+
+    Read from the grants rather than from a title, because a title is a label
+    somebody typed and a grant is what the page will actually let them do.
+    """
+    held = {str(grant) for grant in (grants or ())}
+    if "workforce.members:manage" in held:
+        return DEV_ROLE_ADMIN
+    if any(grant.endswith(":manage") for grant in held):
+        return DEV_ROLE_MANAGER
+    return DEV_ROLE_STAFF
+
+
+def dev_identities() -> list[dict[str, Any]]:
+    """Every active member, strong enough to weak, labelled by their real grants.
+
+    Cached for a few seconds: the badge asks on every render, and nobody changes
+    another person's grants faster than that. An empty list when the shortcut is
+    off, so a template cannot leak the roster into a login screen by accident.
+    """
+    if (settings.dev_autologin or "").strip().lower() in DEV_AUTOLOGIN_OFF:
+        return []
+    cached = _DEV_IDENTITIES.get(settings.database_url)
+    now = time.monotonic()
+    if cached is not None and now - cached[0] < _DEV_IDENTITIES_TTL:
+        return cached[1]
+    try:
+        with connection() as conn:
+            rows = conn.execute(_DEV_IDENTITY_SQL).fetchall()
+    except Exception:  # pragma: no cover - a database that is not migrated yet
+        return []
+    rank = {DEV_ROLE_ADMIN: 0, DEV_ROLE_MANAGER: 1, DEV_ROLE_STAFF: 2}
+    people = [dict(row, role_label=dev_role_label(row["grants"])) for row in rows]
+    people.sort(key=lambda person: (rank.get(person["role_label"], 9), person["employee_code"]))
+    _DEV_IDENTITIES[settings.database_url] = (now, people)
+    return people
+
+
+def forget_dev_identities() -> None:
+    """Drop the identity cache (tests, and a caller that just changed grants)."""
+    _DEV_IDENTITIES.clear()
+
+
+def dev_autologin_target(request: Request | None = None) -> str | None:
+    """The employee_code to sign in as, or None when the shortcut is off.
+
+    A browser that picked somebody in the badge wins over the environment default:
+    the cookie is the switch's memory, and it only ever names a *who*.
+    """
     raw = (settings.dev_autologin or "").strip()
     if raw.lower() in DEV_AUTOLOGIN_OFF:
         return None
+    if request is not None:
+        chosen = (request.cookies.get(DEV_WORKER_COOKIE) or "").strip()
+        if chosen:
+            return chosen
     if raw.lower() in DEV_AUTOLOGIN_ON:
         return DEV_AUTOLOGIN_ADMIN_CODE
     return raw
 
 
-def dev_principal() -> dict[str, Any] | None:
+def dev_principal(request: Request | None = None) -> dict[str, Any] | None:
     """Resolve the shortcut member, or None when it is off or the code is unknown.
 
     An unknown code returns None on purpose: the request then lands on the login
@@ -118,7 +204,7 @@ def dev_principal() -> dict[str, Any] | None:
     pretending to be somebody.
     """
     global _DEV_WARNED
-    target = dev_autologin_target()
+    target = dev_autologin_target(request)
     if target is None:
         return None
     with connection() as conn:
@@ -155,7 +241,7 @@ def principal_from_request(request: Request) -> dict[str, Any] | None:
     row = principal_for_token(token) if token else None
     # No cookie, or one that no longer resolves: fall through to the shortcut
     # rather than bouncing to the login screen in the middle of a design review.
-    return row if row is not None else dev_principal()
+    return row if row is not None else dev_principal(request)
 
 
 def effective_grants(conn, member_id: Any, resource: str, action: str) -> list[dict[str, Any]]:

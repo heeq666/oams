@@ -47,9 +47,10 @@ from workhub.descriptor import validate_descriptor
 from workhub.render import RenderError, render_interface, render_read_only
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, SpaceUpsert, WorkItemCreate)
-from workhub.security import (active_org_unit_ids, dev_autologin_target, dev_principal, has_company_scope,
-                              has_permission, issue_session, principal_from_request, principal_for_token,
-                              require_org_unit_access, revoke_session)
+from workhub.security import (DEV_WORKER_COOKIE, active_org_unit_ids, dev_autologin_target, dev_identities,
+                              dev_principal, has_company_scope, has_permission, issue_session,
+                              principal_from_request, principal_for_token, require_org_unit_access,
+                              revoke_session)
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 router = APIRouter()
@@ -72,6 +73,10 @@ TEMPLATES.env.globals["in_layer"] = api.layer_matches
 # The badge in the shell reads this per render, so a test can flip the setting
 # without reloading the module.
 TEMPLATES.env.globals["dev_mode"] = lambda: dev_autologin_target() is not None
+# Who the badge may switch to, and the cookie it remembers the choice in. Both are
+# empty/no-op while the shortcut is off, so the login screen never leaks a roster.
+TEMPLATES.env.globals["dev_identities"] = dev_identities
+TEMPLATES.env.globals["dev_cookie_name"] = DEV_WORKER_COOKIE
 
 STATUS_LABELS = {"planned": "未开始", "in_progress": "进行中", "blocked": "阻塞",
                  "done": "已完成", "cancelled": "已取消"}
@@ -356,9 +361,9 @@ def login_page(request: Request, token: str | None = None, next: str = "/board")
     # Design stage: a shortcut sign-in would land back on the page immediately, so
     # skip the detour. An unknown employee_code is reported here instead of
     # looping, because a login screen that silently refuses is the worst outcome.
-    if dev_principal() is not None:
+    if dev_principal(request) is not None:
         return RedirectResponse(url=next_url, status_code=302)
-    target = dev_autologin_target()
+    target = dev_autologin_target(request)
     if target is not None:
         return _login(request, error=f"免登录账号「{target}」不存在或已离职，请改 WORKHUB_DEV_AUTOLOGIN 或去掉它。", next_url=next_url)
     return _login(request, next_url=next_url)
@@ -383,12 +388,44 @@ def logout(request: Request):
     if principal is not None and principal.get("session_id") is not None:
         with connection() as conn:
             revoke_session(conn, principal["session_id"], principal["member_id"])
-    if dev_autologin_target() is not None:
+    if dev_autologin_target(request) is not None:
         # Signing out cannot stick while the shortcut is on, so say so instead of
         # bouncing the browser through /login and back into the same page.
         return _login(request, error="开发阶段免登录已开启（WORKHUB_DEV_AUTOLOGIN）：退出后会立刻自动登录回来。", next_url="/board")
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(settings.web_session_cookie, path="/")
+    return response
+
+
+@router.post("/dev/identity")
+def dev_switch_identity(request: Request, code: str = Form(default=""), next: str = Form(default="/board")):
+    """Design-stage identity switch: the badge writes the chosen person to a cookie.
+
+    Only reachable while WORKHUB_DEV_AUTOLOGIN is on -- otherwise it 404s, so this
+    adds nothing to a deployment that forgot to turn the shortcut off. No form
+    token on purpose: the shortcut already signs in anybody who can reach the
+    port, so a CSRF guard here would only teach people to work around the switch.
+    The chosen code is re-checked against the roster, so a hand-edited cookie can
+    name nobody but an active member.
+    """
+    if dev_autologin_target(request) is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    target = _safe_next(next)
+    response = RedirectResponse(url=target, status_code=303)
+    wanted = code.strip()
+    if not wanted:
+        # Clearing the cookie falls back to whatever WORKHUB_DEV_AUTOLOGIN says.
+        response.delete_cookie(DEV_WORKER_COOKIE, path="/")
+        return response
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT employee_code FROM workhub.workforce_members "
+            "WHERE employee_code = %s AND employment_status = 'active'",
+            (wanted,)).fetchone()
+    if row is None:
+        return response
+    response.set_cookie(DEV_WORKER_COOKIE, row["employee_code"], max_age=12 * 3600,
+                        path="/", httponly=True, samesite="lax")
     return response
 
 
