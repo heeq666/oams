@@ -47,8 +47,9 @@ from workhub.descriptor import validate_descriptor
 from workhub.render import RenderError, render_interface, render_read_only
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, SpaceUpsert, WorkItemCreate)
-from workhub.security import (active_org_unit_ids, has_company_scope, has_permission, issue_session,
-                              principal_from_request, principal_for_token, require_org_unit_access, revoke_session)
+from workhub.security import (active_org_unit_ids, dev_autologin_target, dev_principal, has_company_scope,
+                              has_permission, issue_session, principal_from_request, principal_for_token,
+                              require_org_unit_access, revoke_session)
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 router = APIRouter()
@@ -68,6 +69,9 @@ TEMPLATES.env.filters["dt"] = _display_time
 # The global stays for anything that still wants the raw predicate; the page itself
 # renders board.visible_cards, which api already filtered with the same function.
 TEMPLATES.env.globals["in_layer"] = api.layer_matches
+# The badge in the shell reads this per render, so a test can flip the setting
+# without reloading the module.
+TEMPLATES.env.globals["dev_mode"] = lambda: dev_autologin_target() is not None
 
 STATUS_LABELS = {"planned": "未开始", "in_progress": "进行中", "blocked": "阻塞",
                  "done": "已完成", "cancelled": "已取消"}
@@ -348,7 +352,16 @@ def login_page(request: Request, token: str | None = None, next: str = "/board")
     # in browser history where it would be readable over somebody's shoulder.
     if token:
         return sign_in(request, token, next)
-    return _login(request, next_url=_safe_next(next))
+    next_url = _safe_next(next)
+    # Design stage: a shortcut sign-in would land back on the page immediately, so
+    # skip the detour. An unknown employee_code is reported here instead of
+    # looping, because a login screen that silently refuses is the worst outcome.
+    if dev_principal() is not None:
+        return RedirectResponse(url=next_url, status_code=302)
+    target = dev_autologin_target()
+    if target is not None:
+        return _login(request, error=f"免登录账号「{target}」不存在或已离职，请改 WORKHUB_DEV_AUTOLOGIN 或去掉它。", next_url=next_url)
+    return _login(request, next_url=next_url)
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -364,9 +377,16 @@ def sign_in(request: Request, token: str = Form(...), next: str = Form("/board")
 @router.post("/logout")
 def logout(request: Request):
     principal = request.state.member
-    if principal is not None:
+    # The shortcut principal has no session row (session_id is NULL), so there is
+    # nothing to revoke; revoking blindly would write a NULL subject into the audit
+    # trail and make the log unreadable.
+    if principal is not None and principal.get("session_id") is not None:
         with connection() as conn:
             revoke_session(conn, principal["session_id"], principal["member_id"])
+    if dev_autologin_target() is not None:
+        # Signing out cannot stick while the shortcut is on, so say so instead of
+        # bouncing the browser through /login and back into the same page.
+        return _login(request, error="开发阶段免登录已开启（WORKHUB_DEV_AUTOLOGIN）：退出后会立刻自动登录回来。", next_url="/board")
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(settings.web_session_cookie, path="/")
     return response

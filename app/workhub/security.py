@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -70,8 +71,77 @@ def principal_for_token(token: str) -> dict[str, Any] | None:
     return row
 
 
+# ---------------------------------------------------------------------------
+# Design-stage shortcut: no login screen
+#
+# WORKHUB_DEV_AUTOLOGIN=<employee_code> signs in a session-less request as that
+# member (1/true/yes/on means the bootstrap administrator). It is a *who*, never
+# a *what*: permission checks, org-unit scoping, the form tokens and the audit
+# trail are untouched, so the pages behave exactly as they will once the login
+# comes back. It is deliberately unset by default, and the UI shows a badge while
+# it is on, because a deployment that forgets to turn it off has no login at all.
+# ---------------------------------------------------------------------------
+DEV_AUTOLOGIN_ON = {"1", "true", "yes", "on"}
+DEV_AUTOLOGIN_OFF = {"", "0", "false", "no", "off", "none"}
+DEV_AUTOLOGIN_ADMIN_CODE = "ADMIN001"
+
+_DEV_PRINCIPAL_SQL = """SELECT m.member_id, m.display_name, m.employment_status, m.token_version,
+          NULL::uuid AS session_id, m.token_version AS session_token_version,
+          (SELECT p.title FROM workhub.position_assignments a
+             JOIN workhub.positions p USING (position_id)
+            WHERE a.member_id = m.member_id
+              AND a.status IN ('active', 'scheduled')
+              AND a.starts_at <= now()
+              AND (a.ends_at IS NULL OR now() < a.ends_at)
+            ORDER BY a.starts_at DESC LIMIT 1) AS position_title
+   FROM workhub.workforce_members m
+  WHERE m.employee_code = %s AND m.employment_status = 'active'"""
+
+_DEV_WARNED = False
+
+
+def dev_autologin_target() -> str | None:
+    """The employee_code to sign in as, or None when the shortcut is off."""
+    raw = (settings.dev_autologin or "").strip()
+    if raw.lower() in DEV_AUTOLOGIN_OFF:
+        return None
+    if raw.lower() in DEV_AUTOLOGIN_ON:
+        return DEV_AUTOLOGIN_ADMIN_CODE
+    return raw
+
+
+def dev_principal() -> dict[str, Any] | None:
+    """Resolve the shortcut member, or None when it is off or the code is unknown.
+
+    An unknown code returns None on purpose: the request then lands on the login
+    screen, which is confusing for exactly one second and much safer than
+    pretending to be somebody.
+    """
+    global _DEV_WARNED
+    target = dev_autologin_target()
+    if target is None:
+        return None
+    with connection() as conn:
+        row = conn.execute(_DEV_PRINCIPAL_SQL, (target,)).fetchone()
+    if row is None:
+        return None
+    if not _DEV_WARNED:
+        _DEV_WARNED = True
+        print(f"[workhub] DEV AUTOLOGIN IS ON: every session-less request is signed "
+              f"in as {target}. Unset WORKHUB_DEV_AUTOLOGIN before any real deployment.",
+              file=sys.stderr, flush=True)
+    return dict(row, dev_autologin=True)
+
+
 def current_principal(credentials: HTTPAuthorizationCredentials = Depends(bearer)) -> dict[str, Any]:
     if credentials is None or credentials.scheme.lower() != "bearer":
+        # A caller with no token at all gets the design-stage shortcut when it is
+        # on, so curl and the dev shell do not have to mint one first. A token
+        # that is present but wrong still fails below: a stale session has to
+        # stay visible instead of being silently upgraded to the shortcut.
+        shortcut = dev_principal()
+        if shortcut is not None:
+            return shortcut
         raise HTTPException(status_code=401, detail="Bearer session required", headers={"WWW-Authenticate": "Bearer"})
     row = principal_for_token(credentials.credentials)
     if row is None:
@@ -82,9 +152,10 @@ def current_principal(credentials: HTTPAuthorizationCredentials = Depends(bearer
 def principal_from_request(request: Request) -> dict[str, Any] | None:
     """The browser variant: same session table, same resolution, cookie as carrier."""
     token = request.cookies.get(settings.web_session_cookie)
-    if not token:
-        return None
-    return principal_for_token(token)
+    row = principal_for_token(token) if token else None
+    # No cookie, or one that no longer resolves: fall through to the shortcut
+    # rather than bouncing to the login screen in the middle of a design review.
+    return row if row is not None else dev_principal()
 
 
 def effective_grants(conn, member_id: Any, resource: str, action: str) -> list[dict[str, Any]]:
