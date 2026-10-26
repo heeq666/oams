@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Workhub{% endblock %}</title>
 <script src="/static/vendor/htmx.min.js" defer></script>
+{# 浮层载体必须先加载：下拉框与菜单都挂在它上面。 #}
+<script src="/static/wh-popover.js" defer></script>
 <script src="/static/wh-select.js" defer></script>
 <style>
   * { box-sizing: border-box; }
@@ -301,6 +303,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     --r-sm: var(--r-micro); --r-md: 8px; --r-lg: var(--r-small);
     --r-xl: var(--r-card);
     --ring: #a1a1a1; --rail-w: 127px;
+    /* 浮层的唯一层级：高于顶栏（30）与开发角标（60）。新增浮层不要自己写 z-index。 */
+    --z-popover: 70;
   }
   body { font-size: 14px; -webkit-font-smoothing: antialiased; }
   /* The bar is a floating capsule, not a full-width strip: it sits 20px below
@@ -386,26 +390,33 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   header.topbar .who .who-role { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* The avatar IS the account menu. It is a fixed 30px circle: inside a flex
      row a long job title otherwise squeezed it into an ellipse. */
-  header.topbar .account { position: relative; flex: 0 0 auto; }
-  header.topbar .account > summary { list-style: none; cursor: pointer; }
-  header.topbar .account > summary::-webkit-details-marker { display: none; }
+  header.topbar .account { flex: 0 0 auto; display: flex; }
+  /* 头像是按钮，不再是 <details>：面板必须挂在 body 上（见 .wh-popover 的注释），
+     开合状态用 aria-expanded 表达——一个元素一个状态，不再"触发器在这、面板在那"。 */
   header.topbar .account .avatar { width: 30px; min-width: 30px; height: 30px; flex: 0 0 30px;
+                                   padding: 0; border: 0; cursor: pointer; line-height: 30px;
                                    border-radius: var(--r-pill); background: var(--accent); color: var(--on-accent);
                                    display: grid; place-items: center; font-size: 12px;
                                    font-weight: 500; }
-  header.topbar .account > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  header.topbar .account[open] .avatar { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14); }
-  /* 浮层一律玻璃态（design-system-v1 §7.3）。面板档与条状档同一份配方，只多半档白。
-     位置由脚本算（fixed + 贴着头像的右下沿），因为这个面板在 DOM 里挂在 body 上——
-     不能在 <details> 里：details 会成为 backdrop root，里面的 backdrop-filter 拿不到
-     页面背景，玻璃就退化成一层白，底下的字照样透出来。见页尾的 wirePanel()。 */
-  .account-menu { position: fixed; z-index: 40; min-width: 208px; padding: 6px;
-                  border-radius: var(--r-card); text-align: left;
-                  background: rgba(255, 255, 255, .78);
-                  -webkit-backdrop-filter: saturate(1.3) blur(16px);
-                  backdrop-filter: saturate(1.3) blur(16px);
-                  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
-  .account-menu[hidden] { display: none; }
+  header.topbar .account .avatar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  header.topbar .account .avatar[aria-expanded="true"] { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14); }
+  /* ---- 浮层载体 ---------------------------------------------------------
+     面板档浮层的唯一长相（design-system-v1 §7.3）：位置、层级、玻璃、圆角、投影
+     只写在这里，面板自己只声明宽度与内边距。谁要新加浮层，带上 data-wh-popover
+     和 .wh-popover 就够了，摆放与关闭归 static/wh-popover.js。
+
+     position: fixed 是硬要求，且面板必须直挂 <body>：<details>、带 transform /
+     filter / opacity<1 / mask 的容器都是 backdrop root，backdrop-filter 只能采样
+     它内部的绘制内容，玻璃就退化成一层平白——账号菜单一度"比顶栏胶囊透得多"就是
+     这个原因（实测同一块条纹：details 里残留 p2p 94，body 上 4）。 */
+  .wh-popover { position: fixed; z-index: var(--z-popover);
+                border-radius: var(--r-card);
+                background: rgba(255, 255, 255, .78);
+                -webkit-backdrop-filter: saturate(1.3) blur(16px);
+                backdrop-filter: saturate(1.3) blur(16px);
+                box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
+  .wh-popover[hidden] { display: none; }
+  .account-menu { min-width: 208px; padding: 6px; text-align: left; }
   .account-menu .menu-head { padding: 8px 10px 10px; margin-bottom: 6px;
                              border-bottom: 1px solid var(--line); }
   .account-menu .menu-name { color: var(--ink); font-size: 13px; font-weight: 500; }
@@ -469,14 +480,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4.5 6 8.5l4-4' fill='none' stroke='%23737373' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
     background-repeat: no-repeat; background-position: right 12px center; background-size: 12px 12px; }
   select.is-open { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(15, 23, 42, .04); }
-  /* 展开层：和菜单同一套玻璃（design-system-v1 §7.3 面板档）。行 32 高、圆角 12、
-     选中行加勾；一行只放一条选项，不折行。 */
-  .wh-list { position: fixed; z-index: 45; padding: 6px; max-height: 320px; overflow-y: auto;
-             overscroll-behavior: contain; border-radius: var(--r-card);
-             background: rgba(255, 255, 255, .92);
-             -webkit-backdrop-filter: saturate(1.3) blur(16px);
-             backdrop-filter: saturate(1.3) blur(16px);
-             box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10); }
+  /* 展开层：长相与菜单同一个 .wh-popover（§7.3），这里只加行密度。行 32 高、圆角
+     12、选中行加勾；一行一条选项，不折行。 */
+  .wh-list { padding: 6px; max-height: 320px; overflow-y: auto;
+             overscroll-behavior: contain; }
   .wh-list .wh-opt { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px;
                      border-radius: var(--r-small); color: var(--ink); font-size: 13px; line-height: 32px;
                      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
@@ -572,7 +579,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      leave an 8px block next to a 28px one. Read the token comment at the top of
      :root for the five tiers; this block is the only place that picks one. */
   .card, .metric, .channel-scorecard, .detail, .panel, .auth-card,
-  .account-menu { border-radius: var(--r-card); }
+  .wh-popover { border-radius: var(--r-card); }
   button, .btn, .btn-ghost, .btn-danger, .btn-sm, button.ghost, button.danger,
   button.sm, .pill, .badge, .tabs a, .flowstrip .stage { border-radius: var(--r-pill); }
   input, select, textarea, .strip, .flash, .diff-block, ul.items > li,
@@ -659,6 +666,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      switch: the same marker that says "you are not signed in" is the one that
      lets you look at the page as somebody else, which is when you need it. */
   .dev-switch { position: fixed; right: 16px; bottom: 16px; z-index: 60; }
+  .dev-switch > .dev-badge { border: 0; font-family: inherit; }
   .dev-badge {
     display: flex;
     align-items: center;
@@ -673,26 +681,13 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     letter-spacing: .01em;
     box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
     cursor: pointer;
-    list-style: none;
     user-select: none;
   }
-  .dev-badge::-webkit-details-marker { display: none; }
-  .dev-switch[open] > .dev-badge { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14), 0 4px 12px -2px rgba(15, 23, 42, .10); }
+  .dev-badge[aria-expanded="true"] { box-shadow: 0 0 0 3px rgba(23, 23, 23, .14), 0 4px 12px -2px rgba(15, 23, 42, .10); }
   .dev-badge .dot { width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--done); }
   .dev-badge .caret { margin-left: 2px; opacity: .65; font-size: 11px; }
-  /* 同 .account-menu：挂在 body 上、由脚本定位，绝不能塞回 <details>。 */
-  .dev-menu {
-    position: fixed;
-    z-index: 60;
-    min-width: 268px;
-    padding: 6px;
-    border-radius: var(--r-card);
-    background: rgba(255, 255, 255, .78);
-    -webkit-backdrop-filter: saturate(1.3) blur(16px);
-    backdrop-filter: saturate(1.3) blur(16px);
-    box-shadow: 0 4px 12px -2px rgba(15, 23, 42, .10);
-  }
-  .dev-menu[hidden] { display: none; }
+  /* 长相归 .wh-popover：这里只说这个面板多宽、内边距多少。 */
+  .dev-menu { min-width: 268px; padding: 6px; }
   .dev-menu-head {
     margin: 0;
     padding: 8px 10px 6px;
@@ -729,11 +724,14 @@ body { margin: 0; background: var(--bg); color: var(--ink);
    insurance against shipping that state: nobody can look at the app and not know
    why it never asked who they are. #}
 {% if dev_mode() %}
-<details class="dev-switch" id="dev-switch">
-  <summary class="dev-badge" aria-haspopup="menu" title="设计开发阶段：已跳过登录。点开可以换成别的身份看同一页；去掉 WORKHUB_DEV_AUTOLOGIN 并重启即恢复登录。">
+<div class="dev-switch">
+  {# 触发器是按钮，面板挂在 body 末尾：data-wh-popover 由 static/wh-popover.js 接。 #}
+  <button type="button" class="dev-badge" id="dev-switch" data-wh-popover
+          aria-controls="dev-menu" aria-expanded="false" aria-haspopup="menu"
+          title="设计开发阶段：已跳过登录。点开可以换成别的身份看同一页；去掉 WORKHUB_DEV_AUTOLOGIN 并重启即恢复登录。">
     <span class="dot" aria-hidden="true"></span>开发模式 · 免登录{% if member %} · {{ member.display_name }}{% endif %}<span class="caret" aria-hidden="true">▼</span>
-  </summary>
-</details>
+  </button>
+</div>
 {% endif %}
 {# The shell is one block so a page without navigation (login) can replace it
    wholesale instead of fighting the layout with `display:none`. #}
@@ -768,11 +766,14 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       <span class="who-role">{{ member.position_title or member.display_name }}</span>
       {# Signing out lives behind the avatar, not beside it: the bar keeps one
          object on the right, and account actions belong in the account menu.
-         <details> so the menu opens without script; the listeners at the bottom
-         only add click-outside and Escape. #}
-      <details class="account" id="account">
-        <summary class="avatar" aria-haspopup="menu" aria-label="账号菜单" title="账号菜单">{{ member.display_name[:1] }}</summary>
-      </details>
+         data-wh-popover wires it to static/wh-popover.js; the panel itself sits
+         at the end of <body>, because a panel nested in the bar (or in a
+         <details>) cannot sample the page behind it -- see the note there. #}
+      <span class="account">
+        <button type="button" class="avatar" id="account" data-wh-popover
+                aria-controls="account-menu" aria-expanded="false"
+                aria-haspopup="menu" aria-label="账号菜单" title="账号菜单">{{ member.display_name[:1] }}</button>
+      </span>
     {% else %}
       <a href="/login">登录</a>
     {% endif %}
@@ -807,15 +808,16 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   </main>
 </div>
 {% endblock %}
-{# The two menus live down here, not inside their triggers. A <details> element is a
-   backdrop root: a panel nested in it can only sample what paints inside that root,
-   so its backdrop-filter had nothing to blur -- the glass degraded to a flat white
-   sheet and the page's own text stayed readable through it. That is why the account
-   menu looked "much more see-through" than the top-bar capsule, which is not in a
-   details. Kept at body level the same recipe blurs the page like the capsule does.
-   The triggers are still <details>, so they still open without script. #}
+{# Floating panels live at the end of <body>, never inside their trigger: <details>,
+   and any container with transform / filter / opacity<1 / mask, is a backdrop root.
+   A backdrop-filter inside one can only sample what paints within that root, so it
+   has nothing to blur and the glass degrades to a flat white sheet -- which is
+   exactly why the account menu looked "much more see-through" than the top-bar
+   capsule. Position, layering, glass and dismissal all belong to
+   static/wh-popover.js; a markup author only writes data-wh-popover + aria-controls
+   on the trigger and class="wh-popover" on the panel. #}
 {% if member %}
-<div class="account-menu" id="account-menu" role="menu" aria-label="账号" hidden>
+<div class="wh-popover account-menu" id="account-menu" role="menu" aria-label="账号" hidden>
   <div class="menu-head">
     <div class="menu-name">{{ member.display_name }}</div>
     <div class="menu-role">{{ member.position_title or '未分配岗位' }}</div>
@@ -826,7 +828,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
 </div>
 {% endif %}
 {% if dev_mode() %}
-<div class="dev-menu" id="dev-menu" role="menu" hidden>
+{# 角标贴着屏幕底边，面板只能朝上长：data-wh-side 交给载体去摆。 #}
+<div class="wh-popover dev-menu" id="dev-menu" role="menu" hidden data-wh-side="above" data-wh-gap="8">
   <p class="dev-menu-head">切换身份看这一页（仅开发开关打开时出现）</p>
   {% for person in dev_identities() %}
   <form method="post" action="/dev/identity">
@@ -864,43 +867,12 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       }
     }, { root: scroller, threshold: 0 }).observe(marker);
   })();
-  // The triggers are still <details>, so they open and close on their own. What
-  // they no longer own is the panel: it sits at body level (see the note by the
-  // markup), so opening has to position it by hand, and closing has to be watched
-  // for here, because the panel is outside the element whose "did the click land
-  // inside me" test would otherwise cover it.
-  function wireMenu(detailsId, panelId, above) {
-    var host = document.getElementById(detailsId);
-    var panel = document.getElementById(panelId);
-    if (!host || !panel) return;
-    var trigger = host.querySelector('summary');
-    function place() {
-      if (!trigger) return;
-      var r = trigger.getBoundingClientRect();
-      panel.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
-      panel.style.top = (above ? Math.max(8, r.top - panel.offsetHeight - 8)
-                               : r.bottom + 10) + 'px';
-    }
-    host.addEventListener('toggle', function () {
-      panel.hidden = !host.open;
-      if (host.open) place();
-    });
-    window.addEventListener('resize', function () { if (host.open) place(); });
-    document.addEventListener('click', function (event) {
-      if (host.open && !host.contains(event.target) && !panel.contains(event.target)) host.open = false;
-    });
-    document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && host.open) {
-        host.open = false;
-        if (trigger) trigger.focus();
-      }
-    });
-  }
-  wireMenu('account', 'account-menu', false);
-  wireMenu('dev-switch', 'dev-menu', true);
-  // 之前这里落过一层 rgba(10,10,10,.12) 的薄雾（.menu-scrim）。撤了：玻璃本身
-  // 已经把底下压下去，再盖一层灰会让整页发闷，菜单反而显得脏。没有遮罩就靠
-  // 上面那两个监听兜住「点到别处要关掉」，别让人把面板留在页面上。
+  // 浮层（账号菜单、身份菜单、下拉框展开层）不在这里接：触发器带 data-wh-popover、
+  // 面板带 .wh-popover，摆放/关闭/层级全归 static/wh-popover.js。新增浮层不需要
+  // 往这个文件里加一行脚本。
+  //
+  // 遮罩（曾是 rgba(10,10,10,.12) 的 .menu-scrim）已撤：玻璃本身把底下压住了，
+  // 再盖一层灰整页发闷。没有遮罩，所以"点到别处 / Esc / 焦点移开"必须由载体兜住。
 </script>
 </body>
 </html>

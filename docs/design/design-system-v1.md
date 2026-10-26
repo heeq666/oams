@@ -147,15 +147,22 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 
    为什么面板比条状浮层更雾：菜单里要读字，底下正文必须退到雾里，否则两层文字叠在一起谁也读不清；顶栏只承载导航，看得见底下流动的内容才是它存在的意义。两者的投影**同一值**，只差粒度。
 
-   **浮层不能长在 `<details>` 里**（2026-10-26 定，踩过）：账号菜单与身份菜单一度把面板塞在 `<details>` 内部，结果是「菜单透得比顶栏胶囊明显得多」。原因不在数值——`<details>` 是一个 backdrop root，里面的 `backdrop-filter` 只能采样这个 root 内部的绘制内容，拿不到页面背景，玻璃就退化成一层平白，底下的字照样清晰可读。同一份配方挂到 `<body>` 上立刻正常（同一块黑白条纹实测：`<details>` 里条纹残留 p2p 94，`<body>` 上 p2p 4）。所以浮层一律挂 `<body>`、`position: fixed`，触发器可以继续用 `<details>`（它自己会开合），面板交给脚本摆放。`static/wh-select.js` 的 `.wh-list` 一开始就是这么做的。
+   **浮层不能长在 `<details>` 里**（2026-10-26 定，踩过）：账号菜单与身份菜单一度把面板塞在 `<details>` 内部，结果是「菜单透得比顶栏胶囊明显得多」。原因不在数值——`<details>` 是一个 backdrop root，里面的 `backdrop-filter` 只能采样这个 root 内部的绘制内容，拿不到页面背景，玻璃就退化成一层平白，底下的字照样清晰可读。同一份配方挂到 `<body>` 上立刻正常（同一块黑白条纹实测：`<details>` 里条纹残留 p2p 94，`<body>` 上 p2p 4）。所以浮层一律挂 `<body>`、`position: fixed`；触发器只负责「按一下」，面板挂在哪儿、摆在哪个坐标、什么时候收起来，全归**浮层载体** `static/wh-popover.js`（见下）。
 
    `<details>` 之外，也别把浮层塞进带 `transform` / `filter` / `opacity < 1` / `mask` 的容器：它们同样可能成为 backdrop root，玻璃就只剩一层白。
 
-   **不落遮罩**（2026-10-26 定）：菜单和下拉框底下一度盖过一层 `rgba(10,10,10,.12)` 的薄雾，撤掉了——blur 已经把正文糊开，再压一层灰只会让整页发闷、面板显脏。代价是**「点到别处要关掉」得由脚本兜住**（`.account-menu` / `.dev-menu` 靠 document click + Esc，`.wh-list` 靠 document mousedown + scroll + Esc），谁加新浮层谁负责这一条，别指望遮罩替你收尾。将来的 Modal 要不要遮罩，等真做时单独定，不要顺手抄菜单。
+   **不落遮罩**（2026-10-26 定）：菜单和下拉框底下一度盖过一层 `rgba(10,10,10,.12)` 的薄雾，撤掉了——blur 已经把正文糊开，再压一层灰只会让整页发闷、面板显脏。代价是**「点到别处要关掉」得由脚本兜住**——这一条统一由载体做（document `mousedown` / `Esc` / `focusout` / `scroll` / `resize` 五路），加新浮层不用重写一遍，但**也别把这几路监听删掉**，删了就没有遮罩替你收尾。将来的 Modal 要不要遮罩，等真做时单独定，不要顺手抄菜单。
 
    圆角按位置取：条状浮层（顶栏胶囊、导航胶囊、徽标胶囊）用 `radius/pill`；面板状浮层（菜单、下拉框展开层、弹窗、Tooltip）用 `radius/card` 28。浮层不加描边——投影 + 明度差已经够分离，再描边会在玻璃上出现一道硬线。
 
    上面这些值和 `backdrop-filter` 是**唯一允许写字面值的地方**：玻璃是「叠在什么上面」的效果，不是一种颜色，进不了颜色令牌。要改就几处一起改（见 §8.3 的落点清单），别只改一处。
+
+   **浮层只有一个载体**（2026-10-26 定）：三处浮层原先各写各的——顶栏胶囊是纯 CSS，账号菜单与身份菜单是一段 `wireMenu()`，下拉框是 `wh-select.js` 自带的定位。外观统一了，但**挂载 / 摆放 / 关闭**三件事各做了一遍，加第四个浮层就得抄第四遍。现在只有 `static/wh-popover.js`：
+
+   - **声明式**：触发器写 `data-wh-popover` + `aria-controls="<面板 id>"`，面板写 `class="wh-popover"`。可选用 `data-wh-align`（start/end）/ `data-wh-side`（below/above/auto）/ `data-wh-gap` / `data-wh-min-width` 调位置。载体自动把面板 append 到 `<body>`、置 `hidden`、维护 `aria-expanded`、按视口夹取坐标（8px 边距、下方不够翻上方），htmx 换完内容自动重扫。
+   - **长相只有一条规则**：`.wh-popover`（玻璃 + 28 圆角 + 唯一投影 + `--z-popover: 70`）。`.account-menu` / `.dev-menu` / `.wh-list` 只声明宽度与内距，**不许再写 background / box-shadow / backdrop-filter**。
+   - **要自己管开关的**（比如下拉框按需构建选项行）用 `whPopover.attach({... , manual: true})` 拿实例，其余一律声明式。
+   - **契约有测试**：`tests/test_popover_contract.py` 盯着这条——面板跑进 `<details>`、皮肤被抄第二遍、`wh-popover.js` 下到 `wh-select.js` 后面，都会红。
 
    目前的落点：顶栏（滚动后的窄胶囊；静止态下玻璃在中间的导航胶囊上，条形本身透明；玻璃做在 `.bar-glass` 这一层上，因为带 `backdrop-filter` 的元素会成为 backdrop root，嵌在里面的下拉就取不到页面背景）、账号菜单 `.account-menu`、开发模式身份菜单 `.dev-menu`、下拉框展开层 `.wh-list`。以后加 Modal / Tooltip / Popover 不要另调一套数值——直接照抄上面，再把新落点补进 §8.3。没有描边的实色面板之间必须留 `space/5`（16px）——两块白面板贴在一起会粘成一整块，28 的圆角还会互相啃出缺口。
 4. **一个强调色**：`accent/default` 一屏只出现一次主动作；次要动作走 `secondary`（白底 + hairline）。
@@ -208,6 +215,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 - 浮层统一成玻璃态：账号菜单与开发模式身份菜单从「纯白 + 投影」改成玻璃 + `0 4px 12px -2px rgba(15,23,42,.10)`；此前只有顶栏有玻璃，菜单还是白纸，点开时像贴了一张卡片上去。
 - 浮层分两档：条状浮层 70% 白 + blur(10)，面板状浮层 78% 白 + blur(16)（菜单里要读字，所以面板档更雾）。
 - 面板档一度加到 92% 白（同日，先加后撤）：当时误判成「白不够厚」，真因是 `<details>` 是 backdrop root，`backdrop-filter` 压根没生效。把面板挪到 `<body>` 后 blur 回来了，白退回 78%，两个档位重新只差粒度。详见 §7.3。
+- 浮层收成一个载体（同日）：新增 `static/wh-popover.js`（约 8KB），账号菜单 / 身份菜单 / 下拉框展开层全部改走它；触发器从 `<details>`/`<summary>` 换成 `<button data-wh-popover>`，`wireMenu()` 与 `wh-select.js` 自带的定位/关闭逻辑删除。原来的三套写法保留的原因只是「各自能用」，代价是同一个 bug 要修三遍（`<details>` 那个 backdrop root 就是这么漏掉的）。面板原来 92% 白的残留也一并清掉，现在与菜单同为 78%。
 - 遮罩撤掉（同日）：`.menu-scrim`、`--scrim-soft`、`--scrim`、`window.whScrim` 全部删除。理由见 §7.3——12% 的灰叠在 blur 之上只是让整页发闷，玻璃本身已经够分离；代价是关闭浮层必须靠脚本（document click / mousedown / scroll / Esc）兜住。
 - 顶栏玻璃搬家：`backdrop-filter` 从 `header.topbar` 移到内部 `.bar-glass` 层。带 `backdrop-filter` 的元素自己就是 backdrop root，玻璃长在顶栏上时，嵌在里面的账号菜单取不到页面背景，雾只剩一层白。
 - 字号与行高收口：徽章 `11.5px → 12px`、开发角标箭头 `10px → 11px`、模块层指标 `.wh-metric-value` `22px → 24px`（与外壳 `.metric .n` 同号）；表格 `th/td` 行盒固定 `line-height: 21px` + 上下 10px，实测行高 41，终于对上 §7.6。
@@ -217,7 +225,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 
 ### 8.3 已知例外（别照抄，也别改错）
 
-- **玻璃态的五个落点**（代码事实，改之前先确认）：顶栏 `header.topbar.is-scrolled .bar-glass`（720 胶囊，静止态透明）、静止态中间的 `.bar-nav` 胶囊、账号菜单 `.account-menu`、开发模式身份菜单 `.dev-menu`、下拉框展开层 `.wh-list`。前两处是条状档（70% 白 / blur 10），后三处是面板档（78% 白 / blur 16），投影全用同一值；档位混用会看出两种玻璃。这三个面板都必须挂在 `<body>` 上（见 §7.3 的 backdrop root 那条），塞回 `<details>` 里玻璃就失效。**没有遮罩**：透明到能看见底下内容但不该盖一层灰，浮层靠 blur 与投影分离。
+- **玻璃态的五个落点**（代码事实，改之前先确认）：顶栏 `header.topbar.is-scrolled .bar-glass`（720 胶囊，静止态透明）、静止态中间的 `.bar-nav` 胶囊、账号菜单 `.account-menu`、开发模式身份菜单 `.dev-menu`、下拉框展开层 `.wh-list`。前两处是条状档（70% 白 / blur 10），后三处是面板档（78% 白 / blur 16），投影全用同一值；档位混用会看出两种玻璃。这三个面板都由 `static/wh-popover.js` 挂到 `<body>` 上（见 §7.3 的 backdrop root 那条），塞回 `<details>` 里玻璃就失效；面板皮肤只写在 `.wh-popover` 一条规则里，三个面板类只留宽度与内距。**没有遮罩**：透明到能看见底下内容但不该盖一层灰，浮层靠 blur 与投影分离。
 - **楼层平面图 / 工位图**（`base.html` 的 `.zone` `.desk` `.floor-bg` `.editor .item`）用一组示意图专用色：#eef2ef/#cfe3d6、#fdf6e8/#e8cf94、#fdf1ef/#eeb2a8、#f7f8f9/#b8bec4、#f6f7f8/#d9dde1、#d3d9de、#fbfcfd、#98a0a8。它们是 SVG 图元填充，不进令牌；要改整组一起改。
 - `--r-sm`（=微 4）与 `--r-lg`（=小控件 12）是历史别名，新代码直接用 `--r-micro` / `--r-small`。
 - `radius/md`(8)、`radius/xl`(14) 留在 Figma 变量里但不再使用。
@@ -238,4 +246,5 @@ Figma 侧同理：新会话里说「按 `0:1` 页的组件库补一个 xxx 组�
 - [ ] 悬停、焦点、禁用、空、加载（骨架屏）五种状态都点了看过
 - [ ] 表格长文案不折行（超宽省略）
 - [ ] 深浅色只用一个方向（当前只有浅色）；半透明玻璃**只**出现在浮层（顶栏胶囊 / 菜单 / 弹窗 / Tooltip），页面内容里没有玻璃、没有第二层投影
+- [ ] 新加的浮层只写了 `data-wh-popover` + `class="wh-popover"`，没有另写定位、关闭或第二份玻璃
 - [ ] 1440 / 1024 / 768 三档都截过图，窄屏不出现横向滚动条
