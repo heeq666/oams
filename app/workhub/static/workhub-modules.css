@@ -10,11 +10,12 @@
  */
 
 .wh-interface {
-  /* Same five tiers as the shell (base.html :root): 28 container / 20 control /
-     12 small control / 4 micro / 999 pill. A module never invents its own radius. */
-  --wh-radius-card: 28px;
-  --wh-radius: 20px;
-  --wh-radius-sm: 12px;
+  /* Same five tiers as the shell (base.html :root): 26 container / 18 control
+     (输入框、下拉、文本域也在这档 -- 它们长在卡片里，是二级元件) / 9 row / 4 micro
+     / 999 pill. A module never invents its own radius. */
+  --wh-radius-card: 26px;
+  --wh-radius: 18px;
+  --wh-radius-sm: 9px;
   --wh-radius-micro: 4px;
   --wh-radius-pill: 999px;
   --wh-line: #E5E5E5;
@@ -24,6 +25,7 @@
   --wh-ink: #0A0A0A;
   --wh-muted: #737373;
   --wh-accent: #171717;
+  --wh-on-accent: #FAFAFA;
   --wh-hover: #E5E5E5;
   --wh-fill: #F5F5F5;
   --wh-info: #2563EB;
@@ -65,7 +67,7 @@
   background: var(--wh-bg);
   border: 1px solid var(--wh-line);
   border-radius: var(--wh-radius);
-  padding: 14px 16px;
+  padding: 16px;
 }
 
 .wh-container {
@@ -82,7 +84,7 @@
 .wh-card-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 /* --- gaps --- */
@@ -95,23 +97,29 @@
 .wh-columns,
 .wh-grid {
   display: grid;
+  /* 列数收进变量：模块的 `span: 1..4` 是「跨父级的几列」，所以模块层保留 repeat(N)，
+     不套外壳的 12 栅格（外壳那套见 docs/design/layout-grid.md §2，模块层的理由见 §6）。 */
+  grid-template-columns: repeat(var(--wh-cols, 1), minmax(0, 1fr));
   align-items: start;
 }
 
-.wh-columns-1 { grid-template-columns: minmax(0, 1fr); }
-.wh-columns-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.wh-columns-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.wh-columns-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.wh-columns-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.wh-columns-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.wh-columns-1 { --wh-cols: 1; }
+.wh-columns-2 { --wh-cols: 2; }
+.wh-columns-3 { --wh-cols: 3; }
+.wh-columns-4 { --wh-cols: 4; }
+.wh-columns-6 { --wh-cols: 6; }
+/* 5 列已弃用：窄屏放不下五个可读的列，十二等分也除不尽它。
+   这里显式退回单列，而不是靠 --wh-cols 的默认值兜底，免得看起来像生效了。 */
+.wh-columns-5 { --wh-cols: 1; }
 
 @media (max-width: 900px) {
+  .wh-columns-1,
   .wh-columns-2,
   .wh-columns-3,
   .wh-columns-4,
   .wh-columns-5,
   .wh-columns-6 {
-    grid-template-columns: minmax(0, 1fr);
+    --wh-cols: 1;
   }
 }
 
@@ -135,7 +143,7 @@
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .wh-tab {
@@ -150,13 +158,13 @@
 .wh-tab.on {
   background: var(--wh-accent);
   border-color: var(--wh-accent);
-  color: #fff;
+  color: var(--wh-on-accent);
 }
 
 .wh-tabpanel {
   border: 1px solid var(--wh-line);
   border-radius: var(--wh-radius);
-  padding: 10px 12px;
+  padding: 12px;
   background: var(--wh-bg);
   margin-top: 8px;
 }
@@ -207,7 +215,7 @@
 .wh-row {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -309,8 +317,8 @@
 .wh-grid-2,
 .wh-grid-3 {
   display: grid;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .wh-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -505,7 +513,7 @@
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr) 72px;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-size: 13px;
   margin-bottom: 6px;
 }
@@ -559,7 +567,7 @@
 .wh-rank-rows > li {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 12px;
   font-size: 13px;
 }
 
@@ -585,7 +593,7 @@
 .wh-feed > li {
   display: grid;
   grid-template-columns: 96px minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 12px;
   align-items: baseline;
   font-size: 13px;
   padding-bottom: 8px;
