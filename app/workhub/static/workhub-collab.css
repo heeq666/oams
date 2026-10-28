@@ -1,0 +1,385 @@
+/* 协作室 -- 右下角按钮呼出的全局讨论层。
+ *
+ * 形态：底部两栏弹层。从窗口底边升起，上两角 28、下两角 0（贴底边才不露缝），
+ * 左栏会话列表 264 定宽，右栏对话自适应、最窄 520。窄到 900 以下只剩一栏，
+ * 左栏换成可返回的整屏。
+ *
+ * 它不挂在任何一个页面下面：左栏列的是全部会话，和当前停在哪无关。
+ * 令牌全部来自 base.html 的 :root，这里不写字面色值，圆角只用五档。
+ */
+
+/* --- 入口按钮 --- */
+.collab-host { position: relative; }
+.collab-entry {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  box-shadow: 0 24px 48px -6px rgba(15, 23, 42, .10);
+  transition: opacity .12s ease;
+}
+.collab-entry:hover { background: var(--accent-hover); }
+/* 面板升起时把按钮藏起来：1440 下弹层右边只留 63，768 下更是整宽盖住。
+   留着它既点不到，也会和面板的圆角打架。关面板靠面板自己的 ✕ 或 Esc。 */
+.collab-entry.is-hidden { opacity: 0; pointer-events: none; }
+.collab-entry:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.collab-entry svg { width: 22px; height: 22px; display: block; }
+.collab-entry-count {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--blocked);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 1.5px var(--card);
+}
+.collab-entry-count:empty { display: none; }
+
+/* --- 弹层 --- */
+/* 靠右下角停：右边缘贴视口右边，跟 FAB 同侧，不从屏幕正中升起来。
+   宽度 1313 / 960 / 704 三档都是「视口宽 − 64」，1440 时正好 1313，
+   左边缘落在 127 与 Main 对齐；超宽屏封顶 1313 后仍然贴右边。 */
+.collab-panel {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  width: min(1313px, calc(100vw - 64px));
+  height: min(560px, calc(100vh - 96px));
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--r-card) var(--r-card) 0 0;
+  box-shadow: 0 24px 48px -6px rgba(15, 23, 42, .12);
+  transform: translateY(100%);
+  transition: transform .18s ease, height .18s ease;
+  overflow: hidden;
+}
+/* 开合状态挂在 body 上，不挂在 #collab-host 上：host 是 htmx 的替换目标，
+   swap 期间 htmx 会自己改它的 className（htmx-settling），把 is-open 一起抹掉。 */
+body.collab-open .collab-panel { transform: translateY(0); }
+.collab-panel.is-tall { height: calc(100vh - 96px); }
+
+/* --- 面板头：横跨整宽，收起固定在右上角 --- */
+/* 收起按钮必须在最外层。它挂在左栏里时，一个会话都没选（右栏空态）就找不到出口；
+   而且左栏只有 264 宽，✕ 落在画面偏左，人往右上角找会扑空。 */
+.collab-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 48px;
+  padding: 0 12px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.collab-panel-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+.collab-panel-sub { font-size: 11px; color: var(--muted); }
+.collab-panel-spacer { flex: 1; min-width: 0; }
+.collab-panel-unread { font-size: 11px; color: var(--muted); }
+.collab-panel-unread:empty { display: none; }
+
+/* --- 主体：左栏 + 右栏 --- */
+.collab-body { display: flex; flex: 1; min-height: 0; }
+
+/* --- 左栏 --- */
+.collab-side {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 264px;
+  min-width: 0;
+  background: var(--subtle);
+  border-right: 1px solid var(--line);
+}
+.collab-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  margin: 8px 12px 8px 16px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  /* 搜索框是胶囊（学苹果：胶囊只给按钮、搜索、徽章） */
+  border-radius: var(--r-pill);
+  background: var(--card);
+}
+.collab-search-icon { font-size: 13px; color: var(--muted); line-height: 1; }
+.collab-search input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.collab-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 12px; }
+
+/* 会话列表的三段：管理群 / 汇报群 / 私聊 */
+.collab-group + .collab-group { margin-top: 12px; }
+.collab-group-head { padding: 4px 8px; }
+.collab-group-label { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
+.collab-group-hint { display: block; font-size: 11px; line-height: 1.35; color: var(--muted); opacity: .8; }
+
+/* 会话行 264x56：头像 + 名称/末句 + 未读数。悬停比底色深一档，选中反白。 */
+.collab-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 8px;
+  border-radius: var(--r-small);
+  color: inherit;
+  text-decoration: none;
+}
+.collab-row:hover { background: var(--hover); }
+.collab-row.on { background: var(--card); }
+.collab-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-small);
+  background: var(--subtle);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+.collab-row.dm .collab-avatar {
+  border-radius: var(--r-pill);
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.collab-avatar.sm { width: 32px; height: 32px; font-size: 12px; }
+.collab-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.collab-row-name { font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.collab-row-last { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.collab-row-unread {
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--blocked);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  text-align: center;
+}
+.collab-empty-hint { margin: 8px; font-size: 12px; line-height: 1.6; color: var(--muted); }
+
+/* --- 右栏 --- */
+.collab-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.collab-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* 对话头 52 高，与 Figma 群头（172:11317）同值；面板头已经横跨整宽 48 了，
+   这里只放「这群是谁」+ 到顶，不再重复一枚 ✕。 */
+.collab-thread-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 52px;
+  padding: 0 12px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.collab-thread-titles { flex: 1; min-width: 0; }
+.collab-thread-name { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.collab-kind {
+  flex: none;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--subtle);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.collab-thread-sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+.collab-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-small);
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.collab-icon-btn:hover { background: var(--subtle); color: var(--ink); }
+.collab-back { display: none; font-size: 18px; }
+
+.collab-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+}
+/* 消息贴着输入框往上排：只有两三句时不该顶在消息区最上面留一大片空白。
+   用一个空的第一项吃掉富余空间；内容超高时它自然缩到 0，不影响滚动。 */
+.collab-msgs::before { content: ""; flex: 0 0 auto; margin-top: auto; }
+.collab-msg { display: flex; gap: 10px; }
+.collab-msg-body { min-width: 0; flex: 1; }
+.collab-msg-meta { display: flex; align-items: center; gap: 8px; }
+.collab-msg-name { font-size: 13px; font-weight: 500; color: var(--ink); }
+.collab-msg-time { margin-left: auto; font-size: 11px; color: var(--muted); }
+.collab-msg-text { margin: 4px 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; }
+
+/* AI 代发的模型名。浅紫底紫字：它标的是「谁说的」，视觉重量不该盖过正文。 */
+.collab-model {
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--agent-soft);
+  box-shadow: inset 0 0 0 1px var(--agent-line);
+  color: var(--agent);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* 跨天分隔：一条细线中间夹日期，不占底色、不可点。 */
+.collab-day { display: flex; align-items: center; gap: 12px; }
+.collab-day::before, .collab-day::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.collab-day span { font-size: 12px; color: var(--muted); }
+
+/* 加载更早：贴着消息区顶部，加载完只把历史插在它下面，视线不跳。 */
+.collab-more {
+  align-self: center;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--r-small);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.collab-more:hover { background: var(--subtle); color: var(--ink); }
+.collab-more.done { cursor: default; margin: 0; }
+.collab-more.done:hover { background: none; color: var(--muted); }
+/* htmx 发出请求到回来这段时间，加载行自己变成「正在加载…」——用 :disabled
+   是因为 htmx 会给触发元素加 disabled，不用再多一个 class。 */
+.collab-more:disabled { cursor: default; color: var(--muted); }
+
+/* --- 输入区 --- */
+.collab-composer { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--line); }
+.collab-composer-box {
+  display: flex;
+  /* 发送按钮 36 在 40 高的框里居中：上下一共 2 内距 + 2 描边 = 40。 */
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 1px 8px 1px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--card);
+}
+.collab-composer-box:focus-within { border-color: var(--ring); }
+.collab-composer textarea {
+  flex: 1;
+  min-width: 0;
+  /* 单行 = 24 行盒，框总高 40。输入超过一行时由 base.html 里的 autosize 把
+     height 顶上去，三行（72）封顶，再多的靠 textarea 自己滚。base.html 给全局
+     textarea 定了 min-height: 120，这里必须盖掉，否则一句话的输入框就有 120 高。 */
+  min-height: 24px;
+  max-height: 72px;
+  overflow-y: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 24px;
+  resize: none;
+  outline: none;
+}
+.collab-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 15px;
+  cursor: pointer;
+}
+.collab-send:disabled { opacity: .4; cursor: default; }
+.collab-composer-hint { margin: 8px 0 0; font-size: 11px; color: var(--muted); }
+
+/* --- 空态 / 错误态 --- */
+.collab-empty, .collab-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  padding: 24px;
+  text-align: center;
+}
+.collab-empty-title { margin: 0; font-size: 14px; font-weight: 500; color: var(--ink); }
+.collab-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  max-width: 420px;
+  padding: 14px 16px;
+  border-radius: var(--r-control);
+  box-shadow: inset 0 0 0 1px var(--danger-line);
+  background: var(--danger-soft);
+  text-align: left;
+}
+.collab-alert-title { font-size: 13px; font-weight: 500; color: var(--blocked-strong); }
+.collab-alert-body { font-size: 12px; line-height: 1.55; color: var(--ink-2); }
+.collab-composer > .collab-alert { max-width: none; margin-bottom: 8px; }
+
+/* --- 窄屏：只剩一栏。默认是会话列表，点开一个才换成对话，靠「‹」回来 --- */
+@media (max-width: 899px) {
+  .collab-side { width: 100%; border-right: 0; }
+  .collab-panel:not(.is-thread) .collab-main { display: none; }
+  .collab-panel.is-thread .collab-side { display: none; }
+  .collab-back { display: inline-flex; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .collab-panel { transition: none; }
+}

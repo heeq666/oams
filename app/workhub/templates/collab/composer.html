@@ -1,0 +1,11 @@
+{% if error %}<div class="collab-alert collab-alert-danger" role="alert">{{ error }}</div>{% endif %}
+<form class="collab-composer" hx-post="/collab/threads/{{ thread.thread_id }}/messages"
+      hx-target="#collab-main" hx-swap="innerHTML" hx-disabled-elt="find button">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="collab-composer-box">
+    <textarea name="body" rows="1" maxlength="4000" required
+              placeholder="{{ placeholder }}" aria-label="发言">{{ draft }}</textarea>
+    <button type="submit" class="collab-send" aria-label="发送" title="发送">↑</button>
+  </div>
+  <p class="collab-composer-hint">以「{{ member.display_name }}」的身份发出。AI 代发要等接上 MCP 工具，这一版没有。</p>
+</form>
