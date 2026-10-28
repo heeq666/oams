@@ -14,7 +14,7 @@
 {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
 
 {% if pending %}
-<div class="stack-20">
+<div class="stack-16">
 {% for p in pending %}
 {% set b = p.bundle %}
 <section class="card review-card">
@@ -67,7 +67,7 @@
     {% endif %}
   </div>
 
-  <div class="decide" style="margin-top:16px; gap:14px">
+  <div class="decide" style="margin-top:16px">
     <form method="post" action="/reviews/{{ p.interface_id }}/approve">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <div class="caption">通过</div>

@@ -8,8 +8,8 @@
   </div>
 </div>
 
-<div class="settings-cols">
-  <section class="card">
+<div class="grid-12">
+  <section class="card span-8">
     <div class="card-head">
       <h2 style="margin:0">部门</h2>
       <span class="crumb-meta">{{ org_units | length }} 个 · {{ org_units | selectattr('page_count') | list | length }} 个有页面</span>
@@ -35,7 +35,7 @@
     </table>
   </section>
 
-  <section class="card">
+  <section class="card span-4">
     <div class="card-head">
       <h2 style="margin:0">岗位</h2>
       <span class="crumb-meta">{{ positions | length }} 个</span>
@@ -55,9 +55,8 @@
     {% endfor %}
     </div>
   </section>
-</div>
 
-<section class="card" style="margin-top:20px">
+  <section class="card span-12">
   <div class="card-head">
     <h2 style="margin:0">最近改动</h2>
     <span class="crumb-meta">权限与页面的变更都会留痕</span>
@@ -80,7 +79,8 @@
   {% else %}
   <p class="empty" style="margin-top:12px">还没有记录。</p>
   {% endif %}
-</section>
+  </section>
+</div>
 
 {# The six screens that used to sit in a row here are views of this same
    section, so they live in the rail beside the page instead of a second menu
