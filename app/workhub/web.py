@@ -39,7 +39,7 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from workhub import admin_labels, api, funnel, metrics, review as review_rules
+from workhub import admin_labels, api, collab, funnel, metrics, review as review_rules
 from workhub.config import settings
 from workhub.datacenter import DataCenter, DataCenterNotConfigured, build_datacenter
 from workhub.db import connection
@@ -67,7 +67,24 @@ def _display_time(value: datetime | None, fmt: str = "%m-%d %H:%M") -> str:
     return value.astimezone(DISPLAY_TZ).strftime(fmt)
 
 
+def _badge_count(value: Any) -> str:
+    """未读徽章上的字数：到 99 为止都写真实数字，再往上写 99+。
+
+    徽章固定 16 高、宽度靠 HUG 撑，三位数会撑到 28 宽，一串长数字还会把
+    左侧的会话名挤窄；真实条数另有去处（aria-label 与面板头「共 N 条未读」），
+    徽章只负责「有多少没看」这一眼。
+    """
+    try:
+        count = int(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if count <= 0:
+        return ""
+    return str(count) if count < 100 else "99+"
+
+
 TEMPLATES.env.filters["dt"] = _display_time
+TEMPLATES.env.filters["badge"] = _badge_count
 # The global stays for anything that still wants the raw predicate; the page itself
 # renders board.visible_cards, which api already filtered with the same function.
 TEMPLATES.env.globals["in_layer"] = api.layer_matches
@@ -1963,3 +1980,262 @@ def settings_home(request: Request):
         "positions": position_rows,
         "recent": recent,
     })
+
+
+# --------------------------------------------------------------------------- #
+# 协作室：右下角按钮呼出的全局讨论层
+#
+# 三条规则（谁能看见哪个群、什么算未读、消息只能发不能改）都写在 collab.py，
+# 这一层只负责把数据端到界面上。所以这里没有一处自己判断可见性——一律走
+# collab.can_see / collab.visible_*，页面的答案和将来 MCP 工具的答案才会是同一个。
+#
+# 形态是「底部两栏弹层」：从窗口底边升起，上两角 28、下两角 0，左栏会话列表
+# 264 定宽，右栏对话自适应。它不是导航项，也不和当前停在哪个页面有关——
+# 左栏列的就是全部会话。
+# --------------------------------------------------------------------------- #
+
+#: 一次取多少条消息。这是分页参数，不是设计值：界面只承诺「加载行不占位」。
+COLLAB_PAGE_LIMIT = 30
+
+COLLAB_PLACEHOLDER = {
+    collab.KIND_MANAGE: "对这个部门发言…",
+    collab.KIND_FILL: "对这页的填报口径发言…",
+}
+
+#: 发言表单的 CSRF 用途串。跟其它表单一样，令牌绑在会话 cookie 上。
+COLLAB_FORM_PURPOSE = "workhub:collab-form:v1"
+
+
+def _collab_columns(conn, member_id: Any, q: str | None = None) -> dict[str, Any]:
+    """左栏的三段会话 + 总未读。
+
+    q 只按会话名过滤。设计上搜索最终要同时搜消息与同事（那是独立检索面），
+    这一版先只做到「左栏能筛」，所以占位文案也只写「搜索会话」——说了能搜
+    消息却搜不到，比没有这个框更糟。
+    """
+    objects = collab.visible_objects(conn, member_id)
+    dms = collab.visible_dms(conn, member_id)
+    needle = (q or "").strip().lower()
+    if needle:
+        objects = [row for row in objects if needle in row["title"].lower()]
+        dms = [row for row in dms if needle in row["title"].lower()]
+    for row in objects + dms:
+        row["is_dm"] = row["kind"] == collab.KIND_DM
+        row["avatar"] = (row["title"] or "群")[:1]
+        if row["thread_id"]:
+            row["href"] = "/collab/threads/" + str(row["thread_id"])
+        else:
+            params = ["kind=" + row["kind"]]
+            if row["org_unit_id"]:
+                params.append("org_unit_id=" + str(row["org_unit_id"]))
+            if row["interface_id"]:
+                params.append("interface_id=" + str(row["interface_id"]))
+            row["href"] = "/collab/open?" + "&".join(params)
+    groups = []
+    for kind in collab.KIND_ORDER:
+        rows = dms if kind == collab.KIND_DM else [r for r in objects if r["kind"] == kind]
+        if rows:
+            groups.append({"kind": kind, "label": collab.KIND_LABELS[kind],
+                           "label_hint": COLLAB_GROUP_HINTS.get(kind, ""), "rows": rows})
+    return {"groups": groups, "unread_total": collab.unread_total(conn, member_id),
+            "q": q or ""}
+
+
+#: 分组标题右边那句说明。它不是装饰：没有它，「汇报群」和「管理群」只差一个字。
+COLLAB_GROUP_HINTS = {
+    collab.KIND_MANAGE: "管理员之间谈页面怎么搭",
+    collab.KIND_FILL: "填这页的人问字段怎么填",
+    collab.KIND_DM: "两个人之间的对话",
+}
+
+
+def _collab_items(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把消息切成「日期分隔 + 消息」的流水。
+
+    日期分隔只在跨天处插一条，同一天连续消息之间不插。切在服务端而不是模板里，
+    是因为模板一旦开始判断日期，分页拼接上来的那一段就没有上下文可比了。
+    """
+    items: list[dict[str, Any]] = []
+    last_day = None
+    for message in messages:
+        day = _display_time(message["created_at"], "%Y-%m-%d")
+        if day != last_day:
+            items.append({"type": "day",
+                          "label": _display_time(message["created_at"], "%m月%d日")})
+            last_day = day
+        items.append({"type": "msg", "msg": message})
+    return items
+
+
+def _collab_thread_payload(conn, member_id: Any, thread: dict[str, Any], *,
+                           before_seq: int | None = None,
+                           error: str | None = None,
+                           draft: str = "",
+                           csrf: str = "") -> dict[str, Any]:
+    """右栏要的全部东西。
+
+    before_seq 是「加载更早」的游标：取到它之前的那一批，多取一条用来判断还有
+    没有更早的。多取的那条是这批里最旧的一条，看完就丢——它已经在更早的那一
+    屏里出现过了。
+    """
+    messages = collab.list_messages(conn, thread["thread_id"], before_seq=before_seq,
+                                    limit=COLLAB_PAGE_LIMIT + 1)
+    has_more = len(messages) > COLLAB_PAGE_LIMIT
+    if has_more:
+        messages = messages[1:]
+    return {
+        "header": collab.thread_header(conn, member_id, thread),
+        "thread": thread,
+        "items": _collab_items(messages),
+        "has_more": has_more,
+        "earlier_cursor": messages[0]["seq"] if (has_more and messages) else None,
+        "placeholder": COLLAB_PLACEHOLDER.get(thread["kind"], "发言…"),
+        "error": error,
+        "draft": draft,
+        "csrf": csrf,
+    }
+
+
+def _collab_error(request: Request, member: dict[str, Any], message: str):
+    """会话打不开时：右栏说一句实话，左栏照常可用。"""
+    with connection() as conn:
+        data = _collab_columns(conn, member["member_id"])
+    return TEMPLATES.TemplateResponse(request, "collab/error.html",
+                                      {"member": member, "message": message, **data})
+
+@router.get("/collab", response_class=HTMLResponse)
+def collab_panel(request: Request):
+    """打开协作室。不标已读——面板只是打开，还没点进任何会话。"""
+    member = _member(request)
+    if member is None:
+        return RedirectResponse(url="/login", status_code=302)
+    with connection() as conn:
+        data = _collab_columns(conn, member["member_id"])
+    return TEMPLATES.TemplateResponse(request, "collab/panel.html",
+                                      {"member": member, **data})
+
+
+@router.get("/collab/threads", response_class=HTMLResponse)
+def collab_threads(request: Request, q: str | None = None):
+    """左栏会话列表。搜索框打一个字就换一次这一段。"""
+    member = _member(request)
+    if member is None:
+        return HTMLResponse("", status_code=401)
+    with connection() as conn:
+        data = _collab_columns(conn, member["member_id"], q)
+    return TEMPLATES.TemplateResponse(request, "collab/thread_list.html",
+                                      {"member": member, **data})
+
+
+@router.get("/collab/open", response_class=HTMLResponse)
+def collab_open(request: Request, kind: str,
+                org_unit_id: UUID | None = None,
+                interface_id: UUID | None = None,
+                peer_id: UUID | None = None):
+    """点一个「还没有人说过话」的对象：这一刻才建线程。
+
+    会话不预建，所以左栏列的是对象；点进来才 INSERT。并发点两次撞上部分唯一
+    索引是正常结果，ensure_thread 用 ON CONFLICT DO NOTHING 吃掉它。
+    """
+    member = _member(request)
+    if member is None:
+        return HTMLResponse("", status_code=401)
+    member_id = member["member_id"]
+    with connection() as conn:
+        try:
+            thread = collab.ensure_thread(conn, member_id, kind=kind, org_unit_id=org_unit_id,
+                                          interface_id=interface_id, peer_id=peer_id)
+        except collab.CollabError as exc:
+            return _collab_error(request, member, str(exc))
+        collab.mark_read(conn, thread["thread_id"], member_id)
+        payload = _collab_thread_payload(conn, member_id, thread,
+                                         csrf=_form_token(request, COLLAB_FORM_PURPOSE))
+        payload.update(_collab_columns(conn, member_id))
+    return TEMPLATES.TemplateResponse(request, "collab/thread.html",
+                                      {"member": member, **payload})
+
+
+@router.get("/collab/threads/{thread_id}", response_class=HTMLResponse)
+def collab_thread(request: Request, thread_id: UUID):
+    """打开一个会话：读到底、把它标成已读、回右栏整屏。"""
+    member = _member(request)
+    if member is None:
+        return HTMLResponse("", status_code=401)
+    member_id = member["member_id"]
+    with connection() as conn:
+        thread = collab.get_thread(conn, thread_id)
+        if thread is None or thread["status"] != "active" or not collab.can_see(conn, member_id, thread):
+            return _collab_error(request, member, "这个会话不存在，或者不开放给你。")
+        collab.mark_read(conn, thread_id, member_id)
+        payload = _collab_thread_payload(conn, member_id, thread,
+                                         csrf=_form_token(request, COLLAB_FORM_PURPOSE))
+        payload.update(_collab_columns(conn, member_id))
+    return TEMPLATES.TemplateResponse(request, "collab/thread.html",
+                                      {"member": member, **payload})
+
+
+@router.get("/collab/threads/{thread_id}/messages", response_class=HTMLResponse)
+def collab_earlier(request: Request, thread_id: UUID, before_seq: int):
+    """「加载更早」那一批：只回更早的消息，由前端插到列表最前面。
+
+    只回这一段而不是整屏，是因为整屏替换会把滚动位置和自己刚发的那句一起弄丢。
+    """
+    member = _member(request)
+    if member is None:
+        return HTMLResponse("", status_code=401)
+    member_id = member["member_id"]
+    with connection() as conn:
+        thread = collab.get_thread(conn, thread_id)
+        if thread is None or thread["status"] != "active" or not collab.can_see(conn, member_id, thread):
+            return HTMLResponse("", status_code=403)
+        messages = collab.list_messages(conn, thread_id, before_seq=before_seq,
+                                        limit=COLLAB_PAGE_LIMIT + 1)
+        has_more = len(messages) > COLLAB_PAGE_LIMIT
+        if has_more:
+            messages = messages[1:]
+    return TEMPLATES.TemplateResponse(request, "collab/earlier.html", {
+        "member": member, "thread": thread, "items": _collab_items(messages),
+        "has_more": has_more,
+        "earlier_cursor": messages[0]["seq"] if (has_more and messages) else None,
+    })
+
+
+@router.post("/collab/threads/{thread_id}/messages", response_class=HTMLResponse)
+def collab_post_message(request: Request, thread_id: UUID, body: str = Form(""),
+                        csrf: str = Form("")):
+    """发一条。失败时把正文原样退回输入框，输入框上方给一句原因。
+
+    表单令牌跟其它写入表单同一套：绑在会话 cookie 上，转发别人的链接发不出去。
+    """
+    member = _member(request)
+    if member is None:
+        return HTMLResponse("", status_code=401)
+    _check_form_token(request, csrf, COLLAB_FORM_PURPOSE)
+    member_id = member["member_id"]
+    with connection() as conn:
+        thread = collab.get_thread(conn, thread_id)
+        if thread is None or thread["status"] != "active" or not collab.can_see(conn, member_id, thread):
+            return _collab_error(request, member, "这个会话不存在，或者不开放给你。")
+        error = None
+        try:
+            collab.post_message(conn, thread, member_id, body)
+        except collab.CollabError as exc:
+            error = str(exc)
+        collab.mark_read(conn, thread_id, member_id)
+        payload = _collab_thread_payload(conn, member_id, thread, error=error,
+                                         draft="" if error is None else body,
+                                         csrf=_form_token(request, COLLAB_FORM_PURPOSE))
+        payload.update(_collab_columns(conn, member_id))
+    return TEMPLATES.TemplateResponse(request, "collab/thread.html",
+                                      {"member": member, **payload})
+
+
+@router.get("/collab/unread.json")
+def collab_unread(request: Request):
+    """入口按钮上那个数。没有实时推送：进页面算一次，开面板再算一次。"""
+    member = _member(request)
+    if member is None:
+        return JSONResponse({"total": 0})
+    with connection() as conn:
+        return JSONResponse({"total": collab.unread_total(conn, member["member_id"])})
+

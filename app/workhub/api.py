@@ -1396,6 +1396,7 @@ from workhub.web import router as web_router  # noqa: E402
 from workhub.security import (active_org_unit_ids, has_company_scope,  # noqa: E402
                               has_permission, principal_from_request)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
+from workhub import collab  # noqa: E402
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 app.include_router(web_router)
@@ -1462,6 +1463,8 @@ async def attach_browser_principal(request, call_next):
     request.state.dept_rail = []
     request.state.rail = []
     request.state.dept_active = None
+    # 协作室入口按钮上的未读数。只在整页渲染时算：htmx 片段不画外壳，算了就是白查。
+    request.state.collab_unread = 0
     # Highlight the department the URL is inside, so the sidebar shows where you are.
     parts = [p for p in request.url.path.split("/") if p]
     if len(parts) >= 2 and parts[0] == "departments":
@@ -1507,4 +1510,7 @@ async def attach_browser_principal(request, call_next):
             }
             request.state.rail = _shell_rail(request.url.path, nav, request.state.dept_rail,
                                              request.state.dept_active, caps)
+            # 徽章只在整页出现。片段响应（/collab 里那几条）不画外壳，跳过这次查询。
+            if request.method == "GET" and not request.url.path.startswith("/collab"):
+                request.state.collab_unread = collab.unread_total(conn, member_id)
     return await call_next(request)

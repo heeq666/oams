@@ -1,0 +1,29 @@
+{# 协作室：底部两栏弹层。
+   宿主是 base.html 里的 #collab-host，第一次点入口按钮时 htmx 把这一段拉进来。
+   结构 = 面板头（48，横跨整宽，右上角是收起）+ 主体（左栏会话列表 264 定宽 bg/subtle + 右栏对话自适应）。
+   面板上两角 28、下两角 0：它从窗口底边升起，底边贴着窗口才不露缝。
+   没有遮罩：它不是模态框，只是从底下升起来的一层，页面照常看得见也照常可滚。
+   关闭靠面板头右上角的 ⌄ 和 Esc——**收起按钮必须在最外层**：它得在「一个会话都没选」
+   的时候也能点到（Figma 头部 148:6360 / 149:10708 就是这样，横跨整宽）。 #}
+<section class="collab-panel" role="dialog" aria-label="协作室">
+  <header class="collab-panel-head">
+    <h2 class="collab-panel-title">协作室</h2>
+    <span class="collab-panel-sub">全站的讨论层，和你停在哪个页面无关</span>
+    <span class="collab-panel-spacer"></span>
+    <span class="collab-panel-unread" id="collab-panel-unread">{% if unread_total %}共 {{ unread_total }} 条未读{% endif %}</span>
+    <button type="button" class="collab-icon-btn" data-collab-close aria-label="收起协作室" title="收起">⌄</button>
+  </header>
+  <div class="collab-body">
+    <aside class="collab-side">
+      <label class="collab-search">
+        <span class="collab-search-icon" aria-hidden="true">⌕</span>
+        <input type="search" name="q" value="{{ q or '' }}" placeholder="搜索会话"
+               aria-label="搜索会话" autocomplete="off"
+               hx-get="/collab/threads" hx-trigger="input changed delay:200ms, search"
+               hx-target="#collab-thread-list" hx-swap="innerHTML">
+      </label>
+      <div class="collab-list" id="collab-thread-list">{% include "collab/thread_list.html" %}</div>
+    </aside>
+    <div class="collab-main" id="collab-main">{% include "collab/empty.html" %}</div>
+  </div>
+</section>

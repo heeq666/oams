@@ -1,0 +1,36 @@
+{# 消息区。这一份同时用于「点开会话」和「加载更早」两处：
+   区别只在外面怎么换——点开会话换 #collab-msgs 的 innerHTML（整屏），
+   加载更早换第一行 #collab-before 的 outerHTML（新的一行 + 更早的那批）。
+   不做「整屏重发」，是因为重发会把滚动位置和自己刚发的那句一起弄丢。 #}
+{% if not items %}
+<div class="collab-empty">
+  <p class="collab-empty-title">这个群还没人说过话</p>
+  <p class="collab-empty-hint">说第一句话。管理员和填这页的同事都能看到。</p>
+</div>
+{% else %}
+{% if has_more %}
+<button type="button" class="collab-more" id="collab-before"
+        hx-get="/collab/threads/{{ thread.thread_id }}/messages?before_seq={{ earlier_cursor }}"
+        hx-target="this" hx-swap="outerHTML">正在加载更早的消息…</button>
+{% else %}
+<p class="collab-more done" id="collab-before">已经是最早的消息了</p>
+{% endif %}
+{% for item in items %}
+{% if item.type == 'day' %}
+<div class="collab-day"><span>{{ item.label }}</span></div>
+{% else %}
+{% set m = item.msg %}
+<article class="collab-msg">
+  <span class="collab-avatar sm" aria-hidden="true">{{ (m.author_name or '?')[:1] }}</span>
+  <div class="collab-msg-body">
+    <div class="collab-msg-meta">
+      <span class="collab-msg-name">{{ m.author_name or '已离开的成员' }}</span>
+      {% if m.author_kind == 'agent' and m.agent_model %}<span class="collab-model">{{ m.agent_model }}</span>{% endif %}
+      <span class="collab-msg-time">{{ m.created_at | dt('%H:%M') }}</span>
+    </div>
+    <p class="collab-msg-text">{{ m.body }}</p>
+  </div>
+</article>
+{% endif %}
+{% endfor %}
+{% endif %}
