@@ -54,6 +54,9 @@ const MEASURE = `(() => {
     return { rows: rowList, width: inner, firstRowSum: sum, firstRowSlack: rowList[0] ? inner - sum : null, kids };
   });
   return {
+    href: location.pathname + location.search,
+    pageTitle: document.title,
+    hasShell: !!main,
     viewport: document.documentElement.clientWidth,
     overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     mainWidth: main ? Math.round(main.getBoundingClientRect().width) : null,
@@ -64,6 +67,7 @@ const MEASURE = `(() => {
 })()`;
 
 const report = {};
+let failed = false;
 for (const w of widths) {
   await send("Emulation.setDeviceMetricsOverride", { width: w, height: 900, deviceScaleFactor: 1, mobile: false });
   for (const p of paths) {
@@ -71,6 +75,11 @@ for (const w of widths) {
     await sleep(1400);
     const r = await send("Runtime.evaluate", { expression: MEASURE, returnByValue: true });
     const value = r.result?.result?.value ?? { error: r.result?.exceptionDetails?.text };
+    // 量到登录页就当失败：没有外壳时 grids 一定是空的，静默通过比报错更危险。
+    if (value && value.hasShell === false) {
+      value.error = "没找到 .app-frame > main（当前在 " + value.href + "）——大概率被踢回登录页，先确认 /settings 直连是外壳";
+      failed = true;
+    }
     report[w + " " + p] = value;
     if (shot === "1") {
       const cap = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
@@ -84,4 +93,4 @@ for (const w of widths) {
 console.log(JSON.stringify(report, null, 1));
 ws.close();
 chrome.kill();
-process.exit(0);
+process.exit(failed ? 1 : 0);
