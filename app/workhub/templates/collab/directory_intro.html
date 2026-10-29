@@ -1,0 +1,14 @@
+{# 通讯录态的右栏：还没点人时先把这一栏是干什么的说清楚。
+   顶上留一条群头，只为了那条下边线跨过右栏，别在没选会话时断成两截。 #}
+<div class="collab-thread">
+  <header class="collab-thread-head">
+    <div class="collab-thread-titles">
+      <div class="collab-thread-name"><span>通讯录</span></div>
+      <p class="collab-thread-sub">{{ total_admins }} 位部门管理员 · {{ total_peers }} 位同事 · 点谁就跟谁私聊</p>
+    </div>
+  </header>
+  <div class="collab-empty">
+    <p class="collab-empty-title">从左栏点一个同事，就能和他私聊</p>
+    <p class="collab-empty-hint">私聊只是两个人的对话，不授予任何权限。</p>
+  </div>
+</div>

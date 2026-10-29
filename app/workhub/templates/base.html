@@ -915,6 +915,47 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     var entry = document.getElementById("collab-entry");
     if (!host || !entry) return;
     function panel() { return host.querySelector(".collab-panel"); }
+    // 左栏装两种内容：会话 / 通讯录。视图记在 data-collab-view 上，不记在服务端——
+    // 左栏只有一个容器，谁最后写谁说了算，多存一份服务端状态就多一处会和 DOM 对不上。
+    // 搜索框、隐藏字段、右栏空态、选中态全部由这一个函数改，别的地方不许再单独切。
+    function setView(p, view) {
+      var directory = view === "directory";
+      p.dataset.collabView = directory ? "directory" : "threads";
+      var toggle = p.querySelector("[data-collab-view-toggle]");
+      if (toggle) {
+        toggle.setAttribute("aria-pressed", directory ? "true" : "false");
+        toggle.setAttribute("aria-label", directory ? "返回会话" : "通讯录");
+        toggle.setAttribute("title", directory ? "返回会话" : "通讯录");
+      }
+      var field = p.querySelector("#collab-view");
+      if (field) { field.value = p.dataset.collabView; }
+      var input = p.querySelector(".collab-search input");
+      if (input) {
+        input.setAttribute("placeholder", directory ? "搜同事" : "搜索会话");
+        input.setAttribute("aria-label", directory ? "搜同事" : "搜索会话");
+      }
+      // 右栏还空着就一起换成通讯录的说明；已经开着一个会话就不动它——
+      // 草稿是没发出去的字，切个视图不该把它扔掉。
+      var main = document.getElementById("collab-main");
+      if (main && !main.querySelector(".collab-composer") && window.htmx) {
+        window.htmx.ajax("GET", "/collab/blank?view=" + (directory ? "directory" : "threads"),
+                         { target: main, swap: "innerHTML" });
+      }
+      if (input && window.htmx) { window.htmx.trigger(input, "search"); }
+    }
+    // 左栏重取回来之后，选中态得自己补。服务端不知道「右栏现在开的是哪一条」，
+    // 通讯录的行更是根本没有线程 id——所以按 href 里有没有当前线程的 id 来认。
+    function rehighlight() {
+      var p = panel();
+      var list = p && p.querySelector("#collab-thread-list");
+      var open = document.querySelector("#collab-main [data-thread-id]");
+      if (!list || !open) return;
+      var id = open.getAttribute("data-thread-id");
+      if (!id) return;
+      Array.prototype.forEach.call(list.querySelectorAll(".collab-row"), function (row) {
+        if ((row.getAttribute("href") || "").indexOf(id) !== -1) { row.classList.add("on"); }
+      });
+    }
     // 「想不想要它开着」只有这一个真相。不能拿 DOM 上的开合类判断：
     // 面板是异步取回来的，取回来时人可能已经按了 Esc —— 那一下延迟的 reveal
     // 会把刚关上的面板又推上来，接着点按钮就变成「关一个已经关了的」。
@@ -970,6 +1011,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
         tall.setAttribute("title", isTall ? "还原高度" : "展开到顶");
         return;
       }
+      if (event.target.closest("[data-collab-view-toggle]")) {
+        setView(p, p.dataset.collabView === "directory" ? "threads" : "directory");
+        return;
+      }
       if (event.target.closest("[data-collab-back]")) {
         // 窄屏：列表与对话轮流占满整宽，靠这一个类切换。
         p.classList.remove("is-thread"); return;
@@ -990,6 +1035,17 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       // 这里照样按「点外面」处理；留着这条判断是为了将来取消隐藏那层时不出双触发。
       if (event.target.closest && event.target.closest("#collab-entry")) return;
       close(false);
+    });
+    // 右栏换了内容之后把左栏重取一次：点开会话未读要掉、选中态要跟过去。
+    // 取哪一份由 data-collab-view 决定，所以人在通讯录里点了一个同事，回来还是通讯录。
+    document.body.addEventListener("htmx:afterSwap", function (event) {
+      var target = event.target;
+      if (!target) return;
+      if (target.id === "collab-thread-list") { rehighlight(); return; }
+      if (target.id !== "collab-main") return;
+      var p = panel();
+      var input = p && p.querySelector(".collab-search input");
+      if (input && window.htmx) { window.htmx.trigger(input, "search"); }
     });
   })();
   // 输入框长高：base.html 的 textarea 是固定高，多行就内部滚。协作室要「超过

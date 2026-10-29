@@ -2115,15 +2115,61 @@ def collab_panel(request: Request):
                                       {"member": member, **data})
 
 
+def _collab_side(conn, member_id: Any, view: str,
+                 q: str | None = None) -> dict[str, Any]:
+    """左栏那一个容器的两种内容：会话列表 / 通讯录。
+
+    view 由界面上的 data-collab-view 决定，服务端不记这个状态：左栏只有一个
+    容器，谁最后写谁说了算，多存一份服务端状态就多一处会和 DOM 对不上的地方。
+    """
+    directory = view == "directory"
+    data = (collab.directory(conn, member_id, q) if directory
+            else _collab_columns(conn, member_id, q))
+    data.update({"view": "directory" if directory else "threads",
+                 "unread_total": collab.unread_total(conn, member_id)})
+    return data
+
+
+@router.get("/collab/side", response_class=HTMLResponse)
+def collab_side(request: Request, view: str = "threads", q: str | None = None):
+    """左栏。搜索框打一个字、切一次视图，都是换这一段。"""
+    member = _member(request)
+    if member is None:
+        return HTMLResponse("", status_code=401)
+    with connection() as conn:
+        data = _collab_side(conn, member["member_id"], view, q)
+    return TEMPLATES.TemplateResponse(request, "collab/side.html",
+                                      {"member": member, **data})
+
+
 @router.get("/collab/threads", response_class=HTMLResponse)
 def collab_threads(request: Request, q: str | None = None):
-    """左栏会话列表。搜索框打一个字就换一次这一段。"""
+    """左栏会话列表（只要会话那一版）。留着是给测试与文档里的旧链接用。"""
     member = _member(request)
     if member is None:
         return HTMLResponse("", status_code=401)
     with connection() as conn:
         data = _collab_columns(conn, member["member_id"], q)
     return TEMPLATES.TemplateResponse(request, "collab/thread_list.html",
+                                      {"member": member, **data})
+
+
+@router.get("/collab/blank", response_class=HTMLResponse)
+def collab_blank(request: Request, view: str = "threads"):
+    """右栏「还没点开谁」的样子。
+
+    切到通讯录时要跟着换：左栏写着通讯录、右栏还写着「还没选会话」，
+    两栏就在讲两件事。
+    """
+    member = _member(request)
+    if member is None:
+        return HTMLResponse("", status_code=401)
+    directory = view == "directory"
+    data: dict[str, Any] = {"view": "directory" if directory else "threads"}
+    if directory:
+        with connection() as conn:
+            data.update(collab.directory(conn, member["member_id"]))
+    return TEMPLATES.TemplateResponse(request, "collab/blank.html",
                                       {"member": member, **data})
 
 

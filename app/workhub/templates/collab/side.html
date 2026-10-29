@@ -1,0 +1,4 @@
+{# 左栏那一个容器：会话列表或者通讯录。两段都从 /collab/side 出，
+   这样「搜索框打一个字」和「切一次视图」走的是同一条路，不会出现一套状态
+   记在服务端、一套记在 DOM 上。 #}
+{% if view == 'directory' %}{% include "collab/directory.html" %}{% else %}{% include "collab/thread_list.html" %}{% endif %}

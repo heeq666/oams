@@ -9,7 +9,10 @@
    也得有出口。
    面板上两角 28、下两角 0：它从窗口底边升起，底边贴着窗口才不露缝。
    没有遮罩：它不是模态框，只是从底下升起来的一层，页面照常看得见也照常可滚。 #}
-<section class="collab-panel" role="dialog" aria-label="协作室">
+<section class="collab-panel" role="dialog" aria-label="协作室" data-collab-view="threads">
+  {# 左栏现在装两种内容（会话 / 通讯录），视图记在这一层上。藏一个字段给 htmx 带，
+     比每次去改搜索框的 hx-get 稳：属性改完还得重新 process，容易和手上的请求打架。 #}
+  <input type="hidden" id="collab-view" name="view" value="threads">
   {# 到顶在左、收起在右：收起是最后一枚，位置固定在最角上，别让人往左找。 #}
   <div class="collab-actions">
     <button type="button" class="collab-icon-btn" data-collab-tall
@@ -41,9 +44,22 @@
           <span class="collab-search-icon" aria-hidden="true">⌕</span>
           <input type="search" name="q" value="{{ q or '' }}" placeholder="搜索会话"
                  aria-label="搜索会话" autocomplete="off"
-                 hx-get="/collab/threads" hx-trigger="input changed delay:200ms, search"
+                 hx-get="/collab/side" hx-trigger="input changed delay:200ms, search"
+                 hx-include="#collab-view"
                  hx-target="#collab-thread-list" hx-swap="innerHTML">
         </label>
+        {# 通讯录：换的是左栏那一个容器的内容，所以按钮长在左栏顶上，不另开一栏。
+           「人 + 两道横线」是通讯录的符号，和人像头像区分开。 #}
+        <button type="button" class="collab-icon-btn collab-view-btn" data-collab-view-toggle
+                aria-pressed="false" aria-label="通讯录" title="通讯录">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="9.4" cy="7.8" r="3.4"></circle>
+            <path d="M3.6 18.7c0-3.2 2.6-5.8 5.8-5.8s5.8 2.6 5.8 5.8"></path>
+            <path d="M16.9 7.9h4.3"></path>
+            <path d="M17.7 11.7h3.5"></path>
+          </svg>
+        </button>
       </div>
       <div class="collab-list" id="collab-thread-list">{% include "collab/thread_list.html" %}</div>
       <div class="collab-side-foot">
