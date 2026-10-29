@@ -13,6 +13,10 @@ dist/
 .artifacts/
 .design-kit/
 .figma/
+# 截图是自检用的，不是产物：验完就该丢，谁需要谁自己跑一遍截图脚本。
+assets/screenshots/
+assets/tmp-*
+tmp/
 
 # Real department seed data may contain employee names; keep it out of git.
 data/*.local.json
