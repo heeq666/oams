@@ -80,23 +80,21 @@
 body.collab-open .collab-panel { transform: translateY(0); }
 .collab-panel.is-tall { height: calc(100vh - 96px); }
 
-/* --- 面板头：横跨整宽，收起固定在右上角 --- */
-/* 收起按钮必须在最外层。它挂在左栏里时，一个会话都没选（右栏空态）就找不到出口；
-   而且左栏只有 264 宽，✕ 落在画面偏左，人往右上角找会扑空。 */
-.collab-panel-head {
+/* --- 右上角两枚图标：到顶 + 收起 --- */
+/* 浮在面板右上角，不挂在任何一栏的头部里。理由是出口得处处都在：
+   一个会话都没选（右栏空态）时要能收，窄屏只剩一栏时也要能收。
+   两栏顶部各有一条 52 的带子（左搜索、右群标题），图标正好压在带子右端——
+   padding-right 把这 84 宽（12 内距 + 32 + 8 + 32）让出来，两条带子都不被压住。 */
+.collab-actions {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: none;
-  height: 48px;
-  padding: 0 12px 0 20px;
-  border-bottom: 1px solid var(--line);
+  height: 52px;
 }
-.collab-panel-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
-.collab-panel-sub { font-size: 11px; color: var(--muted); }
-.collab-panel-spacer { flex: 1; min-width: 0; }
-.collab-panel-unread { font-size: 11px; color: var(--muted); }
-.collab-panel-unread:empty { display: none; }
 
 /* --- 主体：左栏 + 右栏 --- */
 .collab-body { display: flex; flex: 1; min-height: 0; }
@@ -111,12 +109,22 @@ body.collab-open .collab-panel { transform: translateY(0); }
   background: var(--subtle);
   border-right: 1px solid var(--line);
 }
+/* 搜索带子 52 高，与右栏群头同高：两栏顶部对齐，整块面板只有一条额头。 */
+.collab-side-head {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 52px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
 .collab-search {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 1;
+  min-width: 0;
   height: 36px;
-  margin: 8px 12px 8px 16px;
   padding: 0 14px;
   border: 1px solid var(--line);
   /* 搜索框是胶囊（学苹果：胶囊只给按钮、搜索、徽章） */
@@ -137,6 +145,19 @@ body.collab-open .collab-panel { transform: translateY(0); }
   outline: none;
 }
 .collab-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 12px; }
+
+/* 面板的名字降到左栏底部：它是这一层的名字，不是操作区。占着顶部只会和搜索框
+   抢那 52，而人找「协作室」这一层靠的是右下角那颗按钮，不是这条标题。 */
+.collab-side-foot {
+  flex: none;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--line);
+}
+.collab-foot-line { display: flex; align-items: baseline; gap: 8px; }
+.collab-foot-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.collab-foot-hint { margin: 2px 0 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.collab-panel-unread { margin-left: auto; font-size: 11px; color: var(--muted); }
+.collab-panel-unread:empty { display: none; }
 
 /* 会话列表的三段：管理群 / 汇报群 / 私聊 */
 .collab-group + .collab-group { margin-top: 12px; }
@@ -197,17 +218,20 @@ body.collab-open .collab-panel { transform: translateY(0); }
 /* --- 右栏 --- */
 .collab-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .collab-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-/* 对话头 52 高，与 Figma 群头（172:11317）同值；面板头已经横跨整宽 48 了，
-   这里只放「这群是谁」+ 到顶，不再重复一枚 ✕。 */
+/* 群头 52 高，与 Figma 群头（172:11317）同值，也是整块面板唯一那条额头的右半。
+   右边内距 96 = 右上角那两枚图标（84 宽）+ 12 间隙，群名和副标题不会钻到图标底下。
+   群头里不再放任何图标——到顶与收起已经浮在面板右上角了。 */
 .collab-thread-head {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: none;
   height: 52px;
-  padding: 0 12px 0 20px;
+  padding: 0 96px 0 20px;
   border-bottom: 1px solid var(--line);
 }
+/* 没选会话时的空群头：只为了让那条下边线跨过右栏，不装任何内容。 */
+.collab-thread-head-blank { padding: 0; }
 .collab-thread-titles { flex: 1; min-width: 0; }
 .collab-thread-name { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ink); }
 .collab-kind {
@@ -221,23 +245,30 @@ body.collab-open .collab-panel { transform: translateY(0); }
   line-height: 20px;
 }
 .collab-thread-sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+/* 图标按钮 32 见方、图标 18 见方。以前是 28 + 14 号字符（⌄ ⤢ ‹），字重和笔画都
+   跟着字体走，跟旁边 13 号正文摆一起显得又小又虚；改成定长 SVG 后大小可控、
+   三条线的粗细一致（1.7 描边、圆头圆角）。32 也是 .btn-sm 的高度，同一档。 */
 .collab-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
   border-radius: var(--r-small);
   background: none;
   color: var(--muted);
-  font-size: 14px;
   cursor: pointer;
 }
 .collab-icon-btn:hover { background: var(--subtle); color: var(--ink); }
-.collab-back { display: none; font-size: 18px; }
+.collab-icon-btn svg { width: 18px; height: 18px; display: block; }
+/* 到顶 / 还原是同一个按钮的两态，换图标不换位置。 */
+.collab-icon-btn .i-restore { display: none; }
+.collab-panel.is-tall .collab-icon-btn .i-max { display: none; }
+.collab-panel.is-tall .collab-icon-btn .i-restore { display: block; }
+.collab-back { display: none; }
 
 .collab-msgs {
   display: flex;
@@ -294,7 +325,9 @@ body.collab-open .collab-panel { transform: translateY(0); }
 .collab-more:disabled { cursor: default; color: var(--muted); }
 
 /* --- 输入区 --- */
-.collab-composer { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--line); }
+/* 输入框自己就是分界：一个 40 高的描边胶囊已经把它和消息区分开了，再加一条
+   通栏细线就是两层分界，白的消息区被切得零碎。 */
+.collab-composer { flex: none; padding: 4px 20px 16px; }
 .collab-composer-box {
   display: flex;
   /* 发送按钮 36 在 40 高的框里居中：上下一共 2 内距 + 2 描边 = 40。 */
@@ -379,6 +412,9 @@ body.collab-open .collab-panel { transform: translateY(0); }
   .collab-panel:not(.is-thread) .collab-main { display: none; }
   .collab-panel.is-thread .collab-side { display: none; }
   .collab-back { display: inline-flex; }
+  /* 单栏时左栏铺满整宽，右上角那两枚图标就压在搜索框上：把 96 让出来
+     （84 图标 + 12 间隙）。宽屏不需要——那时图标落在右栏，左栏只有 264。 */
+  .collab-side-head { padding-right: 96px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .collab-panel { transition: none; }

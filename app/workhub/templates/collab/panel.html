@@ -1,28 +1,58 @@
 {# 协作室：底部两栏弹层。
    宿主是 base.html 里的 #collab-host，第一次点入口按钮时 htmx 把这一段拉进来。
-   结构 = 面板头（48，横跨整宽，右上角是收起）+ 主体（左栏会话列表 264 定宽 bg/subtle + 右栏对话自适应）。
+   整块面板只有一条 52 高的额头：左栏顶是搜索框、右栏顶是群标题，两者并排在同一行
+   （以前是面板头 48 + 对话头 52 上下两层，白白压掉 100 的消息区）。
+   面板名「协作室」降到左栏底部当脚注——它是这一层的名字，不是操作区，占着顶部只会
+   和搜索框抢位置。
+   「到顶」「收起」两枚图标浮在面板右上角（.collab-actions，position: absolute），
+   不挂在任何一栏的头部里：一个会话都没选（右栏空态）时也得有出口，窄屏只剩一栏时
+   也得有出口。
    面板上两角 28、下两角 0：它从窗口底边升起，底边贴着窗口才不露缝。
-   没有遮罩：它不是模态框，只是从底下升起来的一层，页面照常看得见也照常可滚。
-   关闭靠面板头右上角的 ⌄ 和 Esc——**收起按钮必须在最外层**：它得在「一个会话都没选」
-   的时候也能点到（Figma 头部 148:6360 / 149:10708 就是这样，横跨整宽）。 #}
+   没有遮罩：它不是模态框，只是从底下升起来的一层，页面照常看得见也照常可滚。 #}
 <section class="collab-panel" role="dialog" aria-label="协作室">
-  <header class="collab-panel-head">
-    <h2 class="collab-panel-title">协作室</h2>
-    <span class="collab-panel-sub">全站的讨论层，和你停在哪个页面无关</span>
-    <span class="collab-panel-spacer"></span>
-    <span class="collab-panel-unread" id="collab-panel-unread">{% if unread_total %}共 {{ unread_total }} 条未读{% endif %}</span>
-    <button type="button" class="collab-icon-btn" data-collab-close aria-label="收起协作室" title="收起">⌄</button>
-  </header>
+  {# 到顶在左、收起在右：收起是最后一枚，位置固定在最角上，别让人往左找。 #}
+  <div class="collab-actions">
+    <button type="button" class="collab-icon-btn" data-collab-tall
+            aria-label="展开到顶" aria-pressed="false" title="展开到顶">
+      {# 到顶 = 上下双向箭头朝外；还原 = 两支箭头朝中间收回。面板本来就是一整条
+         竖直的带子，双向箭头的方向就是它要长大 / 缩回的方向，比斜角方框好认。 #}
+      <svg class="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v18"></path><path d="m8 7 4-4 4 4"></path><path d="m8 17 4 4 4-4"></path>
+      </svg>
+      <svg class="i-restore" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v5"></path><path d="m8 4 4 4 4-4"></path>
+        <path d="M12 21v-5"></path><path d="m8 20 4-4 4 4"></path>
+      </svg>
+    </button>
+    <button type="button" class="collab-icon-btn" data-collab-close
+            aria-label="收起协作室" title="收起">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"></path>
+      </svg>
+    </button>
+  </div>
   <div class="collab-body">
     <aside class="collab-side">
-      <label class="collab-search">
-        <span class="collab-search-icon" aria-hidden="true">⌕</span>
-        <input type="search" name="q" value="{{ q or '' }}" placeholder="搜索会话"
-               aria-label="搜索会话" autocomplete="off"
-               hx-get="/collab/threads" hx-trigger="input changed delay:200ms, search"
-               hx-target="#collab-thread-list" hx-swap="innerHTML">
-      </label>
+      <div class="collab-side-head">
+        <label class="collab-search">
+          <span class="collab-search-icon" aria-hidden="true">⌕</span>
+          <input type="search" name="q" value="{{ q or '' }}" placeholder="搜索会话"
+                 aria-label="搜索会话" autocomplete="off"
+                 hx-get="/collab/threads" hx-trigger="input changed delay:200ms, search"
+                 hx-target="#collab-thread-list" hx-swap="innerHTML">
+        </label>
+      </div>
       <div class="collab-list" id="collab-thread-list">{% include "collab/thread_list.html" %}</div>
+      <div class="collab-side-foot">
+        <div class="collab-foot-line">
+          <span class="collab-foot-title">协作室</span>
+          <span class="collab-panel-unread" id="collab-panel-unread">{% if unread_total %}共 {{ unread_total }} 条未读{% endif %}</span>
+        </div>
+        <p class="collab-foot-hint">全站的讨论层，和你停在哪个页面无关</p>
+      </div>
     </aside>
     <div class="collab-main" id="collab-main">{% include "collab/empty.html" %}</div>
   </div>
