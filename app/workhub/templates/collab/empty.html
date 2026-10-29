@@ -1,5 +1,9 @@
-{# 没选会话时的右栏。协作室是全局层，没有「上次停在哪」，所以不自动选中。 #}
-<div class="collab-empty">
-  <p class="collab-empty-title">还没选会话</p>
-  <p class="collab-empty-hint">从左栏选一个群或同事。协作室是全站的，和你现在停在哪个页面无关。</p>
+{# 没选会话时的右栏。协作室是全局层，没有「上次停在哪」，所以不自动选中。
+   顶上留一条空的群头：只为让那条下边线跨过右栏，别在没有会话时断成两截。 #}
+<div class="collab-thread">
+  <header class="collab-thread-head collab-thread-head-blank" aria-hidden="true"></header>
+  <div class="collab-empty">
+    <p class="collab-empty-title">还没选会话</p>
+    <p class="collab-empty-hint">从左栏选一个群或同事。协作室是全站的，和你现在停在哪个页面无关。</p>
+  </div>
 </div>

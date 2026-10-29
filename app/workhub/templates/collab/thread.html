@@ -1,9 +1,17 @@
 {# 右栏整屏：群头 + 消息列表 + 输入区。
    一次换整屏是因为「点开会话 = 读到底」，未读要跟着掉；只换消息列表的话，
-   左栏的红色数字会停在原处，人会以为没生效。 #}
+   左栏的红色数字会停在原处，人会以为没生效。
+   群头就是那条 52 带子的右半：右边 92 的内距让给浮在面板右上角的「到顶」「收起」，
+   这里不再重复第二枚图标。 #}
 <div class="collab-thread" data-thread-id="{{ thread.thread_id }}">
   <header class="collab-thread-head">
-    <button type="button" class="collab-icon-btn collab-back" data-collab-back aria-label="返回会话列表" title="返回">‹</button>
+    <button type="button" class="collab-icon-btn collab-back" data-collab-back
+            aria-label="返回会话列表" title="返回">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m15 6-6 6 6 6"></path>
+      </svg>
+    </button>
     <div class="collab-thread-titles">
       <div class="collab-thread-name">
         <span>{{ header.title }}</span>
@@ -11,12 +19,11 @@
       </div>
       <p class="collab-thread-sub">{{ header.subtitle }}{% if header.member_count %} · {{ header.member_count }} 人{% endif %}</p>
     </div>
-    <button type="button" class="collab-icon-btn" data-collab-tall aria-label="展开到顶" title="到顶">⤢</button>
   </header>
   <div class="collab-msgs" id="collab-msgs">{% include "collab/messages.html" %}</div>
   {% include "collab/composer.html" %}
 </div>
-{# 顺手把左栏与入口徽章一起刷掉：点开会话就把它读完了。 #}
+{# 顺手把左栏与入口徽章、脚注未读一起刷掉：点开会话就把它读完了。 #}
 <div hx-swap-oob="innerHTML:#collab-thread-list">{% include "collab/thread_list.html" %}</div>
 {# 连 aria-label 一起换，否则读屏里留的还是上一次的条数。 #}
 <span class="collab-entry-count" id="collab-entry-count" hx-swap-oob="outerHTML" aria-label="{% if unread_total %}未读 {{ unread_total }} 条{% endif %}">{{ unread_total | badge }}</span>

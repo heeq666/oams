@@ -960,7 +960,16 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       var p = panel();
       if (!p) return;
       if (event.target.closest("[data-collab-close]")) { close(true); return; }
-      if (event.target.closest("[data-collab-tall]")) { p.classList.toggle("is-tall"); return; }
+      // 到顶 / 还原：同一个按钮两态，图标的显隐交给 CSS（.is-tall），这里只同步
+      // aria-pressed 与 title / aria-label —— 否则读屏永远只说「展开到顶」。
+      var tall = event.target.closest("[data-collab-tall]");
+      if (tall) {
+        var isTall = p.classList.toggle("is-tall");
+        tall.setAttribute("aria-pressed", isTall ? "true" : "false");
+        tall.setAttribute("aria-label", isTall ? "还原高度" : "展开到顶");
+        tall.setAttribute("title", isTall ? "还原高度" : "展开到顶");
+        return;
+      }
       if (event.target.closest("[data-collab-back]")) {
         // 窄屏：列表与对话轮流占满整宽，靠这一个类切换。
         p.classList.remove("is-thread"); return;
