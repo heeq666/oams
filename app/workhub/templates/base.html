@@ -765,9 +765,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
 <button type="button" class="collab-entry" id="collab-entry" aria-haspopup="dialog"
         aria-expanded="false" aria-controls="collab-host" title="协作室"
         data-collab-entry>
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"
+  {# 图标一律 Lucide（ISC）。入口 = message-circle。 #}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.6 9.6 0 0 1-3.9-.8L3 21l1.9-4.8A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"></path>
+    <path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"></path>
   </svg>
   <span class="collab-entry-count" id="collab-entry-count" aria-label="{% if request.state.collab_unread %}未读 {{ request.state.collab_unread }} 条{% endif %}">{{ request.state.collab_unread | badge }}</span>
 </button>

@@ -34,7 +34,7 @@
    留着它既点不到，也会和面板的圆角打架。关面板靠面板自己的 ✕ 或 Esc。 */
 .collab-entry.is-hidden { opacity: 0; pointer-events: none; }
 .collab-entry:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-.collab-entry svg { width: 22px; height: 22px; display: block; }
+.collab-entry svg { width: 20px; height: 20px; display: block; }
 .collab-entry-count {
   position: absolute;
   top: -2px;
@@ -132,7 +132,8 @@ body.collab-open .collab-panel { transform: translateY(0); }
   border-radius: var(--r-pill);
   background: var(--card);
 }
-.collab-search-icon { font-size: 13px; color: var(--muted); line-height: 1; }
+.collab-search-icon { display: flex; align-items: center; color: var(--muted); }
+.collab-search-icon svg { width: 15px; height: 15px; display: block; }
 .collab-search input {
   flex: 1;
   min-width: 0;
@@ -261,8 +262,9 @@ body.collab-open .collab-panel { transform: translateY(0); }
 }
 .collab-thread-sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
 /* 图标按钮 32 见方、图标 18 见方。以前是 28 + 14 号字符（⌄ ⤢ ‹），字重和笔画都
-   跟着字体走，跟旁边 13 号正文摆一起显得又小又虚；改成定长 SVG 后大小可控、
-   三条线的粗细一致（1.7 描边、圆头圆角）。32 也是 .btn-sm 的高度，同一档。 */
+   跟着字体走，跟旁边 13 号正文摆一起显得又小又虚；现在一律 Lucide（24 网格、
+   stroke 2、圆头圆角，见 design-system-v1.md §5.1），缩到 18 时描边约 1.5。
+   32 也是 .btn-sm 的高度，同一档。 */
 .collab-icon-btn {
   display: inline-flex;
   align-items: center;

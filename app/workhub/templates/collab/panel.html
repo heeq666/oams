@@ -19,19 +19,19 @@
             aria-label="展开到顶" aria-pressed="false" title="展开到顶">
       {# 到顶 = 上下双向箭头朝外；还原 = 两支箭头朝中间收回。面板本来就是一整条
          竖直的带子，双向箭头的方向就是它要长大 / 缩回的方向，比斜角方框好认。 #}
-      <svg class="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+      {# 到顶 = chevrons-up-down，还原 = chevrons-down-up（Lucide，ISC）。 #}
+      <svg class="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 3v18"></path><path d="m8 7 4-4 4 4"></path><path d="m8 17 4 4 4-4"></path>
+        <path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path>
       </svg>
-      <svg class="i-restore" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+      <svg class="i-restore" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 3v5"></path><path d="m8 4 4 4 4-4"></path>
-        <path d="M12 21v-5"></path><path d="m8 20 4-4 4 4"></path>
+        <path d="m7 20 5-5 5 5"></path><path d="m7 4 5 5 5-5"></path>
       </svg>
     </button>
     <button type="button" class="collab-icon-btn" data-collab-close
             aria-label="收起协作室" title="收起">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="m6 9 6 6 6-6"></path>
       </svg>
@@ -41,7 +41,12 @@
     <aside class="collab-side">
       <div class="collab-side-head">
         <label class="collab-search">
-          <span class="collab-search-icon" aria-hidden="true">⌕</span>
+          <span class="collab-search-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle>
+            </svg>
+          </span>
           <input type="search" name="q" value="{{ q or '' }}" placeholder="搜索会话"
                  aria-label="搜索会话" autocomplete="off"
                  hx-get="/collab/side" hx-trigger="input changed delay:200ms, search"
@@ -56,18 +61,15 @@
         <button type="button" class="collab-icon-btn collab-view-btn" data-collab-view-toggle
                 aria-pressed="false" aria-label="通讯录" title="通讯录">
           <svg class="i-directory" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="9.4" cy="7.8" r="3.4"></circle>
-            <path d="M3.6 18.7c0-3.2 2.6-5.8 5.8-5.8s5.8 2.6 5.8 5.8"></path>
-            <path d="M16.9 7.9h4.3"></path>
-            <path d="M17.7 11.7h3.5"></path>
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+            <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+            <circle cx="9" cy="7" r="4"></circle>
           </svg>
           <svg class="i-threads" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3.6" y="5.2" width="16.8" height="12.4" rx="4"></rect>
-            <path d="M8.6 17.6 7.4 21l4-2"></path>
-            <path d="M8.4 10.4h7.2"></path>
-            <path d="M8.4 13.4h4.4"></path>
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"></path>
           </svg>
         </button>
       </div>
