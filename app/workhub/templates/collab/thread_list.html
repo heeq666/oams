@@ -4,7 +4,7 @@
   {% for row in group.rows %}
   <a class="collab-row{% if row.is_dm %} dm{% endif %}{% if thread is defined and thread and row.thread_id == thread.thread_id %} on{% endif %}"
      href="{{ row.href }}" hx-get="{{ row.href }}" hx-target="#collab-main" hx-swap="innerHTML">
-    <span class="collab-avatar" aria-hidden="true">{{ row.avatar }}</span>
+    <span class="collab-avatar" aria-hidden="true">{% if row.is_dm %}{{ row.avatar }}{% else %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/></svg>{% endif %}</span>
     <span class="collab-row-body">
       <span class="collab-row-name">{{ row.title }}</span>
       {% if row.last_body %}<span class="collab-row-last">{{ row.last_body }}</span>{% endif %}
