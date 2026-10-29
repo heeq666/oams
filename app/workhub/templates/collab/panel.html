@@ -76,7 +76,11 @@
          看着就像没反应。切视图是本地动作，不该等网络。 #}
       <div class="collab-list" id="collab-thread-list">{% include "collab/thread_list.html" %}</div>
       <div class="collab-list" id="collab-directory">
-        {% with groups = directory.groups %}{% include "collab/directory.html" %}{% endwith %}
+        {% with groups = directory.groups, offset = directory.offset,
+                has_more = directory.has_more, next_offset = directory.next_offset,
+                after = directory.after, q = directory.q %}
+          {% include "collab/directory.html" %}
+        {% endwith %}
       </div>
       <div class="collab-side-foot">
         <div class="collab-foot-line">
