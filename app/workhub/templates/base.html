@@ -943,20 +943,23 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       // 面板升起时按钮会被面板压住，藏起来免得它穿过面板露一角。
       entry.classList.toggle("is-hidden", openState);
     }
-    function close() {
+    // refocus：只有键盘或面板头的 ⌄ 关掉时把焦点还给入口按钮。点面板外面关的时候
+    // 不能抢焦点——人刚点的是底下那半页里的东西（输入框、链接），焦点被拽回按钮
+    // 就等于刚点的一下白点。
+    function close(refocus) {
       wantOpen = false;
       document.body.classList.remove("collab-open");
       markOpen(false);
-      entry.focus();
+      if (refocus) { entry.focus(); }
     }
     entry.addEventListener("click", function () {
-      if (wantOpen) { close(); } else { open(); }
+      if (wantOpen) { close(true); } else { open(); }
     });
     // 关闭、返回列表、到顶：三个动作都从面板内部冒泡上来，用委托就够。
     host.addEventListener("click", function (event) {
       var p = panel();
       if (!p) return;
-      if (event.target.closest("[data-collab-close]")) { close(); return; }
+      if (event.target.closest("[data-collab-close]")) { close(true); return; }
       if (event.target.closest("[data-collab-tall]")) { p.classList.toggle("is-tall"); return; }
       if (event.target.closest("[data-collab-back]")) {
         // 窄屏：列表与对话轮流占满整宽，靠这一个类切换。
@@ -966,7 +969,18 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       if (event.target.closest(".collab-row")) { p.classList.add("is-thread"); }
     });
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape" && wantOpen) { close(); }
+      if (event.key === "Escape" && wantOpen) { close(true); }
+    });
+    // 点到面板外面就收起。面板是全局讨论层、不铺遮罩，所以底下那半页仍然可见可点——
+    // 人在那种状态下按页面就是在说「我看完了」，不该再要求他去右上角找叉。
+    // 判定放在 mousedown 而不是 click：按下就收，省得拖选文字时先收起一半。
+    document.addEventListener("mousedown", function (event) {
+      if (!wantOpen) return;
+      if (event.target.closest && event.target.closest(".collab-panel")) return;
+      // 入口按钮升起时是 pointer-events:none，点它其实是点在页面别处，
+      // 这里照样按「点外面」处理；留着这条判断是为了将来取消隐藏那层时不出双触发。
+      if (event.target.closest && event.target.closest("#collab-entry")) return;
+      close(false);
     });
   })();
   // 输入框长高：base.html 的 textarea 是固定高，多行就内部滚。协作室要「超过
