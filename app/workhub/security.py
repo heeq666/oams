@@ -103,10 +103,13 @@ COMPANY_ADMIN_GRANT = "workforce.grants:manage"
 # Changing other people's work -- rather than only your own -- is what makes
 # somebody a department administrator. Reviewing a page is not in this list: a
 # reviewer still only reads their own department.
-_ADMIN_RESOURCES = ("workforce.work_items", "workforce.members", "workforce.interfaces",
-                    "workforce.positions", "workforce.assignments", "workforce.org_units",
-                    "workforce.grants")
-_ADMIN_GRANT_KEYS = frozenset(f"{resource}:manage" for resource in _ADMIN_RESOURCES)
+# Public on purpose: the collaboration directory groups the roster by exactly
+# this rule ("who can change somebody else's work"), and a second copy of the
+# list would drift from the one admin_level() answers with.
+ADMIN_RESOURCES = ("workforce.work_items", "workforce.members", "workforce.interfaces",
+                   "workforce.positions", "workforce.assignments", "workforce.org_units",
+                   "workforce.grants")
+_ADMIN_GRANT_KEYS = frozenset(f"{resource}:manage" for resource in ADMIN_RESOURCES)
 # Kept under the old names for the callers that still say "DEV_ROLE".
 DEV_ROLE_ADMIN = ROLE_SYSTEM
 DEV_ROLE_MANAGER = ROLE_DEPARTMENT
@@ -309,7 +312,7 @@ def has_company_scope(conn, member_id: Any) -> bool:
 
 def has_admin_rights(conn, member_id: Any) -> bool:
     """Can this member change other people's work, or only their own?"""
-    return any(has_permission(conn, member_id, resource, "manage") for resource in _ADMIN_RESOURCES)
+    return any(has_permission(conn, member_id, resource, "manage") for resource in ADMIN_RESOURCES)
 
 
 def admin_level(conn, member_id: Any) -> str:

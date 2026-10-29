@@ -113,6 +113,7 @@ body.collab-open .collab-panel { transform: translateY(0); }
 .collab-side-head {
   display: flex;
   align-items: center;
+  gap: 8px;
   flex: none;
   height: 52px;
   padding: 0 12px 0 16px;
@@ -264,6 +265,12 @@ body.collab-open .collab-panel { transform: translateY(0); }
 }
 .collab-icon-btn:hover { background: var(--subtle); color: var(--ink); }
 .collab-icon-btn svg { width: 18px; height: 18px; display: block; }
+/* 通讯录切换。它长在左栏顶上，而左栏的底子本身就是 --subtle，所以悬停和选中
+   都不能再用 --subtle（会看不出来）。选中给白底 + 深图标：和白胶囊搜索框并排，
+   一眼能看出这两个是一组「换看法」的控件。 */
+.collab-view-btn { flex: none; color: var(--muted); }
+.collab-view-btn:hover { background: var(--hover); color: var(--ink); }
+.collab-view-btn[aria-pressed="true"] { background: var(--card); color: var(--ink); }
 /* 到顶 / 还原是同一个按钮的两态，换图标不换位置。 */
 .collab-icon-btn .i-restore { display: none; }
 .collab-panel.is-tall .collab-icon-btn .i-max { display: none; }

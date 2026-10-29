@@ -1,0 +1,25 @@
+{# 通讯录：全公司在职的其他人，管理员在前。
+   说过的私聊，href 直接指到线程；没说过话的走 /collab/open（取或建，这一刻建）。
+   左边这一栏补选中态是拿右栏的 data-thread-id 去 href 里对号的，所以能指线程
+   就指线程——只给 open 链接，点开之后人会以为左栏没选中。 #}
+{% for group in groups %}
+<div class="collab-group">
+  <div class="collab-group-head">
+    <span class="collab-group-label">{{ group.label }}</span>
+    <span class="collab-group-hint">{{ group.label_hint }}</span>
+  </div>
+  {% for row in group.rows %}
+  <a class="collab-row dm"
+     href="{{ row.href }}" hx-get="{{ row.href }}" hx-target="#collab-main" hx-swap="innerHTML">
+    <span class="collab-avatar" aria-hidden="true">{{ row.avatar }}</span>
+    <span class="collab-row-body">
+      <span class="collab-row-name">{{ row.title }}</span>
+      <span class="collab-row-last">{{ row.subtitle }}</span>
+    </span>
+    {% if row.unread %}<span class="collab-row-unread" aria-label="未读 {{ row.unread }} 条">{{ row.unread | badge }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="collab-empty-hint">{% if q %}没有匹配的同事。{% else %}公司里还没有别的在职同事。等有人入职之后，这里才会出现。{% endif %}</p>
+{% endfor %}

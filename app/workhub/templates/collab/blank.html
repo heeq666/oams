@@ -1,0 +1,4 @@
+{# 右栏「还没点开谁」的两种说法。
+   通讯录态要讲「点谁就跟谁私聊」，会话态要讲「还没选会话」——
+   同一块地方，两种视图在说两件事，不能共用一段文案。 #}
+{% if view == 'directory' %}{% include "collab/directory_intro.html" %}{% else %}{% include "collab/empty.html" %}{% endif %}

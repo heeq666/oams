@@ -25,6 +25,7 @@ from typing import Any
 from uuid import UUID
 
 from workhub.security import (
+    ADMIN_RESOURCES,
     active_org_unit_ids,
     administered_org_unit_ids,
     has_company_scope,
@@ -39,6 +40,16 @@ KIND_FILL = "fill"
 KIND_DM = "dm"
 KIND_ORDER = (KIND_MANAGE, KIND_FILL, KIND_DM)
 KIND_LABELS = {KIND_MANAGE: "管理群", KIND_FILL: "汇报群", KIND_DM: "私聊"}
+
+#: 通讯录的两段。管理员在前——找人时先问的是「这事该谁定」，不是「谁在」。
+DIRECTORY_ADMINS = "admins"
+DIRECTORY_PEERS = "peers"
+DIRECTORY_ORDER = (DIRECTORY_ADMINS, DIRECTORY_PEERS)
+DIRECTORY_LABELS = {DIRECTORY_ADMINS: "部门管理员", DIRECTORY_PEERS: "同事"}
+DIRECTORY_HINTS = {
+    DIRECTORY_ADMINS: "能改别人的进度，问他们最快",
+    DIRECTORY_PEERS: "同一个公司的人，直接开聊",
+}
 
 
 class CollabError(Exception):
@@ -197,6 +208,130 @@ def visible_dms(conn, member_id: Any) -> list[dict[str, Any]]:
     } for row in rows]
     _attach_last_message(conn, member_id, out)
     return out
+
+
+# --------------------------------------------------------------------------- #
+# 通讯录：跟谁还没说过话，也得能找得到
+#
+# 左栏的会话列表只列「已经存在的对象 + 已经说过的私聊」，所以一个从没和人
+# 私聊过的人，在协作室里没有任何入口去找同事。通讯录补的是这一个洞：它在
+# 同一栏里换成「全公司还在职的人」，点谁都跟谁开一条私聊。
+#
+# 两段而不是一段：找人时先问的是「这事该谁定」，能改别人进度的人要先被看见。
+# 分组读的是 grants（ADMIN_RESOURCES），不是岗位名——「负责人」这三个字谁都能
+# 写进 title，但能不能动别人的东西只有 grants 说了算。跟 admin_level 同一份
+# 清单，所以通讯录里的分组和别的页面上的角色徽章不会互相打架。
+# --------------------------------------------------------------------------- #
+
+_DIRECTORY_SQL = """SELECT m.member_id, m.display_name,
+          (SELECT p.title FROM workhub.position_assignments a
+             JOIN workhub.positions p USING (position_id)
+            WHERE a.member_id = m.member_id
+              AND a.status IN ('active', 'scheduled')
+              AND a.starts_at <= now()
+              AND (a.ends_at IS NULL OR now() < a.ends_at)
+            ORDER BY a.starts_at DESC LIMIT 1) AS position_title,
+          (SELECT o.name FROM workhub.position_assignments a
+             JOIN workhub.positions p USING (position_id)
+             JOIN workhub.org_units o USING (org_unit_id)
+            WHERE a.member_id = m.member_id
+              AND a.status IN ('active', 'scheduled')
+              AND a.starts_at <= now()
+              AND (a.ends_at IS NULL OR now() < a.ends_at)
+            ORDER BY a.starts_at DESC LIMIT 1) AS org_name,
+          EXISTS (SELECT 1 FROM workhub.permission_grants g
+                   WHERE g.revoked_at IS NULL
+                     AND g.effect = 'allow'
+                     AND g.action = 'manage'
+                     AND g.resource = ANY(%s)
+                     AND g.valid_from <= now()
+                     AND (g.valid_until IS NULL OR now() < g.valid_until)
+                     AND ((g.subject_type = 'member' AND g.member_id = m.member_id)
+                       OR (g.subject_type = 'position' AND EXISTS (
+                            SELECT 1 FROM workhub.position_assignments pa
+                             WHERE pa.position_id = g.position_id
+                               AND pa.member_id = m.member_id
+                               AND pa.status IN ('active', 'scheduled'))))) AS is_admin
+     FROM workhub.workforce_members m
+    WHERE m.employment_status = 'active'
+      AND m.member_id <> %s
+    ORDER BY m.display_name"""
+
+
+def directory(conn, member_id: Any, q: str | None = None) -> dict[str, Any]:
+    """全公司在职的其他人，按「部门管理员 / 同事」分两段。
+
+    只看在职、只排除自己：通讯录给的是「找人」，不是人员台账，所以不按
+    `workforce.members:read` 卡——那条权限管的是改人（工号、岗位、授权），
+    这里只露出姓名、部门、岗位这三样本来就挂在组织架构上的东西。
+
+    已经说过的私聊会把未读挂回人身上：从通讯录点进去和从会话列表点进去，
+    看到的是同一个数。
+    """
+    people: list[dict[str, Any]] = []
+    for row in conn.execute(_DIRECTORY_SQL, (list(ADMIN_RESOURCES), member_id)).fetchall():
+        org = row["org_name"] or "还没归到部门"
+        title = row["position_title"] or "还没分配岗位"
+        people.append({
+            "kind": KIND_DM,
+            "member_id": row["member_id"],
+            "title": row["display_name"],
+            "subtitle": f"{org} · {title}",
+            "avatar": (row["display_name"] or "人")[:1],
+            "is_dm": True,
+            "is_admin": bool(row["is_admin"]),
+            "thread_id": None,
+            "unread": 0,
+            # 一律走 open：私聊是「取或建」，说过话的接着上次说，没说过话的这一刻建。
+            "href": "/collab/open?kind=dm&peer_id=" + str(row["member_id"]),
+        })
+    total = {key: 0 for key in DIRECTORY_ORDER}
+    for person in people:
+        total[DIRECTORY_ADMINS if person["is_admin"] else DIRECTORY_PEERS] += 1
+
+    by_peer = _dm_by_peer(conn, member_id)
+    for person in people:
+        known = by_peer.get(person["member_id"])
+        if known:
+            person["thread_id"] = known["thread_id"]
+            person["unread"] = known["unread"] or 0
+            # 说过的私聊直接指线程，不再绕 open 去「取或建」：左栏补选中态是拿
+            # 右栏的 data-thread-id 去 href 里对上号的，href 里没有线程 id 就对不上，
+            # 人会以为自己点了个没反应的东西。
+            person["href"] = "/collab/threads/" + str(known["thread_id"])
+
+    needle = (q or "").strip().lower()
+    if needle:
+        people = [p for p in people if needle in p["title"].lower()
+                  or needle in p["subtitle"].lower()]
+
+    groups = []
+    for key in DIRECTORY_ORDER:
+        rows = [p for p in people
+                if p["is_admin"] == (key == DIRECTORY_ADMINS)]
+        if rows:
+            groups.append({"key": key, "label": DIRECTORY_LABELS[key],
+                           "label_hint": DIRECTORY_HINTS[key], "rows": rows})
+    return {"groups": groups, "total_admins": total[DIRECTORY_ADMINS],
+            "total_peers": total[DIRECTORY_PEERS], "q": q or ""}
+
+
+def _dm_by_peer(conn, member_id: Any) -> dict[Any, dict[str, Any]]:
+    """我已经说过的私聊，按对方 member_id 索引。一条 SQL，不按人查。"""
+    rows = conn.execute(
+        """SELECT t.thread_id,
+                  CASE WHEN t.member_a = %s THEN t.member_b ELSE t.member_a END AS peer_id,
+                  (SELECT count(*) FROM workhub.collab_messages x
+                    WHERE x.thread_id = t.thread_id
+                      AND x.seq > coalesce(r.last_seq, 0)
+                      AND x.author_id IS DISTINCT FROM %s) AS unread
+             FROM workhub.collab_threads t
+             LEFT JOIN workhub.collab_reads r
+                    ON r.thread_id = t.thread_id AND r.member_id = %s
+            WHERE t.kind = 'dm' AND t.status = 'active'
+              AND (t.member_a = %s OR t.member_b = %s)""",
+        (member_id, member_id, member_id, member_id, member_id)).fetchall()
+    return {row["peer_id"]: row for row in rows}
 
 
 def can_see(conn, member_id: Any, thread: dict[str, Any]) -> bool:

@@ -23,8 +23,10 @@
   <div class="collab-msgs" id="collab-msgs">{% include "collab/messages.html" %}</div>
   {% include "collab/composer.html" %}
 </div>
-{# 顺手把左栏与入口徽章、脚注未读一起刷掉：点开会话就把它读完了。 #}
-<div hx-swap-oob="innerHTML:#collab-thread-list">{% include "collab/thread_list.html" %}</div>
+{# 左栏不在这里刷。它现在有两个视图（会话 / 通讯录），右栏并不知道人在看
+   哪一个——顺手换掉会把通讯录顶回会话列表。改由 base.html 在每次右栏换完
+   之后按 data-collab-view 重取一次，未读照样掉，视图不跳。
+   徽章还是从这儿走：这两个数不认视图。 #}
 {# 连 aria-label 一起换，否则读屏里留的还是上一次的条数。 #}
 <span class="collab-entry-count" id="collab-entry-count" hx-swap-oob="outerHTML" aria-label="{% if unread_total %}未读 {{ unread_total }} 条{% endif %}">{{ unread_total | badge }}</span>
 <span hx-swap-oob="innerHTML:#collab-panel-unread">{% if unread_total %}共 {{ unread_total }} 条未读{% endif %}</span>
