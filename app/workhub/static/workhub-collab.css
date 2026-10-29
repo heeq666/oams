@@ -269,6 +269,17 @@ body.collab-open .collab-panel { transform: translateY(0); }
 .collab-view-btn { flex: none; color: var(--muted); }
 .collab-view-btn:hover { background: var(--hover); color: var(--ink); }
 .collab-view-btn[aria-pressed="true"] { background: var(--card); color: var(--ink); }
+/* 图标跟着状态换：白底只说明「这个按钮亮着」，换图标才说明「现在在通讯录里、
+   再点一下回会话」。 */
+.collab-view-btn .i-threads { display: none; }
+.collab-view-btn[aria-pressed="true"] .i-directory { display: none; }
+.collab-view-btn[aria-pressed="true"] .i-threads { display: block; }
+/* 左栏两份内容同时存在于 DOM，切视图只翻转可见性，不取网络。 */
+.collab-panel[data-collab-view="threads"] #collab-directory,
+.collab-panel[data-collab-view="directory"] #collab-thread-list { display: none; }
+/* 右栏空态同理：两种说法都发下来，按当前视图留一条。 */
+.collab-panel[data-collab-view="threads"] [data-blank="directory"],
+.collab-panel[data-collab-view="directory"] [data-blank="threads"] { display: none; }
 /* 到顶 / 还原是同一个按钮的两态，换图标不换位置。 */
 .collab-icon-btn .i-restore { display: none; }
 .collab-panel.is-tall .collab-icon-btn .i-max { display: none; }

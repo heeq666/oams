@@ -915,9 +915,11 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     var entry = document.getElementById("collab-entry");
     if (!host || !entry) return;
     function panel() { return host.querySelector(".collab-panel"); }
-    // 左栏装两种内容：会话 / 通讯录。视图记在 data-collab-view 上，不记在服务端——
-    // 左栏只有一个容器，谁最后写谁说了算，多存一份服务端状态就多一处会和 DOM 对不上。
-    // 搜索框、隐藏字段、右栏空态、选中态全部由这一个函数改，别的地方不许再单独切。
+    // 左栏装两种内容：会话 / 通讯录，两份都随面板一起发下来。视图记在 data-collab-view
+    // 上，不记在服务端——多存一份服务端状态就多一处会和 DOM 对不上。
+    // 切视图是纯本地动作：只翻 dataset，显隐全交给 CSS。以前这一步要往 /collab/side
+    // 取一次（本地 240ms），点下去到列表换掉之间有近半秒列表还是旧的，看着像没反应。
+    // 搜索框、隐藏字段、图标、选中态都由这一个函数改，别的地方不许再单独切。
     function setView(p, view) {
       var directory = view === "directory";
       p.dataset.collabView = directory ? "directory" : "threads";
@@ -933,27 +935,27 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       if (input) {
         input.setAttribute("placeholder", directory ? "搜同事" : "搜索会话");
         input.setAttribute("aria-label", directory ? "搜同事" : "搜索会话");
+        // 搜索只筛当前看得见的那一份：目标容器跟着视图走，属性改完要让 htmx 重新认一遍。
+        input.setAttribute("hx-target", directory ? "#collab-directory" : "#collab-thread-list");
+        if (window.htmx) { window.htmx.process(input); }
       }
-      // 右栏还空着就一起换成通讯录的说明；已经开着一个会话就不动它——
-      // 草稿是没发出去的字，切个视图不该把它扔掉。
-      var main = document.getElementById("collab-main");
-      if (main && !main.querySelector(".collab-composer") && window.htmx) {
-        window.htmx.ajax("GET", "/collab/blank?view=" + (directory ? "directory" : "threads"),
-                         { target: main, swap: "innerHTML" });
-      }
-      if (input && window.htmx) { window.htmx.trigger(input, "search"); }
+      rehighlight();
     }
     // 左栏重取回来之后，选中态得自己补。服务端不知道「右栏现在开的是哪一条」，
     // 通讯录的行更是根本没有线程 id——所以按 href 里有没有当前线程的 id 来认。
     function rehighlight() {
       var p = panel();
-      var list = p && p.querySelector("#collab-thread-list");
       var open = document.querySelector("#collab-main [data-thread-id]");
-      if (!list || !open) return;
+      if (!p || !open) return;
       var id = open.getAttribute("data-thread-id");
       if (!id) return;
-      Array.prototype.forEach.call(list.querySelectorAll(".collab-row"), function (row) {
-        if ((row.getAttribute("href") || "").indexOf(id) !== -1) { row.classList.add("on"); }
+      ["#collab-thread-list", "#collab-directory"].forEach(function (sel) {
+        var list = p.querySelector(sel);
+        if (!list) return;
+        Array.prototype.forEach.call(list.querySelectorAll(".collab-row"), function (row) {
+          // 用 toggle 而不是只加：列表被换过一次之后，旧行的 on 得跟着掉。
+          row.classList.toggle("on", (row.getAttribute("href") || "").indexOf(id) !== -1);
+        });
       });
     }
     // 「想不想要它开着」只有这一个真相。不能拿 DOM 上的开合类判断：
@@ -1036,16 +1038,24 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       if (event.target.closest && event.target.closest("#collab-entry")) return;
       close(false);
     });
-    // 右栏换了内容之后把左栏重取一次：点开会话未读要掉、选中态要跟过去。
-    // 取哪一份由 data-collab-view 决定，所以人在通讯录里点了一个同事，回来还是通讯录。
+    // 右栏换了内容之后把左栏重取一次：点开会话未读要掉、最后一条消息要跟上。
+    // 只重取当前看得见的那一份——没显示的那一份留着，下次切过去时它还在。
     document.body.addEventListener("htmx:afterSwap", function (event) {
       var target = event.target;
       if (!target) return;
-      if (target.id === "collab-thread-list") { rehighlight(); return; }
+      if (target.id === "collab-thread-list" || target.id === "collab-directory") {
+        rehighlight();
+        return;
+      }
       if (target.id !== "collab-main") return;
       var p = panel();
       var input = p && p.querySelector(".collab-search input");
-      if (input && window.htmx) { window.htmx.trigger(input, "search"); }
+      if (!p || !window.htmx) return;
+      var view = p.dataset.collabView === "directory" ? "directory" : "threads";
+      var q = input ? (input.value || "").trim() : "";
+      window.htmx.ajax("GET", "/collab/side?view=" + view + (q ? "&q=" + encodeURIComponent(q) : ""),
+                       { target: view === "directory" ? "#collab-directory" : "#collab-thread-list",
+                         swap: "innerHTML" });
     });
   })();
   // 输入框长高：base.html 的 textarea 是固定高，多行就内部滚。协作室要「超过
