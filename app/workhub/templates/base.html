@@ -940,6 +940,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
         if (window.htmx) { window.htmx.process(input); }
       }
       rehighlight();
+      // 切到通讯录时哨兵可能刚变成可见的，重新认一遍（IO 自己也会补发交集）。
+      if (directory) { wireMore(); }
     }
     // 左栏重取回来之后，选中态得自己补。服务端不知道「右栏现在开的是哪一条」，
     // 通讯录的行更是根本没有线程 id——所以按 href 里有没有当前线程的 id 来认。
@@ -958,6 +960,36 @@ body { margin: 0; background: var(--bg); color: var(--ink);
         });
       });
     }
+    // 通讯录分片：滚到「加载更多」露头就去取下一窗。没用 htmx 的 revealed——
+    // 1.9.12 把「尺寸为 0」也当成露出来了，藏起来的那一栏会在面板一打开就一路
+    // 把整份名单拉完（实测 61 人三次请求全发）。自己开 IO：root 是左栏那个滚动
+    // 容器，元素被 display:none 掉时面积为零，不会产生交集。
+    function wireMore() {
+      var p = panel();
+      if (!p || !window.IntersectionObserver) return;
+      Array.prototype.forEach.call(p.querySelectorAll(".collab-loading[data-next]"), function (node) {
+        if (node.getAttribute("data-wired")) return;
+        node.setAttribute("data-wired", "1");
+        function load() {
+          var url = node.getAttribute("data-next");
+          if (!url || !window.htmx) return;
+          // 摘掉 URL 再发：哨兵在回包之前还挂在 DOM 上，连点两下不该发两次。
+          node.removeAttribute("data-next");
+          node.textContent = "加载中…";
+          window.htmx.ajax("GET", url, { target: node, swap: "outerHTML" });
+        }
+        node.addEventListener("click", load);
+        var io = new IntersectionObserver(function (entries) {
+          for (var i = 0; i < entries.length; i++) {
+            if (!entries[i].isIntersecting) continue;
+            io.disconnect();
+            load();
+            return;
+          }
+        }, { root: node.closest(".collab-list"), rootMargin: "0px 0px 120px 0px" });
+        io.observe(node);
+      });
+    }
     // 「想不想要它开着」只有这一个真相。不能拿 DOM 上的开合类判断：
     // 面板是异步取回来的，取回来时人可能已经按了 Esc —— 那一下延迟的 reveal
     // 会把刚关上的面板又推上来，接着点按钮就变成「关一个已经关了的」。
@@ -971,6 +1003,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
         host.dataset.loaded = "1";
         if (window.htmx) {
           window.htmx.ajax("GET", "/collab", { target: host, swap: "innerHTML" }).then(function () {
+            wireMore();
             requestAnimationFrame(reveal);
             // 后台标签页浏览器不排帧，rAF 会一直不触发 —— 那时候面板就永远停在
             // 屏幕外。补一个定时器兜底，动画少一帧也比点了没反应强。
@@ -1045,6 +1078,14 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       if (!target) return;
       if (target.id === "collab-thread-list" || target.id === "collab-directory") {
         rehighlight();
+        wireMore();
+        return;
+      }
+      // 通讯录滚到底追加的那一窗：换掉的是哨兵，不是列表容器，所以按类认。
+      // 新哨兵是随这一窗一起进来的，得再绑一次（老的那个已经随 DOM 走了）。
+      if (target.classList && target.classList.contains("collab-loading")) {
+        rehighlight();
+        wireMore();
         return;
       }
       if (target.id !== "collab-main") return;
@@ -1053,7 +1094,14 @@ body { margin: 0; background: var(--bg); color: var(--ink);
       if (!p || !window.htmx) return;
       var view = p.dataset.collabView === "directory" ? "directory" : "threads";
       var q = input ? (input.value || "").trim() : "";
-      window.htmx.ajax("GET", "/collab/side?view=" + view + (q ? "&q=" + encodeURIComponent(q) : ""),
+      var url = "/collab/side?view=" + view + (q ? "&q=" + encodeURIComponent(q) : "");
+      if (view === "directory") {
+        // 已经滚出来几窗就照几窗重取：点开一个私聊只为把未读抹掉，不该顺手
+        // 把人滚到一半的名册缩回首包那一窗。
+        var shown = p.querySelectorAll("#collab-directory .collab-row:not(.collab-loading)").length;
+        if (shown > 20) { url += "&limit=" + shown; }
+      }
+      window.htmx.ajax("GET", url,
                        { target: view === "directory" ? "#collab-directory" : "#collab-thread-list",
                          swap: "innerHTML" });
     });

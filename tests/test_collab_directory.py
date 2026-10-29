@@ -79,3 +79,39 @@ def test_searching_narrows_the_list_but_not_the_counts(db_ready):
 
         nothing = collab.directory(conn, members[0]["member_id"], "绝不可能有人叫这个名字")
         assert nothing["groups"] == []
+@pytest.mark.db
+def test_windows_carry_on_without_repeating_the_group_title(db_ready):
+    """通讯录分片：一窗 20 行，第二窗接着第一窗时不重画分组标题。
+
+    锁三件事：窗口里行数不超过 limit、计数仍是全公司（不跟着窗口缩）、
+    上一窗最后一行属于哪组就由 after 带下去，滚动加载处不会冒出第二个「同事」。
+
+    用 limit=1 而不是 20：种子库只有一两个人，写死 20 这条用例就永远是跳过的。
+    """
+    members = _active_members(db_ready)
+    if len(members) < 2:
+        pytest.skip("the seed has fewer than two active members")
+
+    with db_ready.connect() as conn:
+        me = members[0]["member_id"]
+        first = collab.directory(conn, me, limit=1)
+        assert len(_rows(first)) == 1
+        # 只发一窗：全公司还有别人时才留着「加载更多」。
+        assert first["has_more"] == (len(members) - 1 > 1)
+        assert first["next_offset"] == 1
+        assert first["total_admins"] + first["total_peers"] == len(members) - 1
+
+        second = collab.directory(conn, me, limit=1, offset=1, after=first["after"])
+        rows = _rows(second)
+        if rows:
+            assert rows[0]["member_id"] not in [r["member_id"] for r in _rows(first)]
+            if second["groups"][0]["key"] == first["after"]:
+                # 上一窗最后一行属于「同事」，这一窗的第一行就不能再画一次「同事」。
+                assert second["groups"][0]["continued"] is True
+        else:
+            assert second["has_more"] is False
+
+        # 走到最后一窗：has_more 收掉，next_offset 不再涨。
+        tail = collab.directory(conn, me, limit=200)
+        assert tail["has_more"] is False
+        assert len(_rows(tail)) == len(members) - 1

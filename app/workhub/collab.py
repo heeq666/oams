@@ -46,6 +46,9 @@ DIRECTORY_ADMINS = "admins"
 DIRECTORY_PEERS = "peers"
 DIRECTORY_ORDER = (DIRECTORY_ADMINS, DIRECTORY_PEERS)
 DIRECTORY_LABELS = {DIRECTORY_ADMINS: "部门管理员", DIRECTORY_PEERS: "同事"}
+# 一次发多少人：一屏左栏大约装得下 7 行，20 是「往下滚两屏才要第二次」的量。
+# 公司只有几十人时这一屏就是全部，没必要为了少发 10 行再去拉一次。
+DIRECTORY_CHUNK = 20
 
 
 class CollabError(Exception):
@@ -251,7 +254,9 @@ _DIRECTORY_SQL = """SELECT m.member_id, m.display_name,
     ORDER BY m.display_name"""
 
 
-def directory(conn, member_id: Any, q: str | None = None) -> dict[str, Any]:
+def directory(conn, member_id: Any, q: str | None = None,
+              offset: int = 0, limit: int | None = None,
+              after: str | None = None) -> dict[str, Any]:
     """全公司在职的其他人，按「部门管理员 / 同事」分两段。
 
     只看在职、只排除自己：通讯录给的是「找人」，不是人员台账，所以不按
@@ -260,6 +265,11 @@ def directory(conn, member_id: Any, q: str | None = None) -> dict[str, Any]:
 
     已经说过的私聊会把未读挂回人身上：从通讯录点进去和从会话列表点进去，
     看到的是同一个数。
+
+    分片：`limit` 给了就只回这一窗，`offset` 是已经发下去的行数。`offset` 走的是
+    过滤之后的名册，所以「搜一个词再往下滚」滚的是搜索结果，不是全公司。
+    `after` 不用传——下一窗该不该再画分组标题，由这一窗最后一行属于哪组决定，
+    返回在 `after` 里。
     """
     people: list[dict[str, Any]] = []
     for row in conn.execute(_DIRECTORY_SQL, (list(ADMIN_RESOURCES), member_id)).fetchall():
@@ -298,14 +308,25 @@ def directory(conn, member_id: Any, q: str | None = None) -> dict[str, Any]:
         people = [p for p in people if needle in p["title"].lower()
                   or needle in p["subtitle"].lower()]
 
+    window = people[offset:] if limit is None else people[offset:offset + limit]
     groups = []
     for key in DIRECTORY_ORDER:
-        rows = [p for p in people
+        rows = [p for p in window
                 if p["is_admin"] == (key == DIRECTORY_ADMINS)]
         if rows:
-            groups.append({"key": key, "label": DIRECTORY_LABELS[key], "rows": rows})
+            groups.append({"key": key, "label": DIRECTORY_LABELS[key], "rows": rows,
+                           "continued": False})
+    # 这一窗的第一行接着上一窗的最后一组时，不能再画一次分组标题——滚动加载
+    # 一屏就多一个「同事」抬头，看起来像换了一节。
+    if groups and after and groups[0]["key"] == after:
+        groups[0]["continued"] = True
+    loaded = offset + len(window)
     return {"groups": groups, "total_admins": total[DIRECTORY_ADMINS],
-            "total_peers": total[DIRECTORY_PEERS], "q": q or ""}
+            "total_peers": total[DIRECTORY_PEERS], "q": q or "",
+            "offset": offset, "has_more": loaded < len(people),
+            "next_offset": loaded,
+            # 下一窗的 after 由这一窗最后一行定；空窗就沿用上一窗的，别把分组切断。
+            "after": groups[-1]["key"] if groups else after}
 
 
 def _dm_by_peer(conn, member_id: Any) -> dict[Any, dict[str, Any]]:

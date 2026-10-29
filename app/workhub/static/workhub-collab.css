@@ -214,6 +214,22 @@ body.collab-open .collab-panel { transform: translateY(0); }
 }
 .collab-empty-hint { margin: 8px; font-size: 12px; line-height: 1.6; color: var(--muted); }
 
+/* 通讯录分片的哨兵：滚到它露头就去取下一窗。比会话行矮一档，滚到底时它顶在
+   最后一行的位置而不是撑出一整行空高；取之前显示「加载中…」，取回来自己被
+   下一窗 + 新哨兵替掉（hx-swap="outerHTML"）。 */
+.collab-loading {
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.collab-loading:hover { background: none; }
+
 /* --- 右栏 --- */
 .collab-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .collab-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
