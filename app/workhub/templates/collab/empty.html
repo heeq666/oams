@@ -1,9 +1,11 @@
 {# 没选会话时的右栏。协作室是全局层，没有「上次停在哪」，所以不自动选中。
    顶上留一条空的群头：只为让那条下边线跨过右栏，别在没有会话时断成两截。 #}
-<div class="collab-thread">
+<div class="collab-thread" data-blank="threads">
   <header class="collab-thread-head collab-thread-head-blank" aria-hidden="true"></header>
   <div class="collab-empty">
     <p class="collab-empty-title">还没选会话</p>
     <p class="collab-empty-hint">从左栏选一个群或同事。</p>
   </div>
 </div>
+{# 通讯录态的空栏一起发下来，视图切换时由 CSS 显隐——理由同左栏两份列表。 #}
+{% include "collab/directory_intro.html" %}

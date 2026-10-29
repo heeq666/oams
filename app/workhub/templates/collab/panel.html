@@ -50,18 +50,34 @@
         </label>
         {# 通讯录：换的是左栏那一个容器的内容，所以按钮长在左栏顶上，不另开一栏。
            「人 + 两道横线」是通讯录的符号，和人像头像区分开。 #}
+        {# 一个按钮两态两图标：没进通讯录时画「人 + 两道横线」（去哪儿），进去之后画
+           对话气泡（回哪儿）。只靠 aria-pressed 换底色不够——底色是很浅的一档，
+           人看不出这是「已经切过去了」，图标换掉才是一眼的事。 #}
         <button type="button" class="collab-icon-btn collab-view-btn" data-collab-view-toggle
                 aria-pressed="false" aria-label="通讯录" title="通讯录">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg class="i-directory" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="9.4" cy="7.8" r="3.4"></circle>
             <path d="M3.6 18.7c0-3.2 2.6-5.8 5.8-5.8s5.8 2.6 5.8 5.8"></path>
             <path d="M16.9 7.9h4.3"></path>
             <path d="M17.7 11.7h3.5"></path>
           </svg>
+          <svg class="i-threads" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3.6" y="5.2" width="16.8" height="12.4" rx="4"></rect>
+            <path d="M8.6 17.6 7.4 21l4-2"></path>
+            <path d="M8.4 10.4h7.2"></path>
+            <path d="M8.4 13.4h4.4"></path>
+          </svg>
         </button>
       </div>
+      {# 两份列表一起发到浏览器，切视图只是翻转可见性（CSS 按 data-collab-view 决定）。
+         原来切换要往 /collab/side 取一次，本地 240ms 才回来——点下去那一下列表还是旧的，
+         看着就像没反应。切视图是本地动作，不该等网络。 #}
       <div class="collab-list" id="collab-thread-list">{% include "collab/thread_list.html" %}</div>
+      <div class="collab-list" id="collab-directory">
+        {% with groups = directory.groups %}{% include "collab/directory.html" %}{% endwith %}
+      </div>
       <div class="collab-side-foot">
         <div class="collab-foot-line">
           <span class="collab-foot-title">协作室</span>

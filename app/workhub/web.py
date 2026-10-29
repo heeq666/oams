@@ -2103,8 +2103,11 @@ def collab_panel(request: Request):
         return RedirectResponse(url="/login", status_code=302)
     with connection() as conn:
         data = _collab_columns(conn, member["member_id"])
+        directory = collab.directory(conn, member["member_id"])
     return TEMPLATES.TemplateResponse(request, "collab/panel.html",
-                                      {"member": member, **data})
+                                      {"member": member, "directory": directory,
+                                       "total_admins": directory["total_admins"],
+                                       "total_peers": directory["total_peers"], **data})
 
 
 def _collab_side(conn, member_id: Any, view: str,
@@ -2143,25 +2146,6 @@ def collab_threads(request: Request, q: str | None = None):
     with connection() as conn:
         data = _collab_columns(conn, member["member_id"], q)
     return TEMPLATES.TemplateResponse(request, "collab/thread_list.html",
-                                      {"member": member, **data})
-
-
-@router.get("/collab/blank", response_class=HTMLResponse)
-def collab_blank(request: Request, view: str = "threads"):
-    """右栏「还没点开谁」的样子。
-
-    切到通讯录时要跟着换：左栏写着通讯录、右栏还写着「还没选会话」，
-    两栏就在讲两件事。
-    """
-    member = _member(request)
-    if member is None:
-        return HTMLResponse("", status_code=401)
-    directory = view == "directory"
-    data: dict[str, Any] = {"view": "directory" if directory else "threads"}
-    if directory:
-        with connection() as conn:
-            data.update(collab.directory(conn, member["member_id"]))
-    return TEMPLATES.TemplateResponse(request, "collab/blank.html",
                                       {"member": member, **data})
 
 
