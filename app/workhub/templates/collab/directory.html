@@ -4,10 +4,7 @@
    就指线程——只给 open 链接，点开之后人会以为左栏没选中。 #}
 {% for group in groups %}
 <div class="collab-group">
-  <div class="collab-group-head">
-    <span class="collab-group-label">{{ group.label }}</span>
-    <span class="collab-group-hint">{{ group.label_hint }}</span>
-  </div>
+  <div class="collab-group-head"><span class="collab-group-label">{{ group.label }}</span></div>
   {% for row in group.rows %}
   <a class="collab-row dm"
      href="{{ row.href }}" hx-get="{{ row.href }}" hx-target="#collab-main" hx-swap="innerHTML">
