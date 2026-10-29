@@ -3,9 +3,18 @@
    加载更早换第一行 #collab-before 的 outerHTML（新的一行 + 更早的那批）。
    不做「整屏重发」，是因为重发会把滚动位置和自己刚发的那句一起弄丢。 #}
 {% if not items %}
+{# 空态说清楚「这句话谁看得见」——三种会话的可见范围不一样，私聊不是群。 #}
 <div class="collab-empty">
+  {% if thread.kind == 'dm' %}
+  <p class="collab-empty-title">还没说过话</p>
+  <p class="collab-empty-hint">发第一句吧，只有你们两个人看得到。</p>
+  {% elif thread.kind == 'manage' %}
   <p class="collab-empty-title">这个群还没人说过话</p>
-  <p class="collab-empty-hint">说第一句话。管理员和填这页的同事都能看到。</p>
+  <p class="collab-empty-hint">说第一句话，部门管理员都看得到。</p>
+  {% else %}
+  <p class="collab-empty-title">这个群还没人说过话</p>
+  <p class="collab-empty-hint">说第一句话，管理员和填这页的同事都看得到。</p>
+  {% endif %}
 </div>
 {% else %}
 {% if has_more %}

@@ -2035,18 +2035,10 @@ def _collab_columns(conn, member_id: Any, q: str | None = None) -> dict[str, Any
     for kind in collab.KIND_ORDER:
         rows = dms if kind == collab.KIND_DM else [r for r in objects if r["kind"] == kind]
         if rows:
-            groups.append({"kind": kind, "label": collab.KIND_LABELS[kind],
-                           "label_hint": COLLAB_GROUP_HINTS.get(kind, ""), "rows": rows})
+            groups.append({"kind": kind, "label": collab.KIND_LABELS[kind], "rows": rows})
     return {"groups": groups, "unread_total": collab.unread_total(conn, member_id),
             "q": q or ""}
 
-
-#: 分组标题右边那句说明。它不是装饰：没有它，「汇报群」和「管理群」只差一个字。
-COLLAB_GROUP_HINTS = {
-    collab.KIND_MANAGE: "管理员之间谈页面怎么搭",
-    collab.KIND_FILL: "填这页的人问字段怎么填",
-    collab.KIND_DM: "两个人之间的对话",
-}
 
 
 def _collab_items(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

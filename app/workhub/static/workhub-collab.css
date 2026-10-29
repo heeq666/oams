@@ -156,7 +156,6 @@ body.collab-open .collab-panel { transform: translateY(0); }
 }
 .collab-foot-line { display: flex; align-items: baseline; gap: 8px; }
 .collab-foot-title { font-size: 13px; font-weight: 600; color: var(--ink); }
-.collab-foot-hint { margin: 2px 0 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
 .collab-panel-unread { margin-left: auto; font-size: 11px; color: var(--muted); }
 .collab-panel-unread:empty { display: none; }
 
@@ -164,7 +163,6 @@ body.collab-open .collab-panel { transform: translateY(0); }
 .collab-group + .collab-group { margin-top: 12px; }
 .collab-group-head { padding: 4px 8px; }
 .collab-group-label { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
-.collab-group-hint { display: block; font-size: 11px; line-height: 1.35; color: var(--muted); opacity: .8; }
 
 /* 会话行 264x56：头像 + 名称/末句 + 未读数。悬停比底色深一档，选中反白。 */
 .collab-row {

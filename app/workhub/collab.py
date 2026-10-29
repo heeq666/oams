@@ -46,10 +46,6 @@ DIRECTORY_ADMINS = "admins"
 DIRECTORY_PEERS = "peers"
 DIRECTORY_ORDER = (DIRECTORY_ADMINS, DIRECTORY_PEERS)
 DIRECTORY_LABELS = {DIRECTORY_ADMINS: "部门管理员", DIRECTORY_PEERS: "同事"}
-DIRECTORY_HINTS = {
-    DIRECTORY_ADMINS: "能改别人的进度，问他们最快",
-    DIRECTORY_PEERS: "同一个公司的人，直接开聊",
-}
 
 
 class CollabError(Exception):
@@ -93,7 +89,6 @@ def visible_objects(conn, member_id: Any) -> list[dict[str, Any]]:
                 "org_unit_id": row["org_unit_id"],
                 "interface_id": None,
                 "title": f"{row['org_name']} · 管理群",
-                "subtitle": "部门管理员在这里讨论页面怎么搭",
                 "thread_id": row["thread_id"] if row["thread_status"] == "active" else None,
             })
 
@@ -114,7 +109,6 @@ def visible_objects(conn, member_id: Any) -> list[dict[str, Any]]:
                 "org_unit_id": None,
                 "interface_id": row["interface_id"],
                 "title": f"{row['name']} · 汇报群",
-                "subtitle": "这页怎么填、字段映射到哪儿，在这里问",
                 "thread_id": row["thread_id"] if row["thread_status"] == "active" else None,
             })
 
@@ -202,7 +196,6 @@ def visible_dms(conn, member_id: Any) -> list[dict[str, Any]]:
         "thread_id": row["thread_id"],
         "peer_id": row["peer_id"],
         "title": row["peer_name"],
-        "subtitle": "私聊",
         "org_unit_id": None,
         "interface_id": None,
     } for row in rows]
@@ -310,8 +303,7 @@ def directory(conn, member_id: Any, q: str | None = None) -> dict[str, Any]:
         rows = [p for p in people
                 if p["is_admin"] == (key == DIRECTORY_ADMINS)]
         if rows:
-            groups.append({"key": key, "label": DIRECTORY_LABELS[key],
-                           "label_hint": DIRECTORY_HINTS[key], "rows": rows})
+            groups.append({"key": key, "label": DIRECTORY_LABELS[key], "rows": rows})
     return {"groups": groups, "total_admins": total[DIRECTORY_ADMINS],
             "total_peers": total[DIRECTORY_PEERS], "q": q or ""}
 
@@ -455,7 +447,10 @@ def get_thread(conn, thread_id: Any) -> dict[str, Any] | None:
 
 
 def thread_header(conn, member_id: Any, thread: dict[str, Any]) -> dict[str, Any]:
-    """群头顶上那几行字：群名 + 群类型 + 一句副标题 + 成员数。
+    """群头顶上那几行字：群名（不带类型后缀）+ 类型徽章 + 副标题 + 成员数。
+
+    群名里不再带「· 管理群 / · 汇报群」：类型由旁边那枚徽章说，标题里再说一遍
+    就是同一行写两次。左栏的会话行不挂徽章，所以那边的标题仍带后缀。
 
     私聊没有成员数（就两个人），群有。这个差别在界面上是「有没有那枚 4 人字样」，
     所以在这里就算好，不让模板自己判断。
@@ -465,28 +460,31 @@ def thread_header(conn, member_id: Any, thread: dict[str, Any]) -> dict[str, Any
     if thread["kind"] == KIND_MANAGE:
         row = conn.execute("SELECT name FROM workhub.org_units WHERE org_unit_id = %s",
                            (thread["org_unit_id"],)).fetchone()
-        header["title"] = f"{row['name'] if row else '部门'} · 管理群"
-        header["subtitle"] = "讨论这页该怎么搭"
+        header["title"] = row["name"] if row else "管理群"
     elif thread["kind"] == KIND_FILL:
         row = conn.execute(
             """SELECT i.name, o.name AS org_name FROM workhub.interfaces i
                 JOIN workhub.org_units o USING (org_unit_id)
                WHERE i.interface_id = %s""", (thread["interface_id"],)).fetchone()
         if row:
-            header["title"] = f"{row['name']} · 汇报群"
-            header["subtitle"] = f"{row['org_name']} · 讨论字段怎么填"
+            header["title"] = row["name"]
+            header["subtitle"] = row["org_name"]
         else:
-            header["subtitle"] = "讨论字段怎么填"
+            header["title"] = "汇报群"
     else:
         peer_id = thread["member_b"] if thread["member_a"] == member_id else thread["member_a"]
         row = conn.execute(
             "SELECT display_name, employee_code FROM workhub.workforce_members WHERE member_id = %s",
             (peer_id,)).fetchone()
         header["title"] = row["display_name"] if row else "私聊"
-        header["subtitle"] = "私聊"
         header["peer_id"] = peer_id
     if thread["kind"] != KIND_DM:
         header["member_count"] = _member_count(conn, thread)
+    # 副标题和人数合成一行：两个都没有时，模板里那一行整个不出现。
+    header["meta"] = " · ".join(part for part in (
+        header["subtitle"],
+        f"{header['member_count']} 人" if header["member_count"] else "",
+    ) if part)
     return header
 
 

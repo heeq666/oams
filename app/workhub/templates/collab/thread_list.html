@@ -1,16 +1,13 @@
 {% for group in groups %}
 <div class="collab-group">
-  <div class="collab-group-head">
-    <span class="collab-group-label">{{ group.label }}</span>
-    <span class="collab-group-hint">{{ group.label_hint }}</span>
-  </div>
+  <div class="collab-group-head"><span class="collab-group-label">{{ group.label }}</span></div>
   {% for row in group.rows %}
   <a class="collab-row{% if row.is_dm %} dm{% endif %}{% if thread is defined and thread and row.thread_id == thread.thread_id %} on{% endif %}"
      href="{{ row.href }}" hx-get="{{ row.href }}" hx-target="#collab-main" hx-swap="innerHTML">
     <span class="collab-avatar" aria-hidden="true">{{ row.avatar }}</span>
     <span class="collab-row-body">
       <span class="collab-row-name">{{ row.title }}</span>
-      <span class="collab-row-last">{{ row.last_body or row.subtitle }}</span>
+      {% if row.last_body %}<span class="collab-row-last">{{ row.last_body }}</span>{% endif %}
     </span>
     {% if row.unread %}<span class="collab-row-unread" aria-label="未读 {{ row.unread }} 条">{{ row.unread | badge }}</span>{% endif %}
   </a>

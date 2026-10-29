@@ -17,7 +17,7 @@
         <span>{{ header.title }}</span>
         <span class="collab-kind{% if header.kind == 'dm' %} dm{% endif %}">{{ header.kind_label }}</span>
       </div>
-      <p class="collab-thread-sub">{{ header.subtitle }}{% if header.member_count %} · {{ header.member_count }} 人{% endif %}</p>
+      {% if header.meta %}<p class="collab-thread-sub">{{ header.meta }}</p>{% endif %}
     </div>
   </header>
   <div class="collab-msgs" id="collab-msgs">{% include "collab/messages.html" %}</div>
