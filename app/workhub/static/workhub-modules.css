@@ -78,7 +78,8 @@
 .wh-card-title {
   font-size: 14px;
   font-weight: 600;
-  margin: 0 0 10px;
+  /* 卡片的纵向 itemSpacing 12（Figma 模块 / card 148:5953） */
+  margin: 0 0 12px;
 }
 
 .wh-card-body {
@@ -147,8 +148,13 @@
 }
 
 .wh-tab {
+  /* Tab 芯片对齐控件高 30（Figma tabs 148:5967 / 外壳 3:329） */
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
   font-size: 12px;
-  padding: 3px 10px;
+  line-height: 18px;
   border-radius: var(--wh-radius-pill);
   border: 1px solid var(--wh-line);
   background: var(--wh-bg);
@@ -192,7 +198,7 @@
   display: block;
   font-size: 12px;
   color: var(--wh-muted);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .wh-hr {
@@ -237,14 +243,14 @@
 }
 
 .wh-note {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   font-size: 13px;
   color: var(--wh-ink);
 }
 
 .wh-evidence,
 .wh-meta {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   font-size: 12px;
   color: var(--wh-muted);
 }
@@ -515,7 +521,7 @@
   align-items: center;
   gap: 12px;
   font-size: 13px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .wh-status-row:last-child { margin-bottom: 0; }
@@ -561,7 +567,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .wh-rank-rows > li {
@@ -623,7 +629,8 @@
 .wh-note-text {
   margin: 0;
   font-size: 13px;
-  line-height: 1.65;
+  /* 正文 13/20（Figma note_block 148:6322 正文 224:13475） */
+  line-height: 20px;
   color: var(--wh-ink);
   white-space: pre-wrap;
 }
