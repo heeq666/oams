@@ -14,6 +14,7 @@
 //
 // 退出码：0 通过 / 1 断言不成立 / 2 环境起不来（Chrome、服务、数据库）
 import { spawn, execFileSync } from "node:child_process";
+import { createServer } from "node:net";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,9 +24,38 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pythonBin = resolve(root, ".venv/bin/python");
 const chromeBin = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-// 演示站占 8000，这里另起一个，别撞。
-const appPort = Number(process.env.WORKHUB_CDP_APP_PORT || 8011);
+// 演示站占 8000，这里另起一个，别撞。端口上要是已经有别人的实例（本机上很常见），
+// 我们起的那个会悄悄起不来、然后对着别人的库跑完一整轮——所以先挑一个空端口。
+const wantedPort = Number(process.env.WORKHUB_CDP_APP_PORT || 0);
+
+function portFree(port) {
+  return new Promise((done) => {
+    const probe = createServer();
+    probe.once("error", () => done(false));
+    probe.once("listening", () => probe.close(() => done(true)));
+    probe.listen(port, "127.0.0.1");
+  });
+}
+
+async function pickPort() {
+  if (wantedPort) {
+    if (!(await portFree(wantedPort))) {
+      console.error("端口 " + wantedPort + " 已经被占用（本机上可能还有别的实例在跑）。"
+        + "换一个端口，或者先把那个停掉。");
+      process.exit(2);
+    }
+    return wantedPort;
+  }
+  for (let port = 8011; port <= 8020; port += 1) {
+    if (await portFree(port)) return port;
+  }
+  console.error("8011-8020 都被占了，找不到能起实例的端口。");
+  process.exit(2);
+}
+
+const appPort = await pickPort();
 const base = "http://127.0.0.1:" + appPort;
+process.on("exit", () => {});
 const debugPort = 9600 + Math.floor(Math.random() * 200);
 const userDataDir = "/tmp/workhub-cdp-collab-" + debugPort;
 
