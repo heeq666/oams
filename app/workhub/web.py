@@ -768,7 +768,8 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
              live["interface_id"] if live is not None else None,
              principal["member_id"], principal["member_id"])).fetchone()
         api.audit(conn, principal["member_id"], "interface.created", "interface", row["interface_id"],
-                  "created inside department workbench", {"slug": slug.strip(), "version_no": version})
+                  "created inside department workbench",
+                  {"slug": slug.strip(), "version_no": version})
     return RedirectResponse(url=f"/departments/{org_unit_id}/{row['interface_id']}?saved=1", status_code=303)
 
 
@@ -1237,6 +1238,45 @@ def _acting_stage(powers: dict[str, Any], page: Any) -> str:
     return "company_proxy"
 
 
+def _employee_code_of(conn, principal: dict[str, Any]) -> str | None:
+    """The employee code behind whoever is clicking.
+
+    A browser or bearer session carries the member id but not the code, and the
+    signature has to name somebody the record can be read against later -- so the
+    code is looked up in the roster instead of being guessed from the id.
+    """
+    code = principal.get("employee_code")
+    if isinstance(code, str) and code:
+        return code
+    row = conn.execute(
+        "SELECT employee_code FROM workhub.workforce_members WHERE member_id = %s",
+        (principal["member_id"],)).fetchone()
+    return row["employee_code"] if row else None
+
+
+def _member_id_for_code(conn, employee_code: str) -> UUID | None:
+    """The member behind an employee code, or None when nobody answers to it."""
+    row = conn.execute(
+        """SELECT member_id FROM workhub.workforce_members
+            WHERE employee_code = %s AND employment_status = 'active'""",
+        (employee_code,)).fetchone()
+    return row["member_id"] if row else None
+
+
+def _active_employee_codes(conn) -> set[str]:
+    """Every employee code that currently works here.
+
+    The approval gate needs this to tell a real signature from a name the author
+    typed: `recorded_approval_gaps` compares `reviewed_by` against this list, so
+    a hand-written stamp naming nobody (or naming somebody who left) is refused
+    at the same door that refuses a missing stamp.
+    """
+    rows = conn.execute(
+        """SELECT employee_code FROM workhub.workforce_members
+            WHERE employment_status = 'active' AND employee_code IS NOT NULL""").fetchall()
+    return {row["employee_code"] for row in rows if row["employee_code"]}
+
+
 def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
                    acting: str = "department") -> str | None:
     """Make an approved page the live screen for its department slug.
@@ -1255,13 +1295,16 @@ def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
     # type "approved" into their own JSON; until this line existed nothing in
     # the system could tell that apart from a real sign-off, which is what made
     # "declare a public page" impossible to do honestly.
+    signer = _employee_code_of(conn, principal)
+    if not signer:
+        return "这个账号没有工号，签不了批：批准要写进页面描述，而那上面只认在职成员工号"
     stamped = review_rules.stamp_approval(
         page["descriptor"] or {},
-        reviewed_by=str(principal.get("employee_code") or principal["member_id"]),
+        reviewed_by=signer,
         stage=signed_level,
         version_no=page["version_no"],
     )
-    gaps = recorded_approval_gaps(stamped)
+    gaps = recorded_approval_gaps(stamped, known_employee_codes=_active_employee_codes(conn))
     if gaps:
         return "批准没能写进页面描述，页面没有上线：" + "；".join(gaps[:3])
     # Approving replaces whatever was live for this slug: a department must never
@@ -1678,8 +1721,11 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
                                        known_position_codes=positions_known,
                                        # This is the one door that reaches a live
                                        # page without anyone signing it, so the
-                                       # file has to carry the signature itself.
-                                       require_recorded_approval=True)
+                                       # file has to carry the signature itself --
+                                       # and the signature has to name an active
+                                       # member, not a plausible-looking string.
+                                       require_recorded_approval=True,
+                                       known_employee_codes=_active_employee_codes(conn))
         if problems:
             return RedirectResponse(url="/setup/interfaces?error=" +
                                     urllib.parse.quote("；".join(problems)[:500]), status_code=303)
@@ -1695,16 +1741,27 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
             """UPDATE workhub.interfaces SET status = 'archived', updated_at = now()
                WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
             (org_unit_id, slug.strip()))
+        # This door skips the review page, so the signature travels in the file --
+        # and has to be written into the row as well, not just quoted in the JSON.
+        # A public page without a reviewer on the row is exactly what the table's
+        # own constraint forbids, and leaving it to the database would turn a
+        # readable "your file's signer is unknown" into a 500.
+        review = (descriptor.get("meta") or {}).get("review") or {}
+        signer_code = review.get("reviewed_by")
+        signer_id = (_member_id_for_code(conn, signer_code)
+                     if isinstance(signer_code, str) and signer_code else None)
         row = conn.execute(
             """INSERT INTO workhub.interfaces
                    (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
-                    position_id, version_no, created_by, updated_by)
-               VALUES (%s, %s, %s, 'active', %s, %s, %s, %s, %s, %s, %s)
+                    position_id, version_no, created_by, updated_by,
+                    reviewed_by, reviewed_at)
+               VALUES (%s, %s, %s, 'active', %s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz)
                RETURNING interface_id, version_no""",
             (org_unit_id, slug.strip(), name.strip(),
              (descriptor.get("meta") or {}).get("visibility", "department"),
              descriptor.get("schema_version", "0.1"), Jsonb(descriptor), position, next_version,
-             principal["member_id"], principal["member_id"])).fetchone()
+             principal["member_id"], principal["member_id"],
+             signer_id, review.get("reviewed_at") or None)).fetchone()
         api.audit(conn, principal["member_id"], "interface.created", "interface", row["interface_id"],
                   "created through setup page", {"slug": slug.strip(), "version_no": row["version_no"]})
     return RedirectResponse(url="/setup/interfaces?saved=1", status_code=303)

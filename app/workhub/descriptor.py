@@ -22,6 +22,7 @@ always collects everything it can.
 """
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any
 
 from workhub.metrics import (
@@ -547,7 +548,8 @@ def _check_visibility(problems: _Problems, descriptor: dict) -> None:
 APPROVAL_FIELDS: tuple[str, ...] = ("status", "reviewed_by", "reviewed_at")
 
 
-def _approval_gaps(descriptor: Any) -> list[tuple[str, str, str]]:
+def _approval_gaps(descriptor: Any,
+                   known_employee_codes: Collection[str] | None = None) -> list[tuple[str, str, str]]:
     """What a descriptor still lacks when it claims something only a sign-off allows.
 
     Returned as (code, path, message) so `validate_descriptor` can print them
@@ -559,13 +561,25 @@ def _approval_gaps(descriptor: Any) -> list[tuple[str, str, str]]:
     alone and no signature is owed. This is a *gate*, not a shape check: a page
     waiting for review is supposed to be missing exactly this, which is why
     `validate_descriptor` only looks at it when the caller says so.
+
+    `known_employee_codes` answers the question a document cannot answer about
+    itself: is the person named in `reviewed_by` someone who actually works
+    here? A signature is a fact about the organisation, not a string the author
+    picks, so a hand-written "approved by 王二" must be refused exactly where a
+    hand-written "approved" already was. Pass ``None`` when there is no database
+    to ask (the offline CLI): the shape is still checked, and the caller says so
+    instead of pretending the name was verified.
     """
     if not isinstance(descriptor, dict):
         return []
     meta = descriptor.get("meta") if isinstance(descriptor.get("meta"), dict) else {}
     review = meta.get("review") if isinstance(meta.get("review"), dict) else {}
     complete = all(review.get(field) for field in APPROVAL_FIELDS) and review.get("status") == "approved"
-    if complete:
+    # A name is not a signer. Whoever is named has to be an active member of this
+    # company; without that, "reviewed_by: 王二" is just another sentence the
+    # author typed about themselves, which is the whole hole this closes.
+    stranger = _stranger_signature(review, known_employee_codes)
+    if complete and stranger is None:
         return []
     gaps: list[tuple[str, str, str]] = []
     if meta.get("visibility") == "public":
@@ -579,6 +593,10 @@ def _approval_gaps(descriptor: Any) -> list[tuple[str, str, str]]:
             if not review.get(field):
                 gaps.append(("DATA_RULE_VIOLATION", "meta.review",
                              f"public templates require {field}"))
+    if stranger is not None:
+        gaps.append(("DATA_RULE_VIOLATION", "meta.review",
+                     "recorded approval must name an active member: "
+                     f"reviewed_by {stranger!r} is not an employee code in this company"))
     declared = descriptor.get("capabilities")
     if isinstance(declared, (list, tuple)):
         for capability in sorted({str(item) for item in declared} & set(REVIEWED_CAPABILITIES)):
@@ -588,17 +606,39 @@ def _approval_gaps(descriptor: Any) -> list[tuple[str, str, str]]:
     return gaps
 
 
-def recorded_approval_gaps(descriptor: dict[str, Any]) -> list[str]:
+def _stranger_signature(review: dict, known_employee_codes: Collection[str] | None) -> str | None:
+    """The `reviewed_by` value, when it names nobody who works here.
+
+    ``None`` means "not a stranger", and also "cannot tell": with no employee
+    list there is nothing to compare against, and inventing a verdict is worse
+    than reporting the limit at the door.
+    """
+    if known_employee_codes is None:
+        return None
+    signer = review.get("reviewed_by")
+    if not isinstance(signer, str) or not signer:
+        return None
+    return None if signer in known_employee_codes else signer
+
+
+def recorded_approval_gaps(descriptor: dict[str, Any], *,
+                           known_employee_codes: Collection[str] | None = None) -> list[str]:
     """The approval a descriptor claims but has not got, printed for a person.
 
     Empty list means every claim on this document is backed by a recorded
     signature. Callers that refuse to publish a file without one (`/setup`,
     `workhub plugin`) print this; authoring and submitting do not ask, because
     the signature is produced by the review that follows.
+
+    One rule, two doors: the same function runs behind the online gates (which
+    pass `known_employee_codes` and therefore also refuse a name that is not an
+    active member) and behind the offline `workhub plugin check` (which passes
+    ``None`` and prints that the name could not be verified here). Splitting it
+    into a "strict" copy would let the two drift, and the drift would be silent.
     """
     coded = not isinstance(descriptor, dict) or descriptor.get("schema_version") != LEGACY_SCHEMA_VERSION
     return [f"[{code}] {path}: {message}" if coded else f"{path}: {message}"
-            for code, path, message in _approval_gaps(descriptor)]
+            for code, path, message in _approval_gaps(descriptor, known_employee_codes)]
 
 
 def _check_aggregate(problems: _Problems, mapped_fields: set[str], produced: set[str]) -> None:
@@ -623,7 +663,8 @@ def validate_descriptor(descriptor: dict[str, Any],
                         known_position_codes: set[str] | None = None,
                         *,
                         strict_v02: bool = True,
-                        require_recorded_approval: bool = False) -> list[str]:
+                        require_recorded_approval: bool = False,
+                        known_employee_codes: Collection[str] | None = None) -> list[str]:
     """Return a list of problems. Empty list means the descriptor may be rendered.
 
     `strict_v02` (default on) makes a v0.2 document use only the v0.2 module
@@ -636,6 +677,12 @@ def validate_descriptor(descriptor: dict[str, Any],
     signature that this flag demands. Only the paths that publish a file without
     a review turn it on (`/setup/interfaces`, `workhub plugin`); the page that
     does get reviewed is signed by the approval itself, not by its author.
+
+    `known_employee_codes` is the employee-code list of the company's active
+    members. A path that has a database must pass it: a signature only counts
+    when the person named works here, and "approved by 王二" typed into JSON has
+    to fail where "approved" already failed. Offline callers pass ``None`` and
+    say in their report that the name went unverified.
     """
     if not isinstance(descriptor, dict):
         return ["descriptor must be a JSON object"]
@@ -689,7 +736,7 @@ def validate_descriptor(descriptor: dict[str, Any],
         # Only the callers that publish without a review ask for this. Note the
         # order: everything above is about the document's shape; this last block
         # is about the process it has been through.
-        for code, path, message in _approval_gaps(descriptor):
+        for code, path, message in _approval_gaps(descriptor, known_employee_codes):
             problems.add(code, path, message)
     _check_metrics(problems, descriptor, version, by_key)
     _check_aggregate(problems, mapped_fields, produced)

@@ -244,3 +244,50 @@ def test_a_status_word_that_is_not_approved_is_not_a_signature():
     # 只把结论改成 approved，其余一个字不动，缺口就该消失——证明上面那条不是空跑。
     descriptor["meta"]["review"]["status"] = "approved"
     assert recorded_approval_gaps(descriptor) == []
+
+
+def test_a_hand_written_signature_must_name_somebody_who_works_here():
+    """签名是组织里的事实，不是文件里的一串字。
+
+    「approve 写在 JSON 里」上一轮已经堵住了；剩下半个洞是「谁签」——作者手写一个
+    `reviewed_by: 王二`，形状上完全合规，只有连库才知道公司里有没有这个人。所以这一
+    条分开验：不给名单（离线）时只验形状，给名单时连名字一起验。
+    """
+    from workhub.descriptor import recorded_approval_gaps
+
+    descriptor = base()
+    descriptor["meta"]["visibility"] = "public"
+    descriptor["meta"]["review"] = {"status": "approved", "reviewed_by": "王二",
+                                    "reviewed_at": "2026-10-31T09:00:00Z"}
+
+    # 离线：形状齐全，这条查不了，不硬报。
+    assert recorded_approval_gaps(descriptor) == []
+    # 连库：名单里没有「王二」，当场算缺口。
+    gaps = recorded_approval_gaps(descriptor, known_employee_codes={"DESIGN001", "ADMIN001"})
+    assert len(gaps) == 1
+    assert "must name an active member" in gaps[0]
+    assert "王二" in gaps[0]
+
+    strict = validate_descriptor(descriptor, require_recorded_approval=True,
+                                 known_employee_codes={"DESIGN001"})
+    assert len(strict) == 1 and "active member" in strict[0]
+
+    # 换成真在册的工号，同一条就过——证明上面不是「有名单就报」。
+    descriptor["meta"]["review"]["reviewed_by"] = "DESIGN001"
+    assert recorded_approval_gaps(descriptor, known_employee_codes={"DESIGN001"}) == []
+    assert validate_descriptor(descriptor, require_recorded_approval=True,
+                               known_employee_codes={"DESIGN001"}) == []
+
+
+def test_an_unverifiable_name_is_not_reported_as_verified_offline():
+    """离线不是「通过」，是「没验」。函数返回空列表只代表形状齐、不代表签字人是真的；
+    两件事由调用方在报告里分开说，这里钉住「给不给名单结果确实不同」。"""
+    from workhub.descriptor import recorded_approval_gaps
+
+    descriptor = base()
+    descriptor["meta"]["visibility"] = "public"
+    descriptor["meta"]["review"] = {"status": "approved", "reviewed_by": "CTO",
+                                    "reviewed_at": "2026-10-31T09:00:00Z"}
+
+    assert recorded_approval_gaps(descriptor) == []
+    assert recorded_approval_gaps(descriptor, known_employee_codes=set()) != []
