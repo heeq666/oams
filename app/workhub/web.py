@@ -28,6 +28,7 @@ import json
 import logging
 import urllib.parse
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -96,6 +97,50 @@ TEMPLATES.env.globals["dev_mode"] = lambda: dev_autologin_target() is not None
 # empty/no-op while the shortcut is off, so the login screen never leaks a roster.
 TEMPLATES.env.globals["dev_identities"] = dev_identities
 TEMPLATES.env.globals["dev_cookie_name"] = DEV_WORKER_COOKIE
+
+# 静态资源的版本串。
+#
+# 没有它的时候，浏览器会按自己的心情缓存 css：改完版的人刷新一次可能还是旧样式，
+# 而「改完了吗」这种问题不该靠按 Ctrl+Shift+R 才能回答。版本串取文件内容的哈希，
+# 不是手写的常量——常量一定会忘，哈希不会：改一个字节换一个 URL，浏览器自然回源。
+#
+# 静态目录也在这里定下来，api.py 挂载与这里查哈希必须看同一个目录，
+# 否则 URL 上的版本串算的是另一份文件。
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@lru_cache(maxsize=512)
+def _static_digest(path: str, mtime_ns: int, size: int) -> str:
+    """按「绝对路径 + mtime + 大小」缓存的内容哈希。
+
+    三个都进 key：文件被替换而大小不变时 mtime 会变，反过来 mtime 被 touch
+    而内容不变只是多算一次，不影响正确性。
+    """
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:8]
+
+
+def static_version(relative: str) -> str:
+    """这个静态文件当前的版本串；文件不在就返回空串。
+
+    空串的意思是「说不出版本」，调用方据此退化成不缓存，而不是编一个假的。
+    """
+    relative = relative.lstrip("/")
+    path = STATIC_DIR / relative
+    try:
+        stat = path.stat()
+    except OSError:
+        return ""
+    return _static_digest(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def static_url(relative: str) -> str:
+    """模板里用：`{{ static_url('workhub-modules.css') }}`。"""
+    relative = relative.lstrip("/")
+    version = static_version(relative)
+    return f"/static/{relative}?v={version}" if version else f"/static/{relative}"
+
+TEMPLATES.env.globals["static_url"] = static_url
+
 
 STATUS_LABELS = {"planned": "未开始", "in_progress": "进行中", "blocked": "阻塞",
                  "done": "已完成", "cancelled": "已取消"}

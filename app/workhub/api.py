@@ -1,4 +1,5 @@
 from collections import Counter
+from urllib.parse import parse_qs
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -1393,12 +1394,39 @@ def list_open_work_items(conn, org_unit_id=None, company_scope=False, limit=100)
 # functions the bearer scheme uses. Nothing here grants anything by itself.
 # ---------------------------------------------------------------------------
 from workhub.web import router as web_router  # noqa: E402
+from workhub import web as web_ui  # noqa: E402
 from workhub.security import (active_org_unit_ids, has_company_scope,  # noqa: E402
                               has_permission, principal_from_request)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from workhub import collab  # noqa: E402
 
-app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
+
+
+class _VersionedStaticFiles(StaticFiles):
+    """带版本串的静态资源可以长缓存，不带的不许浏览器自己猜。
+
+    URL 上的 `v=` 是文件内容的哈希（`workhub.web.static_url` 生成）。只认「跟当前
+    文件对得上」的版本串：对得上，说明这个 URL 指向的内容永远不变，可以 immutable；
+    对不上或者根本没带（旧缓存里的残页、有人手打的地址），就 `no-cache`——让浏览器
+    每次回源问一句。改版之后第一跳看到的就是新样式，不必等缓存过期，也不必让人按
+    Ctrl+Shift+R。
+
+    `no-cache` 不是「不缓存」，是「可以存，但每次用之前先问」；StaticFiles 本来就会
+    发 ETag 与 Last-Modified，对上了照样 304，代价就是一次条件请求。
+    """
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        supplied = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("v", [""])[0]
+        if supplied and supplied == web_ui.static_version(path):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", _VersionedStaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+          name="static")
 app.include_router(web_router)
 
 
