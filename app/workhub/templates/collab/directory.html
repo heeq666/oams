@@ -6,6 +6,7 @@
    分片：一窗 20 行，滚到底再把下一窗追加进来。所以这份模板会被「整份渲染」
    （面板首包、搜索）和「追加一段」（滚到底）两种方式调用，追加时 continued
    把分组标题让给上一窗，别在滚动加载处再冒一个「同事」。 #}
+{% import "collab/icons.html" as icons %}
 {% for group in groups %}
 {% if not group.continued %}
 <div class="collab-group">
@@ -14,7 +15,7 @@
   {% for row in group.rows %}
   <a class="collab-row dm"
      href="{{ row.href }}" hx-get="{{ row.href }}" hx-target="#collab-main" hx-swap="innerHTML">
-    <span class="collab-avatar" aria-hidden="true">{{ row.avatar }}</span>
+    <span class="collab-avatar" aria-hidden="true">{{ icons.avatar_icon("person") }}</span>
     <span class="collab-row-body">
       <span class="collab-row-name">{{ row.title }}</span>
       <span class="collab-row-last">{{ row.subtitle }}</span>

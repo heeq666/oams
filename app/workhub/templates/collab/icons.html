@@ -1,0 +1,8 @@
+{# 协作室用到的 Lucide 图标（ISC）。口径见 docs/design/design-system-v1.md §5.1：
+   24 网格、stroke 2、圆头圆角、fill none，颜色走 currentColor 交给父级决定。
+   Figma 侧同一份 path 在组件库「图标 · Lucide（ISC）」（224:14183）。 #}
+{% macro avatar_icon(kind) -%}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if kind == 'group' -%}<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/>{%- else -%}<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>{%- endif -%}
+</svg>
+{%- endmacro %}
