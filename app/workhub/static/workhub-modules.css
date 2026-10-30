@@ -72,7 +72,8 @@
 
 .wh-container {
   background: var(--wh-bg-muted);
-  padding: 12px;
+  /* 卡片内距 16（Figma 模块 / card 148:5953） */
+  padding: 16px;
 }
 
 .wh-card-title {
@@ -142,7 +143,8 @@
 /* tabs: a segmented strip, panels collapse so long pages stay readable */
 .wh-tabbar {
   display: flex;
-  gap: 4px;
+  /* 芯片间距 8（Figma tabs 148:5967 / Tabbar 224:13455） */
+  gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
@@ -268,7 +270,8 @@
 
 .wh-link {
   display: inline-block;
-  margin-top: 6px;
+  /* 链接与上一段 8（Figma evidence_gallery 148:6088） */
+  margin-top: 8px;
   font-size: 13px;
   color: var(--wh-info);
   text-decoration: none;
@@ -519,7 +522,8 @@
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr) 72px;
   align-items: center;
-  gap: 12px;
+  /* 标签·条·数值之间 8（Figma status_chart 148:6249 / Row） */
+  gap: 8px;
   font-size: 13px;
   margin-bottom: 8px;
 }
@@ -573,7 +577,8 @@
 .wh-rank-rows > li {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  /* 序号与名称之间 8（Figma rank_list 148:6279 / Row） */
+  gap: 8px;
   font-size: 13px;
 }
 
