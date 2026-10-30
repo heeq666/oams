@@ -1,9 +1,9 @@
 """Measure layout in the real browser, through ego (see AGENTS.md 浏览器自动化).
 
-The three layout checks used to launch headless Chrome themselves and drive it
-over a hand-rolled CDP client (scripts/cdp-*.mjs). They still need a real browser
-— "the rail is a column" is a claim about pixels — so they now drive ego instead
-and share this helper.
+The three layout checks are claims about pixels — "the rail is a column", "the bar
+stays put" — so they need a real browser, not a string assertion. All three now
+go through ego and share this helper; the per-check browser drivers they used to
+carry are gone.
 
 ego swallows argv and the caller's environment, so an input file is the only way
 in. Each run therefore gets its own config file under pytest's ``tmp_path``, and
