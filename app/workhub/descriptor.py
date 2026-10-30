@@ -30,11 +30,15 @@ from workhub.metrics import (
 )
 from workhub.modules import (
     CONTAINER_DEPTH_LIMIT,
+    MODULE_NODE_KEYS,
     MODULE_REGISTRY,
     STANDARD_FIELD_VOCAB,
     get_module,
     module_depth,
+    module_params,
+    param_problem,
     validate_module_tree,
+    written_param_names,
 )
 
 SCHEMA_VERSIONS = ("0.1", "0.2")
@@ -365,20 +369,38 @@ def _check_modules_v02(problems: _Problems, modules: Any, fields: list[dict],
             # we cannot identify carries no further rules worth guessing at.
             continue
 
-        params = _module_params(module)
+        nested = _module_params(module)
+        params = module_params(module)
+        written = written_param_names(module)
         for name, declaration in spec.params.items():
-            if isinstance(declaration, dict) and declaration.get("required") and name not in params:
+            if isinstance(declaration, dict) and declaration.get("required") and name not in written:
                 problems.add("DATA_RULE_VIOLATION", f"{path}.params",
                              f"required param {name!r} is missing for module {spec.key!r}")
-        for name in params:
+        for name in nested:
             if name not in spec.params:
                 problems.add("DATA_RULE_VIOLATION", f"{path}.params",
                              f"param {name!r} is not declared by module {spec.key!r} "
                              f"(allowed: {sorted(spec.params)})")
+        # A declaration is a promise: a value outside it must be refused. Flat keys
+        # are a legal way to write a declared param (`rows: 3` beside params.columns)
+        # and are validated exactly like the nested shape -- silently ignoring a key
+        # is what made an author believe `rows: 3` had taken effect.
+        if spec.layer != "container":
+            unknown = sorted(set(module) - MODULE_NODE_KEYS - set(spec.params))
+            if unknown:
+                problems.add("DATA_RULE_VIOLATION", path,
+                             f"unknown key(s) {unknown} on module {spec.key!r}; a module node "
+                             f"carries {sorted(MODULE_NODE_KEYS)} plus its declared params "
+                             f"{sorted(spec.params)}")
+        for name in sorted(written):
+            problem = param_problem(spec, name, params.get(name))
+            if problem is not None:
+                where = f"{path}.params.{name}" if name in nested else f"{path}.{name}"
+                problems.add("DATA_RULE_VIOLATION", where, problem)
 
         # A display module may only show a platform metric (contract §2).
         for param_name in DISPLAY_METRIC_PARAMS.get(spec.key, ()):
-            if param_name not in params:
+            if param_name not in written:
                 continue
             raw = params.get(param_name)
             refs = raw if isinstance(raw, list) else [raw]

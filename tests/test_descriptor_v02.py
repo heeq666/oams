@@ -449,3 +449,49 @@ def test_migration_window_also_rejects_platform_derived_map_to():
     descriptor["fields"].append(field("platform_state", "sample_status", "enum"))
     assert any("颜色级记录派生" in p
                for p in validate_descriptor(descriptor, strict_v02=False))
+
+
+# --------------------------------------------------------------------------- #
+# Param shape: flat keys are honoured, out-of-range values are refused
+# --------------------------------------------------------------------------- #
+
+
+def table_descriptor(**node):
+    """base() with the card's child replaced by one `table` node."""
+    descriptor = base()
+    table = {
+        "key": "detail",
+        "type": "table",
+        "params": {"columns": [{"key": "style_no", "label": "款号"}]},
+        "source_fields": ["style_no", "stage"],
+    }
+    table.update(node)
+    descriptor["modules"][0]["children"][0]["children"] = [table]
+    return descriptor
+
+
+def test_table_rows_written_flat_is_valid():
+    """`rows: 3` next to params.columns used to be dropped without a word."""
+    descriptor = table_descriptor(rows=3)
+    assert validate_descriptor(descriptor) == []
+
+
+def test_table_rows_out_of_range_is_refused_not_clamped():
+    problems = validate_descriptor(table_descriptor(rows=9))
+    assert codes(problems) == ["DATA_RULE_VIOLATION"]
+    assert problems[0].startswith("[DATA_RULE_VIOLATION] modules[board].children[left]"
+                                  ".children[detail].rows:")
+    assert "at most 5" in problems[0]
+
+    nested = table_descriptor()
+    nested["modules"][0]["children"][0]["children"][0]["params"]["rows"] = 0
+    nested_problems = validate_descriptor(nested)
+    assert codes(nested_problems) == ["DATA_RULE_VIOLATION"]
+    assert nested_problems[0].endswith("must be at least 1, got 0")
+
+
+def test_an_undeclared_node_key_is_refused_not_ignored():
+    problems = validate_descriptor(table_descriptor(rowz=3))
+    assert codes(problems) == ["DATA_RULE_VIOLATION"]
+    assert "unknown key(s) ['rowz']" in problems[0]
+    assert "declared params ['columns', 'rows']" in problems[0]

@@ -24,8 +24,11 @@ from workhub.modules import (  # noqa: E402
     get_module,
     list_modules,
     module_depth,
+    module_params,
     module_version_matches,
+    param_problem,
     validate_module_tree,
+    written_param_names,
 )
 
 CONTAINER_KEYS = {"columns", "rows", "grid", "card", "tabs", "divider", "spacer"}
@@ -283,3 +286,47 @@ def test_unsatisfiable_version_lock_is_rejected():
     assert len(problems) == 1
     assert problems[0].startswith("[MODULE_NOT_WHITELISTED] modules[r]:")
     assert "does not satisfy module_version" in problems[0]
+
+
+# --------------------------------------------------------------------------- #
+# Param declarations: a declared range is enforced, a flat key is not ignored
+# --------------------------------------------------------------------------- #
+
+
+def test_table_declares_a_bounded_row_count():
+    """`rows` is a declared param of `table`, 1-5, default 1 (拍板：上限 5)."""
+    declaration = get_module("table").params["rows"]
+    assert declaration["type"] == "int"
+    assert declaration["required"] is False
+    assert declaration["default"] == 1
+    assert (declaration["minimum"], declaration["maximum"]) == (1, 5)
+
+
+def test_module_params_reads_a_flat_declared_param():
+    """`rows: 3` beside params.columns must be read, not silently dropped."""
+    spec = get_module("table")
+    flat = {"type": "table", "params": {"columns": []}, "rows": 3}
+    assert module_params(flat)["rows"] == 3
+    assert written_param_names(flat) == {"columns", "rows"}
+
+    # Nested wins when both are present, and only declared names count as params.
+    both = {"type": "table", "params": {"columns": [], "rows": 2}, "rows": 4}
+    assert module_params(both)["rows"] == 2
+    assert written_param_names({"type": "table", "rowz": 4}) == set()
+    # Default applies when nobody wrote it.
+    assert module_params({"type": "table", "params": {"columns": []}})["rows"] == 1
+    assert spec.params["rows"]["default"] == 1
+
+
+def test_param_problem_states_the_bound_it_broke():
+    spec = get_module("table")
+    assert param_problem(spec, "rows", 3) is None
+    assert param_problem(spec, "rows", 1) is None
+    assert param_problem(spec, "rows", 5) is None
+    out_of_range = param_problem(spec, "rows", 9)
+    assert out_of_range is not None and "at most 5" in out_of_range
+    too_small = param_problem(spec, "rows", 0)
+    assert too_small is not None and "at least 1" in too_small
+    wrong_type = param_problem(spec, "rows", "3")
+    assert wrong_type is not None and "must be an integer" in wrong_type
+    assert param_problem(spec, "columns", []) is None

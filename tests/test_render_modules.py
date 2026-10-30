@@ -437,6 +437,18 @@ def test_table_empty_copy_depends_on_the_viewpoint():
     assert empty_lines(render_read_only(page(node))) == ["还没有明细。"]
 
 
+def test_table_honours_a_flat_rows_count():
+    """`rows: 3` written beside params.columns must reach the page, not be dropped."""
+    node = {"type": "table", "params": {"columns": [{"key": "f_title", "label": "款号"}]},
+            "rows": 3, "source_fields": ["title"]}
+    html = render_interface(page(node), VALUES, AGGREGATES)
+    assert html.count("<tr>") == 4  # 一行表头 + 三行明细
+
+    # 声明过的上限在页面上也生效：写 9 不会画出 9 行（校验器此时已先报错）。
+    clamped = dict(node, rows=9)
+    assert render_interface(page(clamped), VALUES, AGGREGATES).count("<tr>") == 6
+
+
 def test_readonly_drops_the_evidence_gallery_before_any_empty_state():
     # 证据件不进公司汇总，经理视角在 render_module 里就被 _hidden_in_readonly
     # 整块摘掉了（见 app/workhub/render.py:755），所以只读视角没有「证据」这一块，
