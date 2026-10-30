@@ -1,4 +1,7 @@
 {# 左栏那一个容器：会话列表或者通讯录。两段都从 /collab/side 出，
    这样「搜索框打一个字」和「切一次视图」走的是同一条路，不会出现一套状态
-   记在服务端、一套记在 DOM 上。 #}
+   记在服务端、一套记在 DOM 上。
+   一次分片里把未读角标也带回去：左栏重画时，入口角标和面板底部那句未读
+   跟它同源，不会停在上一次的数上。 #}
 {% if view == 'directory' %}{% include "collab/directory.html" %}{% else %}{% include "collab/thread_list.html" %}{% endif %}
+{% include "collab/badges.html" %}

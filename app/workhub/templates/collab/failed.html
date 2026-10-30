@@ -1,0 +1,21 @@
+{# 一条没发出去的消息。存在的理由：断网/5xx 时 htmx 默认什么都不做，输入框里的字
+   就被下一条消息顶掉了——人以为发出去了，其实没有。这一份把那一句留在消息区，
+   挂红色感叹号和「重发」，重发复用同一个 client_msg_id（后端幂等），所以「重发」
+   是「把这一条发成功」，不是「再发一条」。
+   这一份只当模板用：composer.html 把它包在 <template> 里，脚本克隆后填正文。 #}
+{% import "collab/icons.html" as icons %}
+<article class="collab-msg collab-msg-failed">
+  <span class="collab-avatar sm" aria-hidden="true">{{ icons.avatar_icon("person") }}</span>
+  <div class="collab-msg-body">
+    <div class="collab-msg-meta">
+      <span class="collab-msg-name">{{ member.display_name }}</span>
+      <span class="collab-msg-time">还没发出去</span>
+    </div>
+    <p class="collab-msg-text" data-failed-body></p>
+    <p class="collab-msg-fail">
+      <span class="collab-msg-fail-mark" aria-hidden="true">!</span>
+      <span data-failed-because>没发出去</span>
+      <button type="button" class="collab-msg-resend" data-resend>重发</button>
+    </p>
+  </div>
+</article>

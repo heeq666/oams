@@ -2088,12 +2088,20 @@ def _collab_thread_payload(conn, member_id: Any, thread: dict[str, Any], *,
     }
 
 
-def _collab_error(request: Request, member: dict[str, Any], message: str):
-    """会话打不开时：右栏说一句实话，左栏照常可用。"""
+def _collab_error(request: Request, member: dict[str, Any], message: str,
+                  status_code: int = 404):
+    """会话打不开时：右栏说一句实话，左栏照常可用。
+
+    传输层给 404，不给 403 也不给 200：403 等于告诉外面「这个会话是存在的」，
+    给枚举留了一道缝；200 又让浏览器和外部工具以为这是一张打开了的正常页面。
+    文案本来就同时盖住「不存在」和「不开放给你」，所以两种原因共用一个码。
+    `/collab/threads/{id}/messages` 那个数据片段仍然回 403——它是接口不是页面。
+    """
     with connection() as conn:
         data = _collab_columns(conn, member["member_id"])
     return TEMPLATES.TemplateResponse(request, "collab/error.html",
-                                      {"member": member, "message": message, **data})
+                                      {"member": member, "message": message, **data},
+                                      status_code=status_code)
 
 @router.get("/collab", response_class=HTMLResponse)
 def collab_panel(request: Request):
@@ -2129,10 +2137,12 @@ def _collab_side(conn, member_id: Any, view: str,
         data = collab.directory(conn, member_id, q, offset=max(offset, 0),
                                 limit=limit or collab.DIRECTORY_CHUNK,
                                 after=after or None)
+        # 会话分支的 `_collab_columns` 已经把未读一起算回来了，这里只补通讯录这一半：
+        # 一次渲染只准问一次库，角标和列表不许各算一遍。
+        data["unread_total"] = collab.unread_total(conn, member_id)
     else:
         data = _collab_columns(conn, member_id, q)
-    data.update({"view": "directory" if directory else "threads",
-                 "unread_total": collab.unread_total(conn, member_id)})
+    data["view"] = "directory" if directory else "threads"
     return data
 
 
@@ -2238,23 +2248,29 @@ def collab_earlier(request: Request, thread_id: UUID, before_seq: int):
 
 @router.post("/collab/threads/{thread_id}/messages", response_class=HTMLResponse)
 def collab_post_message(request: Request, thread_id: UUID, body: str = Form(""),
-                        csrf: str = Form("")):
+                        csrf: str = Form(""), client_msg_id: str = Form("")):
     """发一条。失败时把正文原样退回输入框，输入框上方给一句原因。
 
     表单令牌跟其它写入表单同一套：绑在会话 cookie 上，转发别人的链接发不出去。
+
+    `client_msg_id` 是断网重发的幂等键，由界面生成：同一条消息重发复用同一个 id，
+    后端只落一条、第二遍返回已有那条。空串当没带——否则所有「没带 id」的消息
+    会撞上 `UNIQUE (thread_id, client_msg_id)`。
     """
     member = _member(request)
     if member is None:
         return HTMLResponse("", status_code=401)
     _check_form_token(request, csrf, COLLAB_FORM_PURPOSE)
     member_id = member["member_id"]
+    idempotency_key = (client_msg_id or "").strip()[:100] or None
     with connection() as conn:
         thread = collab.get_thread(conn, thread_id)
         if thread is None or thread["status"] != "active" or not collab.can_see(conn, member_id, thread):
             return _collab_error(request, member, "这个会话不存在，或者不开放给你。")
         error = None
         try:
-            collab.post_message(conn, thread, member_id, body)
+            collab.post_message(conn, thread, member_id, body,
+                                client_msg_id=idempotency_key)
         except collab.CollabError as exc:
             error = str(exc)
         collab.mark_read(conn, thread_id, member_id)

@@ -644,26 +644,95 @@ def mark_read(conn, thread_id: Any, member_id: Any) -> int:
 
 
 def unread_total(conn, member_id: Any) -> int:
-    """入口按钮上那个数。
+    """入口按钮上那个数。一条 SQL 算完。
 
     只数这个人看得见的会话里的未读。看不见的群不该出现在数字里——否则徽章
     会显示一个点开也找不到的数字。
+
+    以前是「查全部会话，逐条问 can_see」，于是每个有未读的群都要再打两三次库
+    （权限、部门、岗位各一条）。这个数出现在每个页面的顶上，人数一多，翻一页
+    就多出十几次往返。现在把 can_see 的三条分支原样搬进 WHERE，一次 sum 完：
+
+    - dm：我是两端之一。
+    - manage：公司级权限，或该部门在我的部门管理员名单里。
+    - fill：页面 active，且（公司级 / 该部门我是管理员 / 我正持有它的填报岗位）。
+
+    上面那三条规则的定义仍然只写在 `can_see`（给人读的那一份）；这条 SQL 是它
+    的集合版，改规则时两处必须一起改——`tests/test_collab_rules.py` 用 can_see
+    当对照物盯着这个等式。
     """
-    rows = conn.execute(
-        """SELECT t.thread_id, t.kind, t.org_unit_id, t.interface_id, t.member_a, t.member_b,
-                  (SELECT count(*) FROM workhub.collab_messages x
-                    WHERE x.thread_id = t.thread_id
-                      AND x.seq > coalesce(r.last_seq, 0)
-                      AND x.author_id IS DISTINCT FROM %s) AS unread
-             FROM workhub.collab_threads t
-             LEFT JOIN workhub.collab_reads r
-                    ON r.thread_id = t.thread_id AND r.member_id = %s
-            WHERE t.status = 'active'""", (member_id, member_id)).fetchall()
-    total = 0
-    for row in rows:
-        if row["unread"] and can_see(conn, member_id, row):
-            total += row["unread"]
-    return total
+    row = conn.execute(
+        """WITH me AS (SELECT %s::uuid AS member_id),
+                granted AS (
+                    SELECT g.resource,
+                           bool_or(g.effect = 'allow') AND NOT bool_or(g.effect = 'deny') AS ok
+                      FROM workhub.permission_grants g, me
+                     WHERE g.action = 'manage'
+                       AND g.resource = ANY(%s)
+                       AND g.revoked_at IS NULL
+                       AND g.valid_from <= now()
+                       AND (g.valid_until IS NULL OR now() < g.valid_until)
+                       AND g.scope_type = 'all'
+                       AND ((g.subject_type = 'member' AND g.member_id = me.member_id)
+                         OR (g.subject_type = 'position' AND EXISTS (
+                              SELECT 1 FROM workhub.position_assignments a
+                               WHERE a.position_id = g.position_id
+                                 AND a.member_id = me.member_id
+                                 AND a.status IN ('active', 'scheduled')
+                                 AND a.starts_at <= now()
+                                 AND (a.ends_at IS NULL OR now() < a.ends_at))))
+                     GROUP BY g.resource
+                ),
+                scope AS (
+                    SELECT coalesce((SELECT ok FROM granted
+                                      WHERE resource = 'workforce.grants'), false) AS company,
+                           EXISTS (SELECT 1 FROM granted WHERE ok) AS admin
+                ),
+                mine AS (
+                    SELECT array(SELECT DISTINCT p.position_id
+                                   FROM workhub.position_assignments a
+                                   JOIN workhub.positions p USING (position_id), me
+                                  WHERE a.member_id = me.member_id
+                                    AND a.status IN ('active', 'scheduled')
+                                    AND a.starts_at <= now()
+                                    AND (a.ends_at IS NULL OR now() < a.ends_at)
+                                    AND p.status = 'active') AS positions,
+                           array(SELECT DISTINCT p.org_unit_id
+                                   FROM workhub.position_assignments a
+                                   JOIN workhub.positions p USING (position_id), me
+                                  WHERE a.member_id = me.member_id
+                                    AND a.status IN ('active', 'scheduled')
+                                    AND a.starts_at <= now()
+                                    AND (a.ends_at IS NULL OR now() < a.ends_at)
+                                    AND p.status = 'active') AS units
+                )
+           SELECT coalesce(sum(c.unread), 0) AS total
+             FROM (SELECT (SELECT count(*) FROM workhub.collab_messages x
+                            WHERE x.thread_id = t.thread_id
+                              AND x.seq > coalesce(r.last_seq, 0)
+                              AND x.author_id IS DISTINCT FROM me.member_id) AS unread
+                     FROM workhub.collab_threads t
+                     CROSS JOIN me
+                     CROSS JOIN scope
+                     CROSS JOIN mine
+                     LEFT JOIN workhub.collab_reads r
+                            ON r.thread_id = t.thread_id AND r.member_id = me.member_id
+                    WHERE t.status = 'active'
+                      AND ((t.kind = 'dm' AND me.member_id IN (t.member_a, t.member_b))
+                        OR (t.kind = 'manage'
+                            AND (scope.company
+                              OR (scope.admin AND t.org_unit_id = ANY(mine.units))))
+                        OR (t.kind = 'fill'
+                            AND EXISTS (SELECT 1 FROM workhub.interfaces i
+                                         WHERE i.interface_id = t.interface_id
+                                           AND i.status = 'active'
+                                           AND (scope.company
+                                             OR (scope.admin
+                                                 AND i.org_unit_id = ANY(mine.units))
+                                             OR i.position_id = ANY(mine.positions)))))) c
+            WHERE c.unread > 0""",
+        (member_id, list(ADMIN_RESOURCES))).fetchone()
+    return row["total"]
 
 
 def last_seen_seq(conn, thread_id: Any, member_id: Any) -> int:
