@@ -33,12 +33,14 @@
       </div>
     </div>
     {% if bases %}
-    <div class="field"><label for="based_on">基于哪个页面（可留空）</label>
-      <select id="based_on" name="based_on">
+    {# 单独一行：控件按选项自身的宽度、靠左，和上面三格里的下拉一样；说明句仍占满整行，
+       不必跟着控件一起变窄。 #}
+    <div class="field" style="margin-bottom:16px"><label for="based_on">基于哪个页面（可留空）</label>
+      <select id="based_on" name="based_on" style="align-self:flex-start; max-width:100%">
         <option value="">（从零开始）</option>
         {% for b in bases %}<option value="{{ b.interface_id }}">{{ b.org_name }} · {{ b.name }}</option>{% endfor %}
       </select>
-      <p class="sub" style="margin:6px 0 0">选别的部门的页面，等于说「这页是照着它们做的」。这种页子部门审完还要公司再终审一次；本部门自己的上一版会自动接上，不用在这里选。</p>
+      <p class="sub" style="margin:0">选别的部门的页面，等于说「这页是照着它们做的」。这种页子部门审完还要公司再终审一次；本部门自己的上一版会自动接上，不用在这里选。</p>
     </div>
     {% endif %}
     <div class="field"><label for="descriptor_text">页面描述（JSON）</label>
@@ -49,5 +51,5 @@
   <button type="submit">保存并预览</button>
 </form>
 
-<p class="sub" style="margin-top:14px">规则见项目里的 <code>docs/architecture/interface-rules-and-modules.md</code> 与 <code>interface-descriptor-schema.md</code>。</p>
+<p class="sub" style="margin-top:16px">规则见项目里的 <code>docs/architecture/interface-rules-and-modules.md</code> 与 <code>interface-descriptor-schema.md</code>。</p>
 {% endblock %}
