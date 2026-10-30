@@ -194,7 +194,42 @@ def test_the_platform_sees_the_final_stage_and_a_read_only_view_of_the_rest(room
     assert f"/reviews/{at_company}/approve" in body
     # 部门初审那页只读地列出来，按钮不给
     assert f"/reviews/{still_department}/approve" not in body
-    assert "别处还在等初审" in body
+    # 标题不带「初审」：这张表里本来就混着公司终审的页，说成只等初审会让人看漏。
+    assert "别处还在等" in body
+    assert "别处还在等初审" not in body
+    # 在等谁一列按 review_stage 说实话，这页是部门初审。
+    assert "部门初审" in body
+
+
+def test_a_department_with_an_empty_queue_says_so_plainly(room):
+    # 自己交的那版不给自己审，队列空着；他没有公司终审权，也不该提全公司。
+    own = room["page"](room["design"], author=DESIGN_REVIEWER)
+
+    room["as_"](DESIGN_REVIEWER)
+    body = room["client"]().get("/reviews").text
+
+    assert f"/reviews/{own}/approve" not in body
+    assert "没有轮到你审的页面。" in body
+    assert "全公司还在等" not in body
+
+
+def test_the_platform_with_nothing_to_sign_points_at_the_queue_below(room):
+    # 只有部门初审在等：平台没有卡可签，但下面那张表里有东西，空态得说实话。
+    waiting = room["page"](room["design"])
+
+    room["as_"](PLATFORM)
+    body = room["client"]().get("/reviews").text
+
+    assert f"/reviews/{waiting}/approve" not in body
+    assert "没有等你签的页面，全公司还在等的列在下面。" in body
+
+
+def test_the_platform_says_the_departments_are_done_when_nothing_is_waiting(room):
+    room["as_"](PLATFORM)
+    body = room["client"]().get("/reviews").text
+
+    assert "部门都签完了，没有等你终审的页面。" in body
+    assert "别处还在等" not in body
 
 
 def test_an_inward_page_goes_live_on_the_departments_own_yes(room):
