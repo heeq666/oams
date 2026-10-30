@@ -167,7 +167,8 @@ def _script(base: str) -> None:
     check("board shows the blocked reason",
           "新版合同模板第 8 条" in body or "考勤机导出" in body, "")
     check("board marks AI-dictated reports", "AI 代笔" in body, "")
-    check("board shows the silence metric", "从未申报" in body, "")
+    # 口径统一（负责人 10-31）：公司进度中心与部门看板都叫「未汇报」，不再用「从未申报」。
+    check("board shows the never-reported metric", "未汇报" in body, "")
     check("board names positions, not people",
           "人事经理" in body and "周岚" not in body, "")
     check("board flags the vacant position", "岗位空缺" in body or "空缺" in body, "")
