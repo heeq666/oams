@@ -9,8 +9,9 @@ htmx 默认把失败吞掉：断网（`htmx:sendError`）或 5xx（`htmx:respons
 结果里读得出来的事实，不需要浏览器。
 
 **不在这里的**：真的断网时脚本克隆气泡、把正文搬过去、点重发再把这一条发成功
-——那要浏览器执行脚本。真正的前端路径验收在 `scripts/cdp-collab-failure-check.mjs`
-（CDP 驱动真 Chrome），这里只保证它拿到的模板与钩子是对的。
+——那要浏览器执行脚本。真正的前端路径验收在 `scripts/ego-collab-failure-check.mjs`
+（ego 浏览器驱动，跑法：`ego-browser nodejs < scripts/ego-collab-failure-check.mjs`），
+这里只保证它拿到的模板与钩子是对的。
 """
 
 from __future__ import annotations
