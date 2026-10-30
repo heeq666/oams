@@ -215,14 +215,13 @@ def test_display_module_reads_aggregates_not_the_descriptor():
     assert "已出样" in html
     assert "59" in html
     # without aggregates the card says so instead of inventing a number
-    assert "--" in render_interface(descriptor)
+    assert "\u2014" in render_interface(descriptor)
 
 
-def test_preview_marks_aggregation_on_every_module():
+def test_preview_marks_its_viewpoint():
+    # 角标（进汇总 / 不进汇总）已随 preview_tag 下线；preview 仍要说明自己是哪一视角
     html = render_preview(base())
     assert 'data-mode="preview"' in html
-    assert "进汇总" in html
-    assert "不进汇总" in html
 
 
 def test_preview_never_asks_for_widgets():
