@@ -239,24 +239,66 @@ def test_containers_and_displays_never_offer_data_widgets(key):
     assert "<textarea" not in html
 
 
-@pytest.mark.parametrize("key", ALL_KEYS)
-def test_readonly_never_renders_a_data_widget(key):
-    """只读视角不出现**数据字段**控件：看见的每个值都是排好版的字。
+DATA_WIDGET = re.compile(r'<(?:input|select|textarea)\b[^>]*class="wh-input"[^>]*>')
+ANY_WIDGET = re.compile(r"<(?:input|select|textarea)\b")
 
-    `wh-input` 是字段控件的类（input / select / textarea 三种都带它）；
-    tabs 的分段切换用 `wh-tab-radio`，那是组件自己的纯 CSS 机制、不绑字段，
-    只读视角照样能切，不算违规。
+
+def widgets(html: str) -> list[str]:
+    """每个字段控件的开标签（input / select / textarea 三种都带 wh-input）。"""
+
+    return DATA_WIDGET.findall(html)
+
+
+@pytest.mark.parametrize("key", sorted(INPUT_KEYS))
+def test_edit_renders_live_widgets(key):
+    """填报视角：控件在场、能填、必填项照旧标 required。"""
+    found = widgets(render_interface(one(key), VALUES, AGGREGATES))
+    assert found, key
+    assert not [w for w in found if "disabled" in w], key
+
+
+# 注：preview 角标（进汇总 / 不进汇总）已随 preview_tag 下线，网页审核页暂时没有
+# 汇总口径展示——机器可读的出口在 MCP 的 preview_descriptor 返回
+# （aggregates_preview 字段）。要不要在审核页补一块汇总面板属于新功能，
+# 等模块细化 B0–B4 走完再评估（负责人 2026-10-30 定），这里不锁。
+@pytest.mark.parametrize("key", sorted(INPUT_KEYS))
+def test_preview_renders_disabled_widgets(key):
+    """审核视角：控件在场，让人看见这页会长什么样，但一格都提交不了。
+
+    三条一起断言，缺一条都不算数：控件必须出现、必须 disabled、必须
+    tabindex="-1"（键盘也 tab 不进去）；而且**不许**带 required——审核的人
+    没有被要求填任何东西。
+    """
+    html = render_preview(one(key))
+    found = widgets(html)
+    assert found, f"{key}: 审核视角要看得见控件"
+    for tag in found:
+        assert "disabled" in tag, f"{key}: {tag}"
+        assert 'tabindex="-1"' in tag, f"{key}: {tag}"
+        assert "required" not in tag, f"{key}: 审核视角不该要求填写 —— {tag}"
+
+
+@pytest.mark.parametrize("key", sorted(INPUT_KEYS))
+def test_readonly_renders_static_fields_only(key):
+    """只读视角：一个字都填不了，连控件壳子都不出现，只有排好版的静态值。
+
+    这里用最严的判据（任何 input / select / textarea 都算违规），因为只读
+    视角不该有可交互的东西。
     """
     html = render_read_only(one(key), VALUES, AGGREGATES)
-    assert 'class="wh-input"' not in html
+    assert not ANY_WIDGET.findall(html), f"{key}: 只读视角出现了控件"
+    assert not widgets(html), key
 
 
-@pytest.mark.parametrize("key", ALL_KEYS)
-def test_preview_never_renders_a_widget(key):
-    html = render_preview(one(key))
-    assert "<input" not in html
-    assert "<select" not in html
-    assert "<textarea" not in html
+@pytest.mark.parametrize("key", sorted(CONTAINER_KEYS | DISPLAY_KEYS))
+def test_readonly_containers_and_displays_never_show_a_field(key):
+    """容器与展示件在只读视角里同样没有字段控件。
+
+    tabs 的分段切换是 `wh-tab-radio`，那是组件自己的纯 CSS 机制、不绑字段，
+    任何视角都照样能切，不在这一条的判据里（它不带 wh-input）。
+    """
+    html = render_read_only(one(key), VALUES, AGGREGATES)
+    assert not widgets(html), key
 
 
 @pytest.mark.parametrize("key", sorted(CONTAINER_KEYS))
@@ -509,3 +551,44 @@ def test_the_stylesheet_covers_every_class_the_templates_emit():
                 used |= {token for token in match.split() if token.startswith("wh-")}
     missing = sorted(token for token in used - hooks if f".{token}" not in css)
     assert missing == [], missing
+
+
+# --------------------------------------------------------------------------- #
+# Missing is not zero
+# --------------------------------------------------------------------------- #
+
+
+def test_progress_that_nobody_filled_in_reads_as_a_dash_not_zero():
+    """没人填过的完成度不能读成「0% 完成」——那是一次假测量。
+
+    进度只在该页被看的时候呈现（填报视角里是格子，没有百分比文字），
+    所以这条走只读视角。
+    """
+    html = render_read_only(one("progress_row"), {}, {})
+    assert "0%" not in html
+    assert render.EMPTY in html
+    assert "wh-bar-p0" not in html        # 也不要画一根零长度的轨道当测量结果
+
+
+def test_progress_of_a_real_zero_is_still_zero():
+    """真填了 0 就是 0：破折号只留给「没填」，不留给「填了零」。"""
+    html = render_read_only(one("progress_row"), {"f_progress": "0"}, {})
+    assert "0%" in html
+    assert "wh-bar-p0" in html
+
+
+def test_formatting_keeps_missing_and_zero_apart():
+    assert render.format_number(None) == render.EMPTY
+    assert render.format_number("") == render.EMPTY
+    assert render.format_number(None, "款") == render.EMPTY
+    assert render.format_number(0) == "0"
+    assert render.format_number(0, "款") == "0 款"
+
+
+def test_an_aggregate_of_zero_renders_as_zero_not_a_dash():
+    """口子上的 0 是「这期真的是 0」，不是「没数据」——两种含义不能混。"""
+
+    html = render_interface(one("metric_card"), {}, {"funnel.sample_done": 0})
+    values = re.findall(r'<span class="wh-metric-value">(.*?)</span>', html)
+    assert values == ["0"], values
+    assert render.EMPTY not in values

@@ -11,6 +11,7 @@ so "the sample descriptor is valid" is asserted here as "the renderer accepts
 it" -- duplicating A rulebook from B suite would couple the two units release
 timing for no benefit.
 """
+import re
 import sys
 from pathlib import Path
 
@@ -224,10 +225,15 @@ def test_preview_marks_its_viewpoint():
     assert 'data-mode="preview"' in html
 
 
-def test_preview_never_asks_for_widgets():
-    # preview is a drawing of the page, not a form
-    assert "<input" not in render_preview(base())
-    assert "<select" not in render_preview(base())
+def test_preview_renders_disabled_widgets():
+    # preview 是这页的图纸：控件要在场（看清长什么样），但一格都提交不了
+    html = render_preview(base())
+    found = re.findall(r'<(?:input|select|textarea)\b[^>]*class="wh-input"[^>]*>', html)
+    assert found, "审核视角要看得见控件"
+    for tag in found:
+        assert "disabled" in tag, tag
+        assert 'tabindex="-1"' in tag, tag
+        assert "required" not in tag, tag
 
 
 def test_every_registered_module_has_a_template():

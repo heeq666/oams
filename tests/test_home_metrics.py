@@ -53,18 +53,31 @@ class _Result:
 
 
 class _FakeConn:
-    """Answers the handful of SELECTs the board and department pages issue."""
+    """Answers the handful of SELECTs the board and department pages issue.
+
+    兜底不再「返回空」：那样任何新 SQL 都会静悄悄拿到空结果，最后表现成一个
+    莫名其妙的 TypeError（比如某个 fetchone() 拿到 None 再去 row["total"]），
+    查半天才发现是桩不认识这条查询。不认识就当场喊，把「该补哪条」放到
+    失败信息里。
+
+    凡是每个页面都会渲染的公共件（未读徽章、导航、当前用户）都要在这里有
+    对应分支——它们一改，全站一起红。
+    """
 
     def __init__(self, org_unit: dict) -> None:
         self.org_unit = org_unit
 
     def execute(self, sql: str, params: Any = None) -> _Result:
         text = " ".join(sql.split())
+        # 顺序即精确度：未读那条里也含 "FROM workhub.interfaces"（fill 群的权限
+        # 子查询），所以它必须排在前面，否则会掉进「不认识的查询」那条分支。
+        if "coalesce(sum(c.unread)" in text:      # 入口按钮上的未读数，每页都会算
+            return _Result([{"total": 0}])
         if "FROM workhub.interfaces" in text:
             return _Result([])
         if "FROM workhub.org_units" in text:
             return _Result([self.org_unit])
-        return _Result([])
+        raise AssertionError(f"unrecognised SQL: {text[:80]}")
 
 
 @contextmanager
