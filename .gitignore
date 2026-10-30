@@ -24,3 +24,6 @@ data/live-design-*.json
 
 # macOS 目录元数据
 .DS_Store
+
+# 本机数据库快照（真实数据，不进库）
+.local-backups/
