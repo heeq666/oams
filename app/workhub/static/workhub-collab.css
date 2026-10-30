@@ -450,7 +450,8 @@ body.collab-open .collab-panel { transform: translateY(0); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* 标题↔说明 8（行与行）。Figma Empty 140:3804 是 10，10 本身是档外值，代码统一按 8。 */
+  /* 标题↔说明按「行与行」= 8；加图标后图标↔标题是「图标与文字」也是 8，两段同档。
+     画布 Empty 140:3800 的 itemSpacing 2026-10-31 已收到 8，两边同值（原先画布 10 是档外值）。 */
   gap: 8px;
   flex: 1;
   min-height: 0;
