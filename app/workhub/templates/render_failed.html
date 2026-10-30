@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}这一页现在打不开 · Workhub{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>这一页现在打不开</h1>
+    <p class="sub">{{ page.name }}{% if org_name %} · {{ org_name }}{% endif %} · 版本 v{{ page.version_no }} · 描述规范 {{ schema_version }}</p>
+  </div>
+  <a class="btn" href="{{ back_href }}">← {{ back_label }}</a>
+</div>
+
+<div class="flash error">
+  这一页的描述没通过校验，系统画不出内容。<strong>不是你没有权限</strong>——是这一页本身坏了，换谁来打开都一样。
+</div>
+
+<p class="sub">
+  怎么修：把下面这段原文发给这一页的负责人（部门管理员），按 0.2 规范把它重做一遍。
+  如果它原来是 0.1 的页面，模块名在新规范里换过了，需要重建，不是改几行就好的。
+  同一段原文也记进了服务端日志，不用你复述。
+</p>
+
+<div class="card">
+  <h2>给负责人看的技术细节</h2>
+  <p class="meta">页面标识 <code>{{ page.slug }}</code> · 版本 v{{ page.version_no }} · 描述规范 {{ schema_version }}</p>
+  <pre style="margin:8px 0 0;padding:12px;border-radius:var(--r-small);background:var(--subtle);color:var(--ink-2);font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere">{{ message }}</pre>
+</div>
+
+<p class="sub">在修好之前，这一页的旧数据还在，进度中心与部门列表照常显示它，只是打不开填写页。</p>
+{% endblock %}

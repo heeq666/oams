@@ -25,6 +25,7 @@ Progress arrives through MCP.
 import hashlib
 import hmac
 import json
+import logging
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -217,6 +218,33 @@ def _denied(request: Request, message: str):
         return RedirectResponse(url=_landing_url(request), status_code=303)
     return TEMPLATES.TemplateResponse(request, "denied.html",
                                       {"message": message, "member": _member(request)}, status_code=403)
+
+
+_RENDER_LOG = logging.getLogger("workhub.render")
+
+
+def _render_failed(request: Request, *, page: dict[str, Any], exc: RenderError,
+                   org_name: str | None, back_href: str, back_label: str):
+    """Report a page that cannot be drawn, as a broken page rather than a refusal.
+
+    These used to leave through ``_denied``, which on a GET redirects to the landing
+    page and says nothing. So a descriptor the renderer rejects looked exactly like
+    a missing permission: the person went asking for a grant that would not have
+    helped, and whoever was told "管理员也打不开" had no reason to suspect the
+    descriptor. Show the error, the schema version and the owner, and put the same
+    facts in the server log, so the failure can be found without reproducing it.
+
+    The status is 500: the page is ours and it is broken -- nothing here was the
+    visitor's to fix.
+    """
+    schema_version = page.get("schema_version") or "0.1"
+    _RENDER_LOG.error("render failed: interface=%s slug=%s schema=%s org=%s error=%s",
+                      page.get("interface_id"), page.get("slug"), schema_version,
+                      org_name, exc)
+    return TEMPLATES.TemplateResponse(request, "render_failed.html", {
+        "page": page, "org_name": org_name, "schema_version": schema_version,
+        "message": str(exc), "back_href": back_href, "back_label": back_label,
+        "member": _member(request)}, status_code=500)
 
 
 def _member(request: Request) -> dict[str, Any] | None:
@@ -817,7 +845,8 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
     try:
         rendered = render_interface(descriptor, values=values)
     except RenderError as exc:
-        return _denied(request, "这个页面的描述未通过校验，暂不能填写：" + str(exc))
+        return _render_failed(request, page=page, exc=exc, org_name=unit["name"],
+                              back_href=f"/departments/{org_unit_id}", back_label="返回部门")
     departments = [dict(unit=row, pages=counts.get(row["org_unit_id"], [])) for row in found]
     return TEMPLATES.TemplateResponse(request, "department_workbench.html", {
         "unit": unit, "departments": departments, "pages": pages,
@@ -1325,7 +1354,8 @@ def _interface_fill_page(request: Request, row: dict[str, Any], *, latest: dict[
     try:
         rendered = render_interface(descriptor, values=values)
     except RenderError as exc:
-        return _denied(request, "这个界面描述未通过校验，暂不能填写：" + str(exc))
+        return _render_failed(request, page=row, exc=exc, org_name=row.get("org_name"),
+                              back_href="/interfaces", back_label="返回界面列表")
     return TEMPLATES.TemplateResponse(request, "interface_fill.html", {
         "interface": row, "rendered": rendered, "latest": latest,
         "member": _member(request), "saved": saved, "error": error,
