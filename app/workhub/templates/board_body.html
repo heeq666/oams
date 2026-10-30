@@ -47,6 +47,8 @@
 {# Company metrics: the product funnel, not this department's work items. It is a
    separate panel for that reason -- "已下单 29 款" and "未完成工作项 12" count
    different things and must never share a row of cards. #}
+<div class="grid-12">
+<div class="span-12">
 {% if company_metrics and company_metrics.available %}
 <h2 style="margin-top:0">公司指标{% if company_metrics.wave %} <span class="sub" style="display:inline;margin:0">{{ company_metrics.wave }}</span>{% endif %}</h2>
 <div class="grid metrics">
@@ -64,8 +66,10 @@
   <p class="sub" style="margin:8px 0 0">这是外部商品数据中心的取数失败，与下面的部门数据无关。原始数据可查 <a href="/metrics/home.json">/metrics/home.json</a>。</p>
 </div>
 {% endif %}
+</div>
 
-<div class="grid metrics">
+{# 部门六指标（8 列）与最新申报渠道（4 列）同排：两块都有底，行高对齐。 #}
+<div class="span-8 grid metrics" aria-label="部门数字">
   <div class="metric"><div class="n">{{ board.summary.open_items }}</div><div class="k">未完成工作项</div></div>
   <div class="metric {% if board.summary.blocked %}alert{% endif %}">
     <div class="n">{{ board.summary.blocked }}</div><div class="k">阻塞</div></div>
@@ -83,7 +87,7 @@
 {% set total_n = agent_n + human_n %}
 {# The v1 scoreboard gets a whole split bar instead of a metric card: 2/4 as a
    ratio you can see, not a fraction you have to compute. #}
-<div class="channel-scorecard">
+<div class="channel-scorecard span-4">
   <div class="head">
     <span class="k">最新申报渠道（当前状态）</span>
     <span class="n">{{ agent_n }} / {{ total_n }} AI 代笔</span>
@@ -101,6 +105,7 @@
 </div>
 
 {% set active = board.layers | selectattr('id', 'equalto', layer) | list | first %}
+<div class="span-12">
 <div class="tabs layers">
   {% for l in board.layers %}
     <a class="{% if l.id == layer %}on{% endif %}" title="{{ l.hint }}"
@@ -113,8 +118,10 @@
     </a>
   {% endfor %}
 </div>
-<p class="sub">当前图层：{{ active.label }} — {{ active.hint }}</p>
+<p class="sub" style="margin:0">当前图层：{{ active.label }} — {{ active.hint }}</p>
+</div>
 
+<div class="span-12">
 {# The flow is one strip of counters, not a second board: every count is measured
    inside the layer already selected, so the selectable stages always add up to the
    list below. "done" is the exception and is labelled as one. #}
@@ -144,7 +151,9 @@
        hx-push-url="/board?org={{ selected_id }}&layer={{ layer }}&stale_days={{ stale_days }}">清除阶段筛选 ×</a>
   {% endif %}
 </div>
+</div>
 
+<div class="span-12">
 <h2>{{ active.label }} · {{ board.visible_cards | length }} 项</h2>
 <ul class="items">
   {% for card in board.visible_cards %}
@@ -157,3 +166,5 @@
   <li><p class="empty">这一层现在是空的。</p></li>
   {% endfor %}
 </ul>
+</div>
+</div>

@@ -126,9 +126,30 @@
 | 位置 | 落地后 |
 |---|---|
 | `templates/settings.html:11-60` | 部门 `span-8` / 岗位 `span-4` / 最近改动 `span-12`，整块包在 `.grid-12` 里；≤1089 自动变 12+12+12 |
-| `templates/reviews.html:17` | `.stack-20` → `.stack-16`（间距回 16 的令牌档） |
-| `templates/board_body.html:52,68`、`progress.html:7` `.grid.metrics` | 不动（例外 1） |
+| `templates/progress.html` | 公司概览 `span-12`；每张部门卡一整行 `span-12`，卡内再分 8（事情）/ 4（数字）；空态 `span-12` |
+| `templates/board_body.html` | 公司指标 `span-12`；部门六指标 `span-8` + 渠道计分卡 `span-4` 同排；图层切换、流程图、事项清单各 `span-12` |
+| `templates/reviews.html` | 每张待审核卡 `span-12`，卡内分 8（这一版改了什么）/ 4（通过 · 退回）；最近决定 `span-12`；空态 `span-12` |
+| `templates/board_body.html`、`progress.html` 的 `.grid.metrics` | 指标条本身仍是 auto-fit（例外 1），只是被放进一格 `span-12` / `span-8` |
 | `.app-frame > main` 直接子元素 | 要并排就必须包在 `.grid-12` 里并标跨度 |
+
+### 8.1 三页的跨度分配与「有底等高」的落法（2026-10-31）
+
+| 页面 | 行 | 左 · 右 | 哪两块必须等高 |
+|---|---|---|---|
+| `/progress` | 公司概览 | `span-12`（内含 5 个指标） | — |
+| | 部门卡 ×N | `span-12` → 卡内 8 / 4 | 卡内左右都无底，不撑高（右栏是浅底小面板，跟着自己内容走） |
+| `/board` | 公司指标 | `span-12`（指标 / 不可用卡同格） | — |
+| | 部门数字 + 渠道 | 六指标 `span-8` · 计分卡 `span-4` | **是**：两块都有底，行高 172 齐平 |
+| | 图层切换 / 流程图 / 清单 | 各 `span-12` | — |
+| `/reviews` | 待审核卡 ×N | `span-12` → 卡内 8 / 4 | **是**：diff 与决定区都有底，两块拉满行高（实测 709 / 709、236 / 236） |
+
+两条落法（都在 `base.html:556-580`）：
+
+- 有底的两块里，**无底的那一块仍是 `align-self: start`**（`.grid-12 > :not(.card)` 的默认），只有 `metrics` / `channel-scorecard` / `diff-block` / `decide` 四类显式拉满行高；给「有底」加了几条：`.grid-12 > .grid.metrics { align-self: stretch; grid-auto-rows: 1fr }`（6 个指标跟着同行最高的那块走）。
+- 6 个指标挤进 8 列时 auto-fit 会排出「5 + 1」的孤儿行，宽屏（≥1090）固定 3 列两行：`.grid-12 > .grid.metrics.span-8 { grid-template-columns: repeat(3, minmax(0, 1fr)) }`。
+
+公司指标与部门指标**不并排**：一个是商品漏斗（已下单 29 款），一个是这项工作项（未完成 12），计数对象不同，同一行会被读成同一把尺子。
+
 
 新页面照抄 Figma 的「页面模板」frame，不自己写 `grid-template-columns`。
 
@@ -162,8 +183,11 @@ document.documentElement.scrollWidth > document.documentElement.clientWidth && c
 | 5 | `AGENTS.md` 硬规则 | ✅ | 见「做界面之前必读」第三条 |
 | 6 | Figma 三张页面模板（1440 / 1024 / 768） | ✅ | 页面 `03 · 页面稿`，frame `219:13187` / `219:13273` / `219:13359` |
 | 7 | 验收方式 | ✅ | ego 浏览器三档量测（见 `AGENTS.md`「浏览器自动化」） |
+| 8 | `/progress` `/board` `/reviews` 铺上栅格（此前是单列，栅格检查对它们是空检） | ✅ | `templates/progress.html`、`templates/board_body.html`、`templates/reviews.html`、`templates/base.html:556-580` |
 
 实测（2026-10-28 量得，结论仍有效）：1440 → 8+4 = 827 + 406，gap 16，行内等高 346；1024 / 768 → 全部单列；三档 `overflowX` 全为 0。
+
+2026-10-31 补测三页（`.venv` 脚本 `scripts/ego-grid-check.mjs`，三档 × 5 页共 15 页次，`offenders: []`）：1440 下 `/board` 部门数字 827 + 计分卡 406（两块 172 齐平）、`/reviews` 卡内 806 + 395（709 齐平）、`/progress` 部门卡内 806 + 395；1024 与 768 下三页全部收成单列（`span-8/4` 在 ≤1089 变 12）。
 
 Figma 三张模板放在 `03 · 页面稿` 页面下方 y≈5100 处（Starter 计划只有 3 页，不能新建页面），每张都画了 rail、内容列、12 列标尺、跨度白名单与 8+4 / 12 的样例行。1024 与 768 的样例行按实际行为画成**上下堆叠**，不是并排——模板必须画实现，不能画愿望。
 
