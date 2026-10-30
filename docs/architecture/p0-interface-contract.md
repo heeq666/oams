@@ -179,8 +179,11 @@ binding 形状（descriptor `metrics[]` 的一项）：
 
 ```python
 def validate_descriptor(descriptor, known_org_unit_codes=None,
-                        known_position_codes=None, *, strict_v02: bool = True) -> list[str]
+                        known_position_codes=None, *, strict_v02: bool = True,
+                        require_recorded_approval: bool = False) -> list[str]
 ```
+
+`require_recorded_approval`（默认 `False`）：为 `True` 时要求文档已带**系统写入的**批准记录（见 §4.1）。**只在两条没有审核过程的路上用**——「管理员直接建上线页」（`/setup/interfaces`）和 CLI 自检（`workhub plugin check`）：这两处没有任何人签过字，文件必须自带批准，否则等于用导入绕开审核。部门新建、提交审核、升级自检（`upgrade.py`）**都不传**，走默认口径：校验判断的是「这份文档合不合规」，不是「它被没被批过」——后者是流程状态，不该藏在文档校验里。
 
 新增错误码（拒绝原因分类，写进 `meta.reject_codes` 文档用）：
 `FIELD_UNMAPPED` / `STATUS_UNMAPPED` / `METRIC_UNDEFINED` / `CAPABILITY_ESCALATION` / `MODULE_NOT_WHITELISTED` / `LAYOUT_TOO_DEEP` / `DATA_RULE_VIOLATION`。
@@ -197,6 +200,21 @@ export:dept
 ```
 
 `aggregate:read:company` 与「首次上架」触发二级审批（见概念稿 4.5）。
+
+### 4.1 可见性与能力：文档只声明意图，批准由启用节点记录
+
+**文档里写的都是意向，不是批准。** 作者在 `meta.visibility` 声明想公开、在 `capabilities` 里声明要 `aggregate:read:company`，都只是「我要这个」；批准是**别人的动作**，不能由作者在提交前自证。
+
+- **作者写什么**：`"meta": {"visibility": "public"}`，`"capabilities": [..., "aggregate:read:company"]`。**不写 `meta.review`**（写了也不作数，见下）。
+- **批准记录在哪**：权威记录是行上的 `interfaces.status` / `reviewed_by` / `reviewed_at` / `review_stage` 加审计表。文档里的 `meta.review` 只是**导出用的副本**。
+- **谁来写副本**：系统在页面**启用时**（`_activate_page` 那一票）写进 `meta.review`，字段固定五个：`status`（`approved`）/ `reviewed_by`（批准人的工号，不是角色）/ `reviewed_at`（ISO8601 UTC）/ `stage`（`department` 或 `company`）/ `version_no`。
+- **为什么这样**：能写 `meta.review` 的只有作者，能批准它的只有别人。把「已被批准」做成文档校验的前置条件，等于要作者在提交前自证已被批准，逻辑上无解——这正是 2026-10-31 那两次「公开页 / 能力页卡死」的唯一成因。改成「一个关口、且这个关口是盖戳而不是查验」，也顺带堵死「手写 `approved` 混过校验」。
+- **起草、提交、部门初审、公司终审都不要求文档带批准**；只有 §3 里那两条无审核路径（`/setup/interfaces` 直建上线页、CLI 自检）传 `require_recorded_approval=True`。
+- **草稿期间的可见性**：行上 `visibility` 一直是 `department`，公开只在启用时提升；所以草稿与待审期间，公众看不到它。
+
+### 4.2 待决定：首次上架要不要也走二级审批
+
+本契约 §4 写着「`aggregate:read:company` **与「首次上架」**触发二级审批」，但**代码只认三条判据**（公开 / 声明公司汇总能力 / 跨部门），没有「首次上架」这一条，也没有实现它。这是**流程变更**（影响每一个部门第一次上线的等待时间），不跟着死锁修复一起做，单独拍：要么补进代码，要么从契约里删掉这句。
 
 ---
 

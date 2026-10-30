@@ -140,7 +140,7 @@
 }
 ```
 
-`visibility` 为 department 时仅本部门可见；要变成 public 必须 `review.status = approved` 且有审核人与时间。
+`visibility` 为 department 时仅本部门可见。写 `public` 只是**声明意向**：行上可见性一直是 department，只有页面经审核启用时才由系统提升为 public，并把批准记录写进 `meta.review`（`status` / `reviewed_by` / `reviewed_at` / `stage` / `version_no`）。作者**不写** `review`，写了也不作数。口径见 `p0-interface-contract.md` §4.1。
 
 ## 底座校验清单（渲染前必须全部通过）
 
@@ -151,7 +151,7 @@
 5. 每个 module 的 source_fields 都在 fields 里存在。
 6. type = custom 时必须带 custom 声明且 declares_logic 为 false。
 7. 不含 script、query、url_fetch、credential 等被禁止的键。
-8. visibility = public 时必须 review.status = approved。
+8. visibility = public 时**不要求**文档自带批准；只有「无审核过程」的入口（`/setup/interfaces` 直建上线页、CLI 自检）才要求 `meta.review` 已有系统写入的批准记录（`validate_descriptor(..., require_recorded_approval=True)`）。
 9. 界面必须能产出全部标准字段：事项、部门、岗位、状态、依据、时间、提交人。
 
 任一项不通过，返回**具体失败原因**，不做模糊报错、不降级渲染。
