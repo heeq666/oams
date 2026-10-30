@@ -9,7 +9,12 @@
  * one accent, no shadows on surfaces, numbers in tabular figures.
  */
 
-.wh-interface {
+/* 令牌作用域。第二行是给「跨天日期分隔」这一件用的：它要同时出现在模块层和
+   协作室消息区，而协作室那块不一定包在 .wh-interface 里。把作用域复制到本件
+   自身，是为了让它取 --wh-* 而不必去借外壳的 --bg/--ink（两套变量不许混用）。
+   自定义属性只是声明，不会改变这个节点自己的版式。 */
+.wh-interface,
+.wh-date-divider {
   /* Same five tiers as the shell (base.html :root): 26 container / 18 control
      (输入框、下拉、文本域也在这档 -- 它们长在卡片里，是二级元件) / 9 row / 4 micro
      / 999 pill. A module never invents its own radius. */
@@ -272,6 +277,35 @@
 .wh-spacer-sm { height: 8px; }
 .wh-spacer-md { height: 16px; }
 .wh-spacer-lg { height: 32px; }
+
+/* 跨天日期分隔 · 通用件（Figma `256:15292` DateDivider，协作室与模块层共用）
+ * 两段 1px 细线 + 12 号日期标签。宽度靠两段线 flex:1 撑开，因此放在任何容器里
+ * 都自动铺满，不给死宽度 —— Figma 上实例拉宽也是同一套几何。
+ * 用法：<div class="wh-date-divider">2026年10月30日</div>
+ * 令牌：线 --wh-line、字 --wh-muted；间距 8（行内）与 16（块间）。 */
+.wh-date-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--wh-muted);
+  /* 日期只有一行：窄到放不下时让两段线先缩，文字不折行 */
+  white-space: nowrap;
+}
+
+.wh-date-divider::before,
+.wh-date-divider::after {
+  content: "";
+  flex: 1 1 0;
+  min-width: 8px;
+  height: 1px;
+  background: var(--wh-line);
+}
+
+/* 贴在同一块顶部时不要多出一段上边距（空态/首条消息） */
+.wh-date-divider:first-child { margin-top: 0; }
 
 /* --- shared row / text primitives --- */
 .wh-row {
