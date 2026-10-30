@@ -108,7 +108,9 @@
   </div>
 </section>
 {% endfor %}
-{% if not pending %}<div class="card span-12"><p class="empty">没有轮到你审的页面。</p></div>{% endif %}
+{# 空态按身份说实话：手里没卡片不等于全公司没东西在等。
+   平台终审看到「没有轮到你审的页面」会跟下面那块「别处还在等」自相矛盾。 #}
+{% if not pending %}<div class="card span-12"><p class="empty">{% if not powers.company %}没有轮到你审的页面。{% elif others %}没有等你签的页面，全公司还在等的列在下面。{% else %}部门都签完了，没有等你终审的页面。{% endif %}</p></div>{% endif %}
 
 {# 平台看得到全公司在等什么，但不在这里替他按：能审谁由权限决定，
    这段只回答「这页为什么还没上线」。 #}
