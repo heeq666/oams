@@ -41,7 +41,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 - 脚本写到 `/tmp/xxx.mjs`，用 `ego-browser nodejs < /tmp/xxx.mjs` 执行；**不要**用 `-e` 内联，遇引号会被截断。
 - 视口没有 API，用 `page.cdp("Emulation.setDeviceMetricsOverride", {width, height: 900, deviceScaleFactor: 1, mobile: false})`。
 - 三档验收（1440 / 1024 / 768）：断言 `document.documentElement.scrollWidth === clientWidth`，出图用 `page.screenshot({path})`。
-- 遗留：`scripts/cdp-grid-check.mjs`、`scripts/cdp-collab-failure-check.mjs` 是自研 CDP 脚本，下一轮迁到 ego 后删除；在此之前**不许再新增**同类脚本。
+- 验收脚本：`scripts/ego-grid-check.mjs`（12 栅格三档量测）与 `scripts/ego-collab-failure-check.mjs`（断网重发），都是 ego 驱动，跑法 `ego-browser nodejs < scripts/ego-grid-check.mjs`。旧的自研 CDP 版已删，**不许再新增**同类脚本。
 
 ## 目录
 
