@@ -259,7 +259,11 @@ def _report_csrf(request: Request) -> str:
 
 
 def _check_form_token(request: Request, supplied: str, purpose: str) -> None:
-    if not hmac.compare_digest(supplied or "", _form_token(request, purpose)):
+    # 比字节不比 str：compare_digest 对含非 ASCII 的 str 会抛 TypeError（于是 500 而不是 403，
+    # 等于把「令牌错」和「服务端崩」区分开），两边 encode 后走字节分支，恒定时间性质不变。
+    submitted = (supplied or "").encode("utf-8")
+    expected = _form_token(request, purpose).encode("utf-8")
+    if not hmac.compare_digest(submitted, expected):
         raise HTTPException(status_code=403, detail="invalid form token")
 
 
@@ -1989,7 +1993,7 @@ def settings_home(request: Request):
 # 这一层只负责把数据端到界面上。所以这里没有一处自己判断可见性——一律走
 # collab.can_see / collab.visible_*，页面的答案和将来 MCP 工具的答案才会是同一个。
 #
-# 形态是「底部两栏弹层」：从窗口底边升起，上两角 28、下两角 0，左栏会话列表
+# 形态是「底部两栏弹层」：从窗口底边升起，上两角 26（--r-card）、下两角 0，左栏会话列表
 # 264 定宽，右栏对话自适应。它不是导航项，也不和当前停在哪个页面有关——
 # 左栏列的就是全部会话。
 # --------------------------------------------------------------------------- #

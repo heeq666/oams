@@ -11,7 +11,7 @@
   {% else %}
   <div class="wh-row">
     <span class="wh-title">{{ value_of('title') or '数值录入' }}</span>
-    <span class="wh-num">{{ format_number(value_of('metric_value'), unit) }}</span>
+    <span class="wh-num">{% if value_of('metric_value') is none or value_of('metric_value') == '' %}<em class="wh-num-empty">未填</em>{% else %}{{ format_number(value_of('metric_value'), unit) }}{% endif %}</span>
   </div>
   {% endif %}
   {{ private_note(module, spec) }}

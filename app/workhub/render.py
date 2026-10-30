@@ -431,7 +431,8 @@ def inline_widgets() -> bool:
 
 # --- widgets ----------------------------------------------------------------
 
-def _input_html(field: dict, value: Any, *, textarea: bool = False) -> Markup:
+def _input_html(field: dict, value: Any, *, textarea: bool = False,
+                labelled: bool = True) -> Markup:
     """One escaped widget for one descriptor field, respecting the render mode."""
     state = _state()
     key = str(field.get("key") or "")
@@ -443,9 +444,14 @@ def _input_html(field: dict, value: Any, *, textarea: bool = False) -> Markup:
     state.seen_fields[key] = occurrence
     fid = f"wh-f-{_text(key)}" if occurrence == 1 else f"wh-f-{_text(key)}-{occurrence}"
     raw = "" if value is None else str(value)
+    # 表格单元格里列头已经是标签，再给每个格子挂一遍 label 就是三行表头；
+    # 那时用 aria-label 保可读性，视觉上不重复。
+    label_html = f'<label class="wh-field-label" for="{fid}">{label}</label>' if labelled else ""
+    aria = "" if labelled else f' aria-label="{label}"'
     if state.mode not in INLINE_MODES:
         shown = _text(raw) if raw else "&mdash;"
-        return Markup(f'<div class="wh-field wh-field-static"><span class="wh-field-label">{label}</span>'
+        static_label = f'<span class="wh-field-label">{label}</span>' if labelled else ""
+        return Markup(f'<div class="wh-field wh-field-static">{static_label}'
                       f'<span class="wh-field-value">{shown}</span></div>')
     # preview renders the same widgets with sample values, but dead: 审核看的是这页
     # 的定义，能不能填、填完长什么样，所以控件要在场而不能提交。
@@ -453,8 +459,8 @@ def _input_html(field: dict, value: Any, *, textarea: bool = False) -> Markup:
     required = "" if dead else (" required" if field.get("required") else "")
     inert = ' disabled tabindex="-1"' if dead else ""
     if textarea:
-        return Markup(f'<div class="wh-field"><label class="wh-field-label" for="{fid}">{label}</label>'
-                      f'<textarea class="wh-input" id="{fid}" name="{_text(key)}" rows="2"{required}{inert}>'
+        return Markup(f'<div class="wh-field">{label_html}'
+                      f'<textarea class="wh-input" id="{fid}" name="{_text(key)}" rows="2"{aria}{required}{inert}>'
                       f'{_text(raw)}</textarea></div>')
     widget = FIELD_TYPE_TO_INPUT.get(str(field.get("type") or "text"), "text")
     if widget == "select":
@@ -463,8 +469,8 @@ def _input_html(field: dict, value: Any, *, textarea: bool = False) -> Markup:
         for option in options:
             selected = " selected" if str(option) == raw else ""
             inner.append(f'<option value="{_text(option)}"{selected}>{_text(option)}</option>')
-        return Markup(f'<div class="wh-field"><label class="wh-field-label" for="{fid}">{label}</label>'
-                      f'<select class="wh-input" id="{fid}" name="{_text(key)}"{required}{inert}>'
+        return Markup(f'<div class="wh-field">{label_html}'
+                      f'<select class="wh-input" id="{fid}" name="{_text(key)}"{aria}{required}{inert}>'
                       f'{"".join(inner)}</select></div>')
     attrs = ""
     if widget == "number":
@@ -472,25 +478,29 @@ def _input_html(field: dict, value: Any, *, textarea: bool = False) -> Markup:
         if str(field.get("type")) == "percent":
             attrs = ' min="0" max="100" step="any"'
     placeholder = _text(field.get("example") or "")
-    return Markup(f'<div class="wh-field"><label class="wh-field-label" for="{fid}">{label}</label>'
+    return Markup(f'<div class="wh-field">{label_html}'
                   f'<input class="wh-input" id="{fid}" name="{_text(key)}" type="{widget}"'
-                  f'{attrs}{required}{inert} placeholder="{placeholder}" value="{_text(raw)}"></div>')
+                  f'{attrs}{aria}{required}{inert} placeholder="{placeholder}" value="{_text(raw)}"></div>')
 
 
-def input_for(source: Any, *, textarea: bool = False) -> Markup:
-    """Widget for a standard source name -- empty when the descriptor has no field."""
+def input_for(source: Any, *, textarea: bool = False, labelled: bool = True) -> Markup:
+    """Widget for a standard source name -- empty when the descriptor has no field.
+
+    `labelled=False` drops the per-widget label (table cells already carry the
+    column header, otherwise the table reads as three header rows).
+    """
     field = field_of(source)
     if field is None:
         return Markup("")
-    return _input_html(field, _value_for(source), textarea=textarea)
+    return _input_html(field, _value_for(source), textarea=textarea, labelled=labelled)
 
 
-def input_for_key(field_key: Any, *, textarea: bool = False) -> Markup:
+def input_for_key(field_key: Any, *, textarea: bool = False, labelled: bool = True) -> Markup:
     """Widget addressed by the descriptor field key itself (table columns)."""
     field = _state().fields_by_key.get(field_key) or field_of(field_key)
     if field is None:
         return Markup("")
-    return _input_html(field, _value_for(field.get("key")), textarea=textarea)
+    return _input_html(field, _value_for(field.get("key")), textarea=textarea, labelled=labelled)
 
 
 def static_for(source: Any) -> Markup:
@@ -890,7 +900,11 @@ def render_read_only(descriptor: dict, values: dict | None = None,
 
 
 def render_preview(descriptor: dict, sample: bool = True) -> str:
-    """Review viewpoint: fake data plus a per-module '进汇总 / 不进汇总' tag."""
+    """Review viewpoint: sample data, widgets present but disabled.
+
+    审的是这页的定义（字段、密度、空态），不写库。角标已下线；机器可读的汇总
+    口径走 MCP 的 `preview_descriptor` → `aggregates_preview`（mcp/tools.py）。
+    """
     if not isinstance(descriptor, dict):
         raise RenderError("descriptor: 必须是 JSON 对象")
     values = _sample_values(descriptor) if sample else {}
