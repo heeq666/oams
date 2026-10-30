@@ -1,18 +1,27 @@
-"""Checks for the interface descriptor validator: the gate AI output must pass."""
+"""Checks for the interface descriptor validator: the gate AI output must pass.
+
+Every case below is a frozen fact about the validator, so each one is its own
+test: a regression shows up as that one red test and never as a collection-time
+crash that hides the other ~600 tests in the suite.
+
+``base()`` is deliberately the same descriptor the legacy script used.
+"""
+from __future__ import annotations
+
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
-from workhub.descriptor import DescriptorError, assert_descriptor, validate_descriptor
 
-failures = []
+from workhub.descriptor import (  # noqa: E402
+    DescriptorError,
+    assert_descriptor,
+    validate_descriptor,
+)
 
-
-def check(name, condition, detail=""):
-    if condition:
-        print("PASS", name)
-    else:
-        failures.append(name)
-        print("FAIL", name, detail)
+KNOWN = {"known_org_unit_codes": {"DESIGN"}, "known_position_codes": {"DESIGN_LEAD"}}
 
 
 def base(**overrides):
@@ -53,90 +62,129 @@ def base(**overrides):
     return descriptor
 
 
-known = {"known_org_unit_codes": {"DESIGN"}, "known_position_codes": {"DESIGN_LEAD"}}
+def problems(descriptor) -> list[str]:
+    """Problems as plain strings.
 
-check("valid descriptor passes", validate_descriptor(base(), **known) == [])
+    v0.1 documents are uncoded, so every entry must already be a string; turning
+    a non-string into a visible marker keeps a leakage bug (a tuple or dict in the
+    list) from silently reading as "no problem found".
+    """
+    return [p if isinstance(p, str) else f"<{type(p).__name__}> {p!r}"
+            for p in validate_descriptor(descriptor, **KNOWN)]
 
-missing_key = base()
-del missing_key["name"]
-check("missing required key rejected",
-      any(p.startswith("name:") for p in validate_descriptor(missing_key, **known)))
 
-bad_map = base()
-bad_map["fields"][4] = {"key": "fabric_note", "label": "面料备注", "type": "text",
-                        "map_to": "display_only", "aggregatable": True, "example": "x"}
-check("display_only cannot aggregate",
-      any("display_only requires aggregatable=false" in p for p in validate_descriptor(bad_map, **known)))
+# ---------------------------------------------------------------------------
+# Happy path
+# ---------------------------------------------------------------------------
 
-unknown_map = base()
-unknown_map["fields"][1]["map_to"] = "vibes"
-check("unknown map_to rejected", any("not a standard field" in p for p in validate_descriptor(unknown_map, **known)))
+def test_valid_descriptor_passes():
+    assert problems(base()) == []
 
-bad_status = base(status_map={"打样中": "in_progress", "等面料": "waiting"})
-check("non-standard status rejected", any("not one of" in p for p in validate_descriptor(bad_status, **known)))
 
-dangling = base()
-dangling["modules"][0]["source_fields"] = ["ghost"]
-check("unknown source field rejected",
-      any("unknown field" in p for p in validate_descriptor(dangling, **known)))
+def test_assert_descriptor_passes_silently():
+    assert_descriptor(base(), **KNOWN)
 
-custom_ok = base()
-custom_ok["modules"].append({
-    "key": "sampling_board", "type": "custom", "title": "打样看板", "order": 5,
-    "source_fields": ["title"],
-    "custom": {"purpose": "款号与状态一起看", "composed_of": ["list_block", "progress_bar"],
-               "display": "table", "declares_logic": False},
-})
-check("constrained custom module allowed", validate_descriptor(custom_ok, **known) == [])
 
-custom_logic = base()
-custom_logic["modules"].append({
-    "key": "rogue", "type": "custom", "title": "抓取", "order": 6, "source_fields": ["title"],
-    "custom": {"purpose": "抓外部数据", "composed_of": ["list_block"], "display": "table",
-               "declares_logic": True},
-})
-check("custom module declaring logic rejected",
-      any("declares_logic must be false" in p for p in validate_descriptor(custom_logic, **known)))
+# ---------------------------------------------------------------------------
+# Structural rejections
+# ---------------------------------------------------------------------------
 
-smuggled = base()
-smuggled["modules"][0]["script"] = "import os; os.system('rm -rf /')"
-check("smuggled script rejected",
-      any("forbidden key" in p for p in validate_descriptor(smuggled, **known)))
+def test_missing_required_key_rejected():
+    descriptor = base()
+    del descriptor["name"]
+    assert any(p.startswith("name:") for p in problems(descriptor))
 
-public_unapproved = base()
-public_unapproved["meta"]["visibility"] = "public"
-check("public template needs approval",
-      any("status=approved" in p for p in validate_descriptor(public_unapproved, **known)))
 
-public_approved = base()
-public_approved["meta"]["visibility"] = "public"
-public_approved["meta"]["review"] = {"status": "approved", "reviewed_by": "GM", "reviewed_at": "2026-10-13"}
-check("approved public template allowed", validate_descriptor(public_approved, **known) == [])
+def test_unknown_department_rejected():
+    assert any("unknown department" in p for p in problems(base(org_unit_code="NOPE")))
 
-no_evidence = base()
-no_evidence["fields"] = [f for f in no_evidence["fields"] if f["map_to"] != "evidence"]
-check("interface without evidence cannot aggregate",
-      any("cannot be summarised" in p for p in validate_descriptor(no_evidence, **known)))
 
-unknown_org = base(org_unit_code="NOPE")
-check("unknown department rejected",
-      any("unknown department" in p for p in validate_descriptor(unknown_org, **known)))
+def test_assert_descriptor_raises_with_reasons():
+    with pytest.raises(DescriptorError) as excinfo:
+        assert_descriptor(base(org_unit_code="NOPE"), **KNOWN)
+    assert "unknown department" in str(excinfo.value)
 
-try:
-    assert_descriptor(base(), **known)
-    check("assert_descriptor passes silently", True)
-except DescriptorError as exc:
-    check("assert_descriptor passes silently", False, str(exc))
 
-try:
-    assert_descriptor(base(org_unit_code="NOPE"), **known)
-    check("assert_descriptor raises with reasons", False)
-except DescriptorError as exc:
-    check("assert_descriptor raises with reasons", "unknown department" in str(exc))
+# ---------------------------------------------------------------------------
+# Field vocabulary and aggregation
+# ---------------------------------------------------------------------------
 
-if failures:
-    print("")
-    print("FAILED:", ", ".join(failures))
-    raise SystemExit(1)
-print("")
-print("all descriptor checks passed")
+def test_display_only_cannot_aggregate():
+    descriptor = base()
+    descriptor["fields"][4] = {"key": "fabric_note", "label": "面料备注", "type": "text",
+                               "map_to": "display_only", "aggregatable": True, "example": "x"}
+    assert any("display_only requires aggregatable=false" in p for p in problems(descriptor))
+
+
+def test_unknown_map_to_rejected():
+    descriptor = base()
+    descriptor["fields"][1]["map_to"] = "vibes"
+    assert any("not a standard field" in p for p in problems(descriptor))
+
+
+def test_non_standard_status_rejected():
+    descriptor = base(status_map={"打样中": "in_progress", "等面料": "waiting"})
+    assert any("not one of" in p for p in problems(descriptor))
+
+
+def test_unknown_source_field_rejected():
+    descriptor = base()
+    descriptor["modules"][0]["source_fields"] = ["ghost"]
+    assert any("unknown field" in p for p in problems(descriptor))
+
+
+def test_interface_without_evidence_cannot_aggregate():
+    descriptor = base()
+    descriptor["fields"] = [f for f in descriptor["fields"] if f["map_to"] != "evidence"]
+    assert any("cannot be summarised" in p for p in problems(descriptor))
+
+
+# ---------------------------------------------------------------------------
+# Custom modules: a purpose, never logic
+# ---------------------------------------------------------------------------
+
+def test_constrained_custom_module_allowed():
+    descriptor = base()
+    descriptor["modules"].append({
+        "key": "sampling_board", "type": "custom", "title": "打样看板", "order": 5,
+        "source_fields": ["title"],
+        "custom": {"purpose": "款号与状态一起看", "composed_of": ["list_block", "progress_bar"],
+                   "display": "table", "declares_logic": False},
+    })
+    assert problems(descriptor) == []
+
+
+def test_custom_module_declaring_logic_rejected():
+    descriptor = base()
+    descriptor["modules"].append({
+        "key": "rogue", "type": "custom", "title": "抓取", "order": 6, "source_fields": ["title"],
+        "custom": {"purpose": "抓外部数据", "composed_of": ["list_block"], "display": "table",
+                   "declares_logic": True},
+    })
+    assert any("declares_logic must be false" in p for p in problems(descriptor))
+
+
+def test_smuggled_script_rejected():
+    """A descriptor is data: no key may smuggle an executable payload in."""
+    descriptor = base()
+    descriptor["modules"][0]["script"] = "import os; os.system('rm -rf /')"
+    found = problems(descriptor)
+    assert any("forbidden key" in p for p in found), found
+
+
+# ---------------------------------------------------------------------------
+# Visibility: public needs a recorded approval
+# ---------------------------------------------------------------------------
+
+def test_public_template_needs_approval():
+    descriptor = base()
+    descriptor["meta"]["visibility"] = "public"
+    assert any("status=approved" in p for p in problems(descriptor))
+
+
+def test_approved_public_template_allowed():
+    descriptor = base()
+    descriptor["meta"]["visibility"] = "public"
+    descriptor["meta"]["review"] = {"status": "approved", "reviewed_by": "GM",
+                                    "reviewed_at": "2026-10-13"}
+    assert problems(descriptor) == []

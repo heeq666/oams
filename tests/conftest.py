@@ -81,6 +81,58 @@ def pytest_configure(config: pytest.Config) -> None:
         os.sys.path.insert(0, app)
 
 
+# ---------------------------------------------------------------------------
+# ``@pytest.mark.db`` is a promise: no database, no test
+# ---------------------------------------------------------------------------
+#
+# The marker used to be descriptive only.  A db-marked test that forgot to ask
+# for ``db_ready`` (directly, or through ``site``) therefore ran anyway and died
+# inside psycopg with ``OperationalError`` instead of skipping, which is noise on
+# a laptop without PostgreSQL.  The probe below runs at most once per session and
+# turns every db-marked item into a skip when nothing answers, so the guarantee is
+# enforced in one place instead of remembered at every call site.
+
+_DB_PROBE: list[tuple[bool, str]] = []
+
+
+def database_usable() -> tuple[bool, str]:
+    """Probe the configured PostgreSQL once per session; cached afterwards."""
+
+    if _DB_PROBE:
+        return _DB_PROBE[0]
+    url = database_url()
+    try:
+        import psycopg
+    except ImportError:  # pragma: no cover - psycopg is a runtime dependency
+        result = (False, "psycopg is not installed")
+    else:
+        try:
+            with psycopg.connect(url, connect_timeout=3) as conn:
+                conn.execute("SELECT 1")
+                migrated = conn.execute(
+                    "SELECT to_regclass('workhub.schema_migrations')").fetchone()
+            if not migrated or migrated[0] is None:
+                result = (False, "workhub schema is not migrated in this database")
+            else:
+                result = (True, url)
+        except Exception as exc:  # pragma: no cover - depends on the machine
+            result = (False, f"no usable PostgreSQL at {url}: {exc.__class__.__name__}: {exc}")
+    _DB_PROBE.append(result)
+    return result
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
+    database_items = [item for item in items if "db" in item.keywords]
+    if not database_items:
+        return
+    usable, detail = database_usable()
+    if usable:
+        return
+    skip = pytest.mark.skip(reason="test needs a PostgreSQL: " + detail)
+    for item in database_items:
+        item.add_marker(skip)
+
+
 class Database:
     """Tiny helper handed to DB-backed tests."""
 
