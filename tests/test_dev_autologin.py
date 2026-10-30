@@ -173,7 +173,7 @@ def _admin_member_id():
 
 
 @pytest.mark.db
-def test_cookieless_request_is_signed_in(shortcut):
+def test_cookieless_request_is_signed_in(shortcut, db_ready):
     expected = _admin_member_id()
     principal = principal_from_request(_request())
     assert principal is not None
