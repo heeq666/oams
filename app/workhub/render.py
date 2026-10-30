@@ -458,7 +458,11 @@ def _input_html(field: dict, value: Any, *, textarea: bool = False,
     # preview renders the same widgets with sample values, but dead: 审核看的是这页
     # 的定义，能不能填、填完长什么样，所以控件要在场而不能提交。
     dead = state.mode != "edit"
-    required = "" if dead else (" required" if field.get("required") else "")
+    # 浏览器层面的 required 在这里是错的：一个填报页有三块模块、每块各一行，
+    # 只填一行的用户会被另外两行空控件的 required 拦死（端到端试用 R2：按钮
+    # 点了毫无反应）。必填只留 aria-required 给读屏，真正的校验在服务端
+    # （web.py 的 _read_entry_form 只对主记录字段强制）。
+    required = "" if dead or not field.get("required") else ' aria-required="true"'
     inert = ' disabled tabindex="-1"' if dead else ""
     if textarea:
         return Markup(f'<div class="wh-field">{label_html}'

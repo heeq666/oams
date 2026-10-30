@@ -507,9 +507,14 @@ def _read_entry_form(fields, status_map, form):
         key = field.get("key")
         if not key:
             continue
-        raw = (form.get(key) or "").strip()
+        posted = [value.strip() for value in form.getlist(key)]
+        raw = next((value for value in posted if value), "")
         map_to = field.get("map_to")
-        if field.get("required") and not raw:
+        # 一个填报页会给同一个字段渲染好几个控件（每块模块各一行）。空行视为
+        # 「没填」：取第一个非空值，而不是第一个控件。必填也只在主记录字段
+        # （款号 / 事项）上强制——模块内的必填项若在服务端一并卡住，只填一行
+        # 的人永远交不上（端到端试用 R2 / R3）。
+        if field.get("required") and not raw and map_to == "title":
             return {}, {}, "「" + str(field.get("label") or key) + "」必填"
         if not raw:
             continue

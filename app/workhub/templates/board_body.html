@@ -24,7 +24,7 @@
     {% endif %}
   {% else %}
     <div class="meta">
-      <span class="badge">从未申报</span>
+      <span class="badge">未汇报</span>
       {% if card.status != 'planned' %}<span>{{ (card.updated_at | dt) }} 起没有进度</span>{% endif %}
     </div>
   {% endif %}
@@ -72,7 +72,7 @@
   <div class="metric {% if board.summary.needs_decision %}warn{% endif %}">
     <div class="n">{{ board.summary.needs_decision }}</div><div class="k">待决策</div></div>
   <div class="metric {% if board.summary.never_reported %}warn{% endif %}">
-    <div class="n">{{ board.summary.never_reported }}</div><div class="k">从未申报</div></div>
+    <div class="n">{{ board.summary.never_reported }}</div><div class="k">未汇报</div></div>
   <div class="metric"><div class="n">{{ board.summary.overdue }}</div><div class="k">超过 {{ board.stale_days }} 天未更新</div></div>
   <div class="metric {% if board.summary.positions_without_holder %}alert{% endif %}">
     <div class="n">{{ board.summary.positions_without_holder }}</div><div class="k">岗位空缺</div></div>

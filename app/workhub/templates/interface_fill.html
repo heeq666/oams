@@ -9,7 +9,7 @@
   <a class="btn" href="/interfaces">← 返回界面列表</a>
 </div>
 
-{% if saved %}<div class="flash">已提交。标准字段已进入公司进度中心；只有本部门可见的字段不会参与汇总。</div>{% endif %}
+{% if saved %}<div class="flash">已提交，这条汇报已经记进本部门。要进公司汇总，还要把它关联到一个工作项。<a href="/departments/{{ interface.org_unit_id }}">去关联工作项 →</a></div>{% endif %}
 {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
 {% if latest %}
