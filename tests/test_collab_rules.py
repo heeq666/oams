@@ -297,17 +297,21 @@ def test_the_left_column_hides_a_page_i_do_not_fill(room):
 
 
 def test_opening_a_thread_i_cannot_see_answers_with_the_error_panel(monkeypatch, room):
-    """打不开的会话给的是「右栏一句实话 + 左栏照常可用」，不是 404 空页。
+    """打不开的会话给的是「行里一句实话 + 左栏照常可用」，而且传输层就说打不开。
 
-    顺手记下传输层现状：HTML 页是 **200**（内容里说清楚不开放），
-    只有 `.../messages` 那个片段回 403。要改成 404 是产品决定，不是测试决定。
+    传输层用 404，不用 403 也不用 200（负责人 2026-10-30 拍）：403 等于承认
+    「这个会话确实存在」，给枚举留缝；200 又让浏览器和外部工具以为这是一张
+    打开了的正常页面。文案本来就同时盖住「不存在」与「不开放给你」两种情况，
+    所以两种原因共用一个码，页面本身照旧画出来。
     """
 
     thread = room.manage("HR")
     with _served_as(monkeypatch, room, SALES_LEAD) as client:
         response = client.get(f"/collab/threads/{thread['thread_id']}")
-    assert response.status_code == 200
+    assert response.status_code == 404
     assert "这个会话不存在，或者不开放给你" in response.text
+    # 回的是右栏那一块带 role="alert" 的提示，不是一张空白页
+    assert 'role="alert"' in response.text
 
 
 def test_the_messages_fragment_of_a_thread_i_cannot_see_is_forbidden(monkeypatch, room):
