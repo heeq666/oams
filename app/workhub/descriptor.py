@@ -134,11 +134,14 @@ class _Problems(list):
             self.append(f"{path}: {message}")
 
 
-def _walk(node: Any, path: str, hits: list[str]) -> None:
+def _walk(node: Any, path: str, hits: list[tuple[str, str]]) -> None:
+    """Collect (path, key) for every forbidden key, so the caller can decide how
+    to format it: v0.1 keeps the bare wording it always had, v0.2 goes through
+    _Problems.add and therefore carries its reject code (contract §3)."""
     if isinstance(node, dict):
         for key, value in node.items():
             if isinstance(key, str) and key.lower() in FORBIDDEN_KEYS:
-                hits.append(f"{path}.{key}: forbidden key (descriptors must not carry logic or credentials)")
+                hits.append((f"{path}.{key}", key))
             _walk(value, f"{path}.{key}", hits)
     elif isinstance(node, list):
         for index, value in enumerate(node):
@@ -552,7 +555,9 @@ def validate_descriptor(descriptor: dict[str, Any],
         return ["descriptor must be a JSON object"]
 
     version = descriptor.get("schema_version")
-    coded = strict_v02 and version != LEGACY_SCHEMA_VERSION
+    # 带不带错误码只看文档版本（契约 §3：v0.2 每条问题消息前缀必须带码），
+    # 与迁移开关 strict_v02 无关——那个开关只管字段词表。
+    coded = version != LEGACY_SCHEMA_VERSION
     problems = _Problems(coded)
 
     version = _check_schema_version(problems, version)
@@ -581,9 +586,16 @@ def validate_descriptor(descriptor: dict[str, Any],
                            produced, strict_v02)
 
     # No executable or credential material anywhere in the document.
-    logic_hits: list[str] = []
+    # _walk 收集 (path, key)，由这里决定文案：v0.1 保持原裸格式，v0.2 走
+    # _Problems.add 带上 reject code（契约 §3）。
+    logic_hits: list[tuple[str, str]] = []
     _walk(descriptor, "$", logic_hits)
-    problems.extend(logic_hits)
+    for hit_path, _hit_key in logic_hits:
+        message = "forbidden key (descriptors must not carry logic or credentials)"
+        if version == LEGACY_SCHEMA_VERSION:
+            problems.append(f"{hit_path}: {message}")
+        else:
+            problems.add("DATA_RULE_VIOLATION", hit_path, message)
 
     _check_visibility(problems, descriptor)
     _check_capabilities(problems, descriptor, version)
