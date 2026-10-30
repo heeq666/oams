@@ -692,10 +692,11 @@ def department_new_page(request: Request, org_unit_id: UUID, saved: str | None =
         pages = _department_pages(conn, org_unit_id)
         found = _visible_departments(conn, principal["member_id"])
         counts = {row["org_unit_id"]: _department_pages(conn, row["org_unit_id"]) for row in found}
+        bases = _basis_pages(conn, principal["member_id"], org_unit_id)
     departments = [dict(unit=row, pages=counts.get(row["org_unit_id"], [])) for row in found]
     return TEMPLATES.TemplateResponse(request, "department_new_page.html", {
         "unit": unit, "departments": departments, "pages": pages,
-        "current": None, "page": None, "positions": positions,
+        "current": None, "page": None, "positions": positions, "bases": bases,
         "member": _member(request), "saved": saved, "error": error,
         "csrf": _form_token(request, "workhub:page-form:v1")})
 
@@ -703,7 +704,8 @@ def department_new_page(request: Request, org_unit_id: UUID, saved: str | None =
 @router.post("/departments/{org_unit_id}/new")
 def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form(...),
                            slug: str = Form(...), name: str = Form(...),
-                           position_id: str = Form(default=""), descriptor_text: str = Form(...)):
+                           position_id: str = Form(default=""), descriptor_text: str = Form(...),
+                           based_on: str = Form(default="")):
     try:
         principal = _require(request, "workforce.reports", "read")
         _require(request, "workforce.reports", "submit")
@@ -752,6 +754,36 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
             """SELECT interface_id, version_no FROM workhub.interfaces
                WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
             (org_unit_id, slug.strip())).fetchone()
+        # A page may also be built on another department's live screen ("roll out
+        # what sales already runs"). That is a heavier claim than copying your own
+        # last version -- it speaks for somebody else's page -- so the reference is
+        # recorded and the review goes up one level (review.needs_company_review).
+        basis = live["interface_id"] if live is not None else None
+        wanted = based_on.strip()
+        if wanted:
+            try:
+                source_id = UUID(wanted)
+            except ValueError:
+                return RedirectResponse(url=back + "?error=" + urllib.parse.quote("来源页面编号不对"),
+                                        status_code=303)
+            source = conn.execute(
+                """SELECT interface_id, org_unit_id, status, visibility FROM workhub.interfaces
+                    WHERE interface_id = %s""", (source_id,)).fetchone()
+            openable = source is not None and source["status"] == "active" and (
+                source["visibility"] == "public"
+                or source["org_unit_id"] in active_org_unit_ids(conn, principal["member_id"]))
+            if not openable:
+                # "不存在" and "不开放给你" are one sentence on purpose: telling them
+                # apart would confirm that a page you may not see exists.
+                return RedirectResponse(
+                    url=back + "?error=" + urllib.parse.quote("这个来源页面不存在，或者不开放给你"),
+                    status_code=303)
+            if source["org_unit_id"] == org_unit_id:
+                return RedirectResponse(
+                    url=back + "?error=" + urllib.parse.quote(
+                        "本部门上一版会自动作为基础，不用指定来源"),
+                    status_code=303)
+            basis = source["interface_id"]
         version = conn.execute(
             """SELECT COALESCE(max(version_no), 0) + 1 FROM workhub.interfaces
                WHERE org_unit_id = %s AND slug = %s""", (org_unit_id, slug.strip())).fetchone()["?column?"]
@@ -764,12 +796,12 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
                VALUES (%s, %s, %s, 'draft', 'department', %s, %s, %s, %s, %s, %s, %s)
                RETURNING interface_id""",
             (org_unit_id, slug.strip(), name.strip(), descriptor.get("schema_version", "0.1"),
-             Jsonb(descriptor), position, version,
-             live["interface_id"] if live is not None else None,
+             Jsonb(descriptor), position, version, basis,
              principal["member_id"], principal["member_id"])).fetchone()
         api.audit(conn, principal["member_id"], "interface.created", "interface", row["interface_id"],
                   "created inside department workbench",
-                  {"slug": slug.strip(), "version_no": version})
+                  {"slug": slug.strip(), "version_no": version,
+                   "based_on": str(basis) if basis else None})
     return RedirectResponse(url=f"/departments/{org_unit_id}/{row['interface_id']}?saved=1", status_code=303)
 
 
@@ -1236,6 +1268,22 @@ def _acting_stage(powers: dict[str, Any], page: Any) -> str:
     if powers["department"] and page["org_unit_id"] in powers["units"]:
         return "department"
     return "company_proxy"
+
+
+def _basis_pages(conn, member_id, org_unit_id: UUID) -> list[Any]:
+    """Other departments' live pages this person may start a new page from.
+
+    Only pages the caller can already open: a picker that lists pages it would
+    then refuse invites people to click a dead option, and a list that names
+    hidden pages leaks exactly the fact a 404 is there to withhold.
+    """
+    mine = list(active_org_unit_ids(conn, member_id))
+    return conn.execute(
+        """SELECT i.interface_id, i.name, i.visibility, o.name AS org_name
+             FROM workhub.interfaces i JOIN workhub.org_units o USING (org_unit_id)
+            WHERE i.status = 'active' AND i.org_unit_id <> %s
+              AND (i.visibility = 'public' OR i.org_unit_id = ANY(%s))
+            ORDER BY o.name, i.name""", (org_unit_id, mine)).fetchall()
 
 
 def _employee_code_of(conn, principal: dict[str, Any]) -> str | None:
