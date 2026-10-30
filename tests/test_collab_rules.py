@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import uuid
 from typing import Any
 
@@ -369,6 +370,92 @@ def test_posting_without_a_client_msg_id_appends_every_time(room):
     first = room.post(thread, HR_MANAGER, "同一句话")
     second = room.post(thread, HR_MANAGER, "同一句话")
     assert second["seq"] == first["seq"] + 1
+
+
+# --------------------------------------------------------------------------
+# 发送失败与重发：走真路由，断网那一下留下的 id 必须能救回这一条
+# --------------------------------------------------------------------------
+
+
+def _composer_token(client, thread_id) -> str:
+    """会话页里那份表单令牌——写入口只认会话 cookie 上这一份。"""
+
+    page = client.get(f"/collab/threads/{thread_id}")
+    found = re.search(r'name="csrf" value="([^"]*)"', page.text)
+    assert found, "会话页里应当有表单令牌"
+    return found.group(1)
+
+
+def _send(client, thread_id, body: str, *, key: str | None = None,
+          token: str | None = None):
+    form = {"body": body, "csrf": token if token is not None else _composer_token(client, thread_id)}
+    if key is not None:
+        form["client_msg_id"] = key
+    return client.post(f"/collab/threads/{thread_id}/messages", data=form)
+
+
+def _bodies(room, thread, body: str) -> int:
+    row = room.conn.execute(
+        "SELECT count(*) AS n FROM workhub.collab_messages"
+        " WHERE thread_id = %s AND body = %s",
+        (thread["thread_id"], body),
+    ).fetchone()
+    return row["n"]
+
+
+def test_resending_with_the_same_key_lands_the_message_once(monkeypatch, room):
+    """断网重发：同一个 id 打两遍，库里只有一条。
+
+    这是「重发」而不是「再发一条」的全部意义——只看接口有没有报错是不够的，
+    得数行数。
+    """
+
+    thread = room.manage("HR")
+    key = uuid.uuid4().hex
+    body = "刚才断网了，这一条重发一次"
+    with _served_as(monkeypatch, room, HR_MANAGER) as client:
+        first = _send(client, thread["thread_id"], body, key=key)
+        again = _send(client, thread["thread_id"], body, key=key)
+    assert first.status_code == 200
+    assert again.status_code == 200
+    assert room.message_count(thread, key) == 1
+
+
+def test_two_sends_without_a_key_are_two_messages(monkeypatch, room):
+    """对照组：没带 id 就是两条。不这么写，「只有一条」可能只是接口本来就不落库。"""
+
+    thread = room.manage("HR")
+    body = "这条没带幂等键"
+    with _served_as(monkeypatch, room, HR_MANAGER) as client:
+        _send(client, thread["thread_id"], body)
+        _send(client, thread["thread_id"], body)
+    assert _bodies(room, thread, body) == 2
+
+
+def test_a_stale_form_token_cannot_post(monkeypatch, room):
+    """令牌不对就一条都不许落：转发别人的链接、跨站表单都得挡在门外。"""
+
+    thread = room.manage("HR")
+    body = "拿别人的令牌发的"
+    with _served_as(monkeypatch, room, HR_MANAGER) as client:
+        # 令牌用纯 ASCII：`_check_form_token` 走 hmac.compare_digest，传非 ASCII
+        # 会 TypeError（见给负责人的清单第 1 条），那不是这里要验的东西。
+        response = _send(client, thread["thread_id"], body, token="stale-token-abc")
+    assert response.status_code == 403
+    assert _bodies(room, thread, body) == 0
+
+
+def test_a_message_that_is_too_long_comes_back_into_the_box(monkeypatch, room):
+    """被拒的那条不能凭空消失：页面要把正文退回输入框，并说清为什么。"""
+
+    thread = room.manage("HR")
+    body = "长" * (collab.MAX_BODY + 1)
+    with _served_as(monkeypatch, room, HR_MANAGER) as client:
+        response = _send(client, thread["thread_id"], body)
+    assert response.status_code == 200
+    assert f"最多 {collab.MAX_BODY} 个字" in response.text
+    assert body in response.text, "正文没有退回输入框，人得重打一遍"
+    assert _bodies(room, thread, body) == 0
 
 
 # --------------------------------------------------------------------------
