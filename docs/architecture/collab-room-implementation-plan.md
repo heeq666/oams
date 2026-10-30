@@ -1,6 +1,6 @@
 # 协作室 · 实现清单
 
-> 状态：**待开工**（2026-10-27 立）
+> 状态：**本版已实现**（2026-10-27 立，2026-10-30 按实现回填；原清单有三处与实现不符，已在 §1.1、§4、§5 就地改正）
 > 前置：设计已定稿，见 `docs/design/design-system-v1.md` §6 与 §7「协作室」硬约束、Figma 页 `02 · 组件库` 的协作室段（`146:4401`）。
 > 定位一句话：**协作室是页面的讨论层，不是第二个系统。** 它只解决「口径互通」，不做审批、不做采纳、不授予任何权限。
 
@@ -28,6 +28,23 @@
 | 已读回执、对方正在输入 | 都是实时能力，与「不做实时推送」冲突 | 不做 |
 
 **不做实时推送**是本版的明确取舍：未读在下一次拉取时对齐（进页面、开面板、切会话）。理由是要长连接，而收益只是徽章早两秒消失。真要实时，是另一个决定，不藏在这次里。
+
+### 1.1 本版已完成（2026-10-30 回填）
+
+上面「这一版要做」的四条都已实现：
+
+1. 右下角入口按钮，显示服务端算出来的总未读数。
+2. 点开 = 底部两栏弹层，左栏会话列表、右栏消息流。
+3. 能看、能发；点开会话即清零未读。
+4. 三类会话都在：管理群（`manage`）、汇报群（`fill`）、私聊（`dm`）。
+
+剩余已知缺口（三条，都在后端）：
+
+1. 发送失败暂无可见反馈（幂等已备、前端未接）。
+2. 面板关闭重开复用旧 DOM，未读数仍是旧值。
+3. `unread_total` 存在 N+1 查询。
+
+另有一条测试缺口：`can_see` / 幂等 / `mark_read` / `unread_total` 四条核心规则尚无覆盖。
 
 ---
 
@@ -139,15 +156,20 @@ CREATE INDEX collab_threads_iface ON collab_threads(interface_id) WHERE status =
 
 全部返回 htmx 片段，主面板一次渲染骨架。沿用 `_require()` / `_denied()` / `connection()`。
 
-| 方法 | 路径 | 返回 | 说明 |
-|---|---|---|---|
-| GET | `/collab` | 整页 | 面板骨架 + 左栏列表 + 默认会话 |
-| GET | `/collab/threads` | 片段 | 左栏会话列表（三类分组） |
-| GET | `/collab/threads/{thread_id}` | 片段 | 右栏：群头 + 消息列表 + 输入区 |
-| GET | `/collab/threads/{thread_id}/messages` | 片段 | `before_seq` 可选；带出加载行 |
-| POST | `/collab/threads/{thread_id}/messages` | 片段 | 新消息 + 输入区复位 |
-| POST | `/collab/threads/{thread_id}/read` | 204 | 点开会话即调用，写 `last_seq = max(seq)` |
-| GET | `/collab/unread.json` | JSON | `{total: n}`，入口按钮用 |
+| 方法 | 路径 | 返回 | 说明 | `web.py` |
+|---|---|---|---|---|
+| GET | `/collab` | 整页 | 面板骨架 + 左栏列表；未选会话时右栏是**空态**（没有默认会话，用户自己点）。只打开面板不标已读 | `:2098` |
+| GET | `/collab/side` | 片段 | 左栏容器（`view=threads\|directory`）：搜索、切视图、通讯录滚动都换这一段 | `:2139` |
+| GET | `/collab/threads` | 片段 | 只要会话那一版的左栏列表，留给测试与文档里的旧链接 | `:2154` |
+| GET | `/collab/open` | 片段 | 首屏：点一个「还没人说过话」的对象，这一刻建线程并落已读 | `:2166` |
+| GET | `/collab/threads/{thread_id}` | 片段 | 右栏：群头 + 消息列表 + 输入区；打开即落已读 | `:2194` |
+| GET | `/collab/threads/{thread_id}/messages` | 片段 | `before_seq` 可选；带出加载行 | `:2213` |
+| POST | `/collab/threads/{thread_id}/messages` | 片段 | 新消息 + 输入区复位；失败时草稿回填 | `:2239` |
+| GET | `/collab/unread.json` | JSON | `{total: n}`，入口按钮用 | `:2269` |
+
+八条全部是 `@router.get` / `@router.post`，不是 `@app`。按表验收时八条都要点到，`/collab/open`（首屏建线程 + 落已读）和 `/collab/side`（左栏分片）最容易漏。
+
+**打开会话 = 已读，不单独提供 `POST /read`。** `GET /collab/threads/{thread_id}` 时服务端直接落 `read_at`（写 `last_seq = max(seq)`）；首次进群的 `GET /collab/open` 同样在服务端落已读。htmx 场景下省掉一次往返，这是有意的。验收口径：打开会话后 `unread.json` 里该会话归零。
 
 **入口按钮的未读数从哪里来**：不强求实时。进任何页面时由 `base.html` 的服务端上下文带出（跟 `request.state.nav` 同一处算），开面板后再刷一次。不做轮询。
 
@@ -198,7 +220,7 @@ SELECT v.*, m.body AS last_body, m.created_at AS last_at,
 - AI 代发时人名后跟浅紫 `model` 徽章；本人发言不带。
 - 点开会话即清零、**不画「以下是新消息」的分界线**。
 
-CSS 落在 `app/workhub/static/workhub-modules.css` 后面的新段落 `/* --- collab room --- */`，颜色圆角一律 `var(--wh-*)`，不写字面值。模板新增 `templates/collab/` 目录：`panel.html`、`thread_list.html`、`thread.html`、`messages.html`、`composer.html`。
+样式落在**独立样式表** `app/workhub/static/workhub-collab.css`（由 `base.html` 单独引入），不并进 `workhub-modules.css`；它同样只用 `--wh-*` 令牌，不写字面颜色和圆角值。模板在 `templates/collab/` 目录：`panel.html`、`thread_list.html`、`thread.html`、`messages.html`、`composer.html`，另有 `side.html`、`directory.html`、`directory_intro.html`、`earlier.html`、`empty.html`、`error.html`、`icons.html`。
 
 ---
 
@@ -212,7 +234,7 @@ CSS 落在 `app/workhub/static/workhub-modules.css` 后面的新段落 `/* --- c
 | 2 | `/collab` 骨架 + 左栏列表（空态） | 能打开面板，看到三类分组，会话行是组件样子 |
 | 3 | 点进会话 + 消息流 + 发送 | 发一条能在另一浏览器看到；`client_msg_id` 重发不重复 |
 | 4 | 未读：服务端算 + 入口按钮数字 + 点开清零 | 两个浏览器：A 发，B 的徽章 +1，B 点开，A、B 都归零 |
-| 5 | 空态 / 加载失败 / 发送失败 / 日期分隔 | 断网发一条，出现红色感叹号；重连后重发成功 |
+| 5 | 空态 / 加载失败 / 日期分隔（发送失败反馈本版未接，见 §1.1 缺口 1） | 断网发一条不产生重复消息，重连后重发成功；红色感叹号尚未出现 |
 | 6 | 三档宽度（1440 / 1024 / 768） | 三张截图，768 无横向滚动 |
 
 **里程碑 4 是这一版真正的验收点**：未读跨设备一致，才证明「服务端只有一个已读位」这件事落实了。
