@@ -457,6 +457,13 @@ INSERT INTO workhub.permission_grants
 SELECT 'position', p.position_id, 'workforce.interfaces', 'review', 'all', now(), 'seed'
   FROM workhub.positions p WHERE p.position_code = 'SYSADMIN';
 
+-- The platform side of the page-review split (0012): the administrator signs
+-- what a department passed up. Department leads get only the first level.
+INSERT INTO workhub.permission_grants
+       (subject_type, position_id, resource, action, scope_type, valid_from, reason)
+SELECT 'position', p.position_id, 'workforce.interfaces', 'review_company', 'all', now(), 'seed'
+  FROM workhub.positions p WHERE p.position_code = 'SYSADMIN';
+
 
 -- A department that has drawn a screen, so the workbench and the review queue
 -- have something real to show.  The descriptor is the current schema; the

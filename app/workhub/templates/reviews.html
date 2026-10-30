@@ -4,13 +4,14 @@
 <div class="pagehead">
   <div>
     <h1>页面审核</h1>
-    <p class="sub">部门提交的页面先在这里过一遍。通过后它成为正式页面，填写的正式数据进入公司汇总。</p>
+    <p class="sub">部门提交的页面先在部门内初审。只给本部门用的，初审通过就启用；要进公司汇总、对外公开、或用了别的部门的页面做底子的，初审后进入公司终审。</p>
   </div>
-  <span class="pill neutral">待审核 {{ pending | length }}</span>
+  <span class="pill neutral">待我审 {{ pending | length }}</span>
 </div>
 
 {% if saved == 'approved' %}<div class="flash" role="status">已通过。该页面现在正式使用，数据进入公司汇总。</div>
-{% elif saved == 'rejected' %}<div class="flash" role="status">已退回，部门会看到退回原因。</div>{% endif %}
+{% elif saved == 'rejected' %}<div class="flash" role="status">已退回，部门会看到退回原因。</div>
+{% elif saved == 'passed' %}<div class="flash" role="status">部门初审通过。这一页要进公司汇总/对外公开，已转到公司终审。</div>{% endif %}
 {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
 
 {# 待审核卡占满一整行，卡内再分 8 / 4：左边是「这一版改了什么」，
@@ -24,6 +25,9 @@
       <div class="row" style="gap:8px">
         <span class="title-line">{{ p.org_name }} · {{ p.name }}</span>
         <span class="pill neutral">v{{ p.version_no }}</span>
+        {% if p.review_stage == 'company' %}<span class="pill warning">公司终审</span>
+        {% else %}<span class="pill neutral">部门初审</span>{% endif %}
+        {% if p.acting == 'company_proxy' %}<span class="pill warning">平台代审</span>{% endif %}
         {% if b.first_version %}<span class="pill info">首版</span>{% endif %}
       </div>
       <p class="meta">
@@ -73,11 +77,17 @@
     <form method="post" action="/reviews/{{ p.interface_id }}/approve">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <div class="caption">通过</div>
+      {% if p.review_stage == 'company' %}
       <div class="hint">通过后这一版立刻对外，备注写进审计记录。</div>
+      {% elif p.acting == 'company_proxy' %}
+      <div class="hint">这个部门没有别人能审这一页（唯一的审核人就是提交者），这一票由平台代签，记录里会写明是代审。</div>
+      {% else %}
+      <div class="hint">初审通过后立刻启用；这一版要进公司汇总或对外公开的，会自动转到公司终审。</div>
+      {% endif %}
       <div class="controls">
         <input id="note-a-{{ p.interface_id }}" name="note" maxlength="500"
                aria-label="通过备注（可留空）" placeholder="通过备注（可留空）">
-        <button type="submit">通过并启用</button>
+        <button type="submit">{{ '通过并启用' if p.review_stage == 'company' else '初审通过' }}</button>
       </div>
     </form>
     <form method="post" action="/reviews/{{ p.interface_id }}/reject">
@@ -90,7 +100,7 @@
           {% for r in reasons %}<option value="{{ r.code }}" title="{{ r.hint }}">{{ r.label }}</option>{% endfor %}
         </select>
         <input id="note-r-{{ p.interface_id }}" name="note" required maxlength="500"
-               aria-label="退回说明（必填）" placeholder="退回说明（必填）：这个词还在用，删掉之后这些条目没有落点">
+               aria-label="退回说明（必填）" placeholder="退回说明（必填）：说清哪里不行">
         <button type="submit" class="danger">退回部门</button>
       </div>
     </form>
@@ -98,7 +108,31 @@
   </div>
 </section>
 {% endfor %}
-{% if not pending %}<div class="card span-12"><p class="empty">没有待审核的页面。</p></div>{% endif %}
+{% if not pending %}<div class="card span-12"><p class="empty">没有轮到你审的页面。</p></div>{% endif %}
+
+{# 平台看得到全公司在等什么，但不在这里替他按：能审谁由权限决定，
+   这段只回答「这页为什么还没上线」。 #}
+{% if powers.company and others %}
+<div class="card span-12" id="elsewhere">
+  <div class="card-head"><div>
+    <h2 style="margin:0">别处还在等初审</h2>
+    <p class="meta">全公司还没审完的页面。这里只读——初审归各自的部门负责人。</p>
+  </div></div>
+  <table style="margin-top:12px">
+    <thead><tr><th>提交时间</th><th>部门 · 页面</th><th>提交人</th><th>在等谁</th></tr></thead>
+    <tbody>
+    {% for o in others %}
+      <tr>
+        <td class="mono">{{ o.updated_at | dt }}</td>
+        <td>{{ o.org_name }} · {{ o.name }} <span class="pill neutral">v{{ o.version_no }}</span></td>
+        <td>{{ o.author or '—' }}</td>
+        <td>{% if o.review_stage == 'company' %}公司终审{% else %}部门初审{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 <div class="card span-12" id="decided">
   <div class="card-head"><h2 style="margin:0">最近决定</h2></div>

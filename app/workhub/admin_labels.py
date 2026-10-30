@@ -48,6 +48,7 @@ CAPABILITY_VERBS = {
     "manage": "管理",
     "submit": "提交",
     "review": "审核",
+    "review_company": "公司终审",
     "issue": "签发",
 }
 
