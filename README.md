@@ -28,6 +28,7 @@
 - [界面描述格式（JSON Schema 草案）](docs/architecture/interface-descriptor-schema.md)
 - [部门界面使用说明](docs/runbooks/department-interface-guide.md)
 - [部门页面：制作、试填、审核、启用](docs/runbooks/department-page-lifecycle.md)
+- [建一页、过一审（一页纸，给第一次试用的人）](docs/runbooks/first-page-trial.md)
 - [在你电脑上跑起来（本地试用）](docs/runbooks/local-trial.md)
 - [商品中心只读数据接入](docs/runbooks/product-hub-data-access.md)
 - [商品中心 MCP 接入 DSH 经过（含踩坑记录）](docs/runbooks/product-hub-mcp-setup-journey.md)
