@@ -134,10 +134,11 @@
 
 ## 9. 验收（已可执行）
 
-`scripts/cdp-grid-check.mjs`：起一个无头 Chrome，按给定宽度逐页量「同一行子元素 top 是否相等 / 跨度宽度 / 横向溢出」，同时可选落盘截图。
+用 ego 浏览器跑：按给定宽度逐页量「同一行子元素 top 是否相等 / 跨度宽度 / 横向溢出」，同时可选落盘截图（命令、视口写法与断言见 `AGENTS.md`「浏览器自动化」）。
 
 ```sh
-node scripts/cdp-grid-check.mjs assets/screenshots/2026-10-28-grid 1440,1024,768 /settings,/reviews 1
+# 量测脚本写到 /tmp/grid-check.mjs，内部按 1440 / 1024 / 768 循环，截图落 assets/screenshots/
+ego-browser nodejs < /tmp/grid-check.mjs
 ```
 
 页面内联检查（贴进 DevTools 控制台也行）：
@@ -160,9 +161,9 @@ document.documentElement.scrollWidth > document.documentElement.clientWidth && c
 | 4 | 间距 `.stack-20` → `.stack-16` | ✅ | `templates/base.html:487`、`templates/reviews.html:17` |
 | 5 | `AGENTS.md` 硬规则 | ✅ | 见「做界面之前必读」第三条 |
 | 6 | Figma 三张页面模板（1440 / 1024 / 768） | ✅ | 页面 `03 · 页面稿`，frame `219:13187` / `219:13273` / `219:13359` |
-| 7 | 验收脚本 | ✅ | `scripts/cdp-grid-check.mjs` |
+| 7 | 验收方式 | ✅ | ego 浏览器三档量测（见 `AGENTS.md`「浏览器自动化」） |
 
-实测（`node scripts/cdp-grid-check.mjs`）：1440 → 8+4 = 827 + 406，gap 16，行内等高 346；1024 / 768 → 全部单列；三档 `overflowX` 全为 0。
+实测（2026-10-28 量得，结论仍有效）：1440 → 8+4 = 827 + 406，gap 16，行内等高 346；1024 / 768 → 全部单列；三档 `overflowX` 全为 0。
 
 Figma 三张模板放在 `03 · 页面稿` 页面下方 y≈5100 处（Starter 计划只有 3 页，不能新建页面），每张都画了 rail、内容列、12 列标尺、跨度白名单与 8+4 / 12 的样例行。1024 与 768 的样例行按实际行为画成**上下堆叠**，不是并排——模板必须画实现，不能画愿望。
 
