@@ -77,6 +77,21 @@ CONTAINER_ALLOWED_KEYS: frozenset[str] = frozenset(
 #: Keys that only a v0.2 descriptor may use (contract §3).
 MODULES_V02_KEYS: tuple[str, ...] = ("children", "module_version")
 
+#: Every key a module node may carry besides its own declared params (contract §3).
+#: Anything else is refused instead of ignored: a silently dropped key reads to the
+#: author as "it worked".
+#:
+#: `aggregatable` is here on purpose: a v0.1 node carried it as a flag, and the
+#: upgrader keeps `aggregatable: false` on the v0.2 node because it means "this
+#: department only, never in the company rollup" (see workhub.upgrade). It is not a
+#: param -- no module declares it -- so it is tolerated by name, nothing more.
+MODULE_NODE_KEYS: frozenset[str] = frozenset(
+    {
+        "key", "type", "order", "params", "module_version", "children",
+        "source_fields", "aggregatable",
+    }
+)
+
 
 # --------------------------------------------------------------------------- #
 # The spec
@@ -112,8 +127,25 @@ class ModuleSpec:
         }
 
 
-def _param(type_name: str, *, default: Any = None, required: bool = False) -> dict[str, Any]:
-    return {"type": type_name, "required": required, "default": default}
+def _param(
+    type_name: str,
+    *,
+    default: Any = None,
+    required: bool = False,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> dict[str, Any]:
+    """One param declaration. `minimum` / `maximum` are emitted only for ranged ints.
+
+    The range is part of the declaration, not just of the renderer's clamp: an
+    author who writes `rows: 9` must be told, not silently given five rows.
+    """
+    declaration: dict[str, Any] = {"type": type_name, "required": required, "default": default}
+    if minimum is not None:
+        declaration["minimum"] = minimum
+    if maximum is not None:
+        declaration["maximum"] = maximum
+    return declaration
 
 
 def _spec(
@@ -214,7 +246,8 @@ _register(
     _spec(
         "table", "明细表", "input",
         "多行明细，列由参数声明。",
-        {"columns": _param("list[{key,label}]", required=True)},
+        {"columns": _param("list[{key,label}]", required=True),
+         "rows": _param("int", default=1, minimum=1, maximum=5)},
         consumes=("title", "status", "note"),
         produces=("status", "note"),
         aggregatable=True,
@@ -300,6 +333,85 @@ def get_module(key: str) -> ModuleSpec | None:
     if not isinstance(key, str):
         return None
     return MODULE_REGISTRY.get(key)
+
+
+# --------------------------------------------------------------------------- #
+# Param values: nested or flat, never silently dropped
+# --------------------------------------------------------------------------- #
+
+
+def _declared_default(declaration: Any) -> Any:
+    if isinstance(declaration, dict) and "default" in declaration:
+        return declaration["default"]
+    return None
+
+
+def written_param_names(module: Any) -> set[str]:
+    """Param names the author actually wrote, nested (`params.rows`) or flat (`rows`).
+
+    Both shapes are accepted for a *declared* param, because an author who writes
+    `rows: 3` next to `params.columns` means it and must not be ignored. A name
+    that the module did not declare is not a param in either shape -- the
+    descriptor validator refuses it as an unknown node key.
+    """
+    if not isinstance(module, dict):
+        return set()
+    spec = get_module(module.get("type"))
+    declared = set(spec.params) if spec is not None else set()
+    written: set[str] = set()
+    nested = module.get("params")
+    if isinstance(nested, dict):
+        written |= {name for name in nested if name in declared}
+    written |= {name for name in declared if name in module}
+    return written
+
+
+def module_params(module: Any) -> dict[str, Any]:
+    """Declared param values for one node: registry defaults, `params`, then flat keys.
+
+    Precedence: `params.<name>` wins over a flat `<name>` when both are present,
+    since that is the shape the contract documents. The renderer and the validator
+    both read params through here, so they can never disagree about what a node
+    asked for.
+    """
+    if not isinstance(module, dict):
+        return {}
+    spec = get_module(module.get("type"))
+    merged: dict[str, Any] = {}
+    if spec is not None:
+        for name, declaration in spec.params.items():
+            merged[name] = _declared_default(declaration)
+    nested = module.get("params")
+    given = nested if isinstance(nested, dict) else {}
+    merged.update(given)
+    spec_params = spec.params if spec is not None else {}
+    for name in spec_params:
+        if name in module and name not in given:
+            merged[name] = module[name]
+    return merged
+
+
+def param_problem(spec: ModuleSpec, name: str, value: Any) -> str | None:
+    """Why `value` cannot serve as param `name`, or None when it is fine.
+
+    Only the types that carry a range are checked here (`int` with `minimum` /
+    `maximum`); everything else is validated where it is rendered.
+    """
+    declaration = spec.params.get(name)
+    if not isinstance(declaration, dict):
+        return None
+    type_name = declaration.get("type") or ""
+    if type_name != "int":
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        return f"param {name!r} of module {spec.key!r} must be an integer, got {value!r}"
+    minimum = declaration.get("minimum")
+    maximum = declaration.get("maximum")
+    if minimum is not None and value < minimum:
+        return f"param {name!r} of module {spec.key!r} must be at least {minimum}, got {value}"
+    if maximum is not None and value > maximum:
+        return f"param {name!r} of module {spec.key!r} must be at most {maximum}, got {value}"
+    return None
 
 
 def list_modules(layer: str | None = None) -> list[dict[str, Any]]:

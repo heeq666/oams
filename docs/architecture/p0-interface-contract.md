@@ -60,7 +60,7 @@ def validate_module_tree(modules: list[dict]) -> list[str]        # 全部结构
 | `divider` | container | `label: str = ""` | — | — | — |
 | `spacer` | container | `size: str = "md"` | — | — | — |
 | `progress_row` | input | — | title, status, progress_value, note, evidence | status, progress_value, note, evidence | True |
-| `table` | input | `columns: list[{key,label}]` | title, status, note | status, note | True |
+| `table` | input | `columns: list[{key,label}]`、`rows: int = 1`（1–5） | title, status, note | status, note | True |
 | `timeline` | input | — | title, due_at, status | due_at, status | True |
 | `blocker_list` | input | — | title, blocked_reason, needs_decision, status | blocked_reason, needs_decision | True |
 | `metric_input` | input | `unit: str` | title, metric_value | metric_value | True |
@@ -72,6 +72,8 @@ def validate_module_tree(modules: list[dict]) -> list[str]        # 全部结构
 | `rank_list` | display | `metric_key: str`、`limit: int = 5` | — | — | None |
 | `activity_feed` | display | `limit: int = 10` | — | — | None |
 | `note_block` | display | `text: str` | — | — | None |
+
+**参数写法（2026-10-30 补）**：声明过的参数可以写在 `params` 里，也可以平铺在节点上（`rows: 3` 与 `params: {rows: 3}` 等价；两处都写时以 `params` 为准）。两种写法都按声明校验：`table` 的 `rows` 只能是 1–5 的整数，越界或写错类型**明确报错**（`DATA_RULE_VIOLATION`），不再静默忽略。节点上出现既不是声明参数、也不在节点固定键（`key`/`type`/`order`/`params`/`module_version`/`children`/`source_fields`/`aggregatable`）里的键，同样报错。
 
 **铁律（校验器必须拦）**：容器节点不允许出现 `source_fields`；容器不允许有 `params.text`；任何文字/数字只能来自 `note_block`、`metric_card` 等预设模块。容器只能有 `children`。
 

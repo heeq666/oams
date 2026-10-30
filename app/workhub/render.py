@@ -100,7 +100,7 @@ _CONTRACT_TABLE: tuple[tuple, ...] = (
     ("progress_row", "input", "进度行",
      {}, ("title", "status", "progress_value", "note", "evidence"),
      ("status", "progress_value", "note", "evidence"), True),
-    ("table", "input", "明细表", {"columns": []},
+    ("table", "input", "明细表", {"columns": [], "rows": 1},
      ("title", "status", "note"), ("status", "note"), True),
     ("timeline", "input", "里程碑", {},
      ("title", "due_at", "status"), ("due_at", "status"), True),
@@ -304,12 +304,14 @@ def params_of(module: Any) -> dict:
         for name, decl in declared.items():
             merged[name] = _param_default(decl)
     override = module.get("params")
-    if isinstance(override, dict):
-        merged.update(override)
-    else:  # tolerate flat keys (older descriptor shape)
-        for name in list(merged):
-            if name in module:
-                merged[name] = module[name]
+    given = override if isinstance(override, dict) else {}
+    merged.update(given)
+    # A declared param may also be written flat on the node (`rows: 3` beside
+    # params.columns). Precedence matches workhub.modules.module_params: the nested
+    # shape wins. Without this the validator would accept a value the page ignores.
+    for name in declared:
+        if name in module and name not in given:
+            merged[name] = module[name]
     return merged
 
 
