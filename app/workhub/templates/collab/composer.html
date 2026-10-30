@@ -5,7 +5,12 @@
   <div class="collab-composer-box">
     <textarea name="body" rows="1" maxlength="4000" required
               placeholder="{{ placeholder }}" aria-label="发言">{{ draft }}</textarea>
-    <button type="submit" class="collab-send" aria-label="发送" title="发送">↑</button>
+    <button type="submit" class="collab-send" aria-label="发送" title="发送">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path>
+      </svg>
+    </button>
   </div>
   <p class="collab-composer-hint">以「{{ member.display_name }}」的身份发言</p>
 </form>
