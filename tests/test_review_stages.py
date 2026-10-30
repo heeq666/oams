@@ -217,15 +217,23 @@ def test_a_public_page_stops_at_the_company_stage_after_the_department_agrees(ro
     assert (row["status"], row["review_stage"]) == ("pending", "company")
     assert row["reviewed_at"] is None
     audit = room["conn"].execute(
-        """SELECT count(*) AS n FROM workhub.workforce_audit_events
+        """SELECT after_state FROM workhub.workforce_audit_events
             WHERE subject_id = %s AND event_type = 'interface.review_stage_passed'""",
-        (page,)).fetchone()
-    assert audit["n"] == 1
+        (page,)).fetchall()
+    assert len(audit) == 1
+    # 这一趟签的是部门那一级
+    assert audit[0]["after_state"]["stage"] == "department"
 
     room["as_"](PLATFORM)
     _approve(room, page, note="公司过")
     row = _row(room, page)
     assert (row["status"], row["visibility"]) == ("active", "public")
+    final = room["conn"].execute(
+        """SELECT after_state FROM workhub.workforce_audit_events
+            WHERE subject_id = %s AND event_type = 'interface.approved'
+            ORDER BY occurred_at DESC LIMIT 1""",
+        (page,)).fetchone()["after_state"]
+    assert (final["stage"], final["acting"]) == ("company", "company")
 
 
 def test_a_department_lead_cannot_settle_the_final_stage(room):
@@ -271,10 +279,16 @@ def test_a_standing_in_approval_says_so_in_the_audit_record(room):
     _approve(room, page, note="部门没人能审，平台代签")
 
     assert _row(room, page)["status"] == "active"
-    payload = room["conn"].execute(
-        """SELECT after_state FROM workhub.workforce_audit_events
+    event = room["conn"].execute(
+        """SELECT after_state, actor_member_id FROM workhub.workforce_audit_events
             WHERE subject_id = %s AND event_type = 'interface.approved'
             ORDER BY occurred_at DESC LIMIT 1""",
-        (page,)).fetchone()["after_state"]
-    # 记录不能假装部门自己过的
+        (page,)).fetchone()
+    payload = event["after_state"]
+    # 记录不能假装部门自己过的：签的是部门那一级，出手的是平台这个人。
     assert payload["acting"] == "company_proxy"
+    assert payload["stage"] == "department"
+    platform_id = room["conn"].execute(
+        "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+        (PLATFORM,)).fetchone()["member_id"]
+    assert event["actor_member_id"] == platform_id

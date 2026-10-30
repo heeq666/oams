@@ -1264,10 +1264,14 @@ def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
     # on the 12th" can be answered from the audit log alone.
     bundle = _review_bundle(conn, page)
     summary = bundle["summary"]["headline"] if bundle else ""
+    # Which level this signature belongs to, spelled out instead of inferred from
+    # `acting` later: a stand-in still signs the *department's* half, and a reader
+    # of the log must not have to know the vocabulary to see that.
+    signed_level = "company" if acting == "company" else "department"
     api.audit(conn, principal["member_id"], "interface.approved", "interface", page["interface_id"],
               (note.strip() or "review approved") + (f"｜{summary}" if summary else ""),
-              {"to": "active", "version_no": page["version_no"], "acting": acting,
-               "changes": bundle["summary"]["total"] if bundle else 0})
+              {"to": "active", "version_no": page["version_no"], "stage": signed_level,
+               "acting": acting, "changes": bundle["summary"]["total"] if bundle else 0})
 
 
 @router.get("/reviews", response_class=HTMLResponse)
@@ -1369,7 +1373,7 @@ def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
         api.audit(conn, principal["member_id"], "interface.review_stage_passed", "interface", interface_id,
                   note.strip() or "department passed the page to the company stage",
                   {"from": "department", "to": "company", "version_no": page["version_no"],
-                   "acting": acting})
+                   "stage": "department", "acting": acting})
     return RedirectResponse(url="/reviews?saved=passed", status_code=303)
 
 
