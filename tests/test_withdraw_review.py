@@ -19,7 +19,13 @@ pytestmark = pytest.mark.db  # needs a live PostgreSQL and a served app
 
 
 def _script() -> None:
-    """Body of the original standalone e2e script, unchanged."""
+    """Walk the whole withdraw story through the served app, one real request at a time.
+
+    Everything is produced by the product: a page is created, submitted, withdrawn,
+    submitted again and returned by a reviewer.  The one state worth naming is
+    "waiting for review *and* already carrying a decision" -- that comes from
+    returning a page and sending it again, not from writing the columns by hand.
+    """
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
     import psycopg
@@ -142,20 +148,35 @@ def _script() -> None:
     check("rejected page returns to draft with a decision on record",
           row["status"] == "draft" and row["reviewed_at"] is not None, row)
 
+    # A page that was returned once and then sent again is the real way to get a
+    # *waiting page that already carries a decision*: submit only flips the status
+    # back to pending, it does not clear the returned decision.  So this state is
+    # produced by the product itself -- no direct UPDATE is needed (and a direct
+    # UPDATE would test a state nobody can actually reach).
     status, html, _ = design_call(f"/departments/{org}/{iid}")
-    design_call(f"/departments/{org}/{iid}/submit-review", "POST", {"review_csrf": token_of(html)})
+    review_token = token_of(html, "review_csrf")  # the draft page's submit form carries it
+    design_call(f"/departments/{org}/{iid}/submit-review", "POST", {"review_csrf": review_token})
     with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        conn.execute("UPDATE workhub.interfaces SET reviewed_at = now(), reviewed_by = %s WHERE interface_id = %s",
-                     (admin, iid))
+        again = conn.execute("SELECT status, reviewed_at FROM workhub.interfaces WHERE interface_id=%s",
+                             (iid,)).fetchone()
+    check("re-submitted page waits again but still carries the returned decision",
+          again["status"] == "pending" and again["reviewed_at"] is not None, again)
     status, html, _ = design_call(f"/departments/{org}/{iid}")
     check("withdraw button hidden once a decision exists", "撤回提交" not in html)
-    # The endpoint must refuse it even when the button is gone: the guard cannot live in the template.
-    stolen = token_of(html, "csrf") if 'name="review_csrf"' not in html else token_of(html)
+    # The endpoint must refuse it even when the button is gone: the guard cannot live
+    # in the template.  Reuse the page-form token taken from the draft page above --
+    # it binds to the session, not to a page.  (Grabbing the other ``csrf`` field out
+    # of this HTML would only prove that a wrong-purpose token gets a 403, which is a
+    # different guard entirely.)
     status, _, headers = design_call(f"/departments/{org}/{iid}/withdraw-review", "POST",
-                                     {"review_csrf": stolen})
-    check("withdraw refused after a decision", status in (303, 403), status)
-    if status == 303:
-        check("refusal explains why", "error=" in headers.get("location", ""), headers.get("location")[:160])
+                                     {"review_csrf": review_token})
+    location = headers.get("location", "")
+    # 303 is what *both* outcomes return, so the status alone proves nothing: a
+    # successful withdraw would also be a 303 -- only the destination tells them apart.
+    check("withdraw refused after a decision",
+          status == 303 and "saved=withdrawn" not in location, (status, location[:120]))
+    reason = urllib.parse.unquote(location)
+    check("refusal explains why", "error=" in reason and "审核已给出意见" in reason, reason[:160])
     with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
         still = conn.execute("SELECT status FROM workhub.interfaces WHERE interface_id=%s", (iid,)).fetchone()["status"]
     check("page stayed pending after the refused withdraw", still == "pending", still)
