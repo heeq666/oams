@@ -385,6 +385,14 @@ def _check_modules_v02(problems: _Problems, modules: Any, fields: list[dict],
         # are a legal way to write a declared param (`rows: 3` beside params.columns)
         # and are validated exactly like the nested shape -- silently ignoring a key
         # is what made an author believe `rows: 3` had taken effect.
+        #
+        # Containers are excluded on purpose, not by oversight: validate_module_tree
+        # (called above, in this same pass) already refuses any container key outside
+        # CONTAINER_ALLOWED_KEYS -- key/type/order/children/params/module_version --
+        # and that set is *stricter* than MODULE_NODE_KEYS: a container may not carry
+        # source_fields or aggregatable at all. Re-checking containers here would
+        # report every bad key twice and would loosen the stricter rule to this one.
+        # tests/test_descriptor_v02.py locks both halves of that sentence.
         if spec.layer != "container":
             unknown = sorted(set(module) - MODULE_NODE_KEYS - set(spec.params))
             if unknown:

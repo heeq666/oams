@@ -495,3 +495,40 @@ def test_an_undeclared_node_key_is_refused_not_ignored():
     assert codes(problems) == ["DATA_RULE_VIOLATION"]
     assert "unknown key(s) ['rowz']" in problems[0]
     assert "declared params ['columns', 'rows']" in problems[0]
+
+
+# --------------------------------------------------------------------------- #
+# Containers keep their own, stricter key rule (and it is not silent either)
+# --------------------------------------------------------------------------- #
+
+
+def card_node(**extra):
+    """The `card` container inside base(), with extra keys written on the node."""
+    descriptor = base()
+    card = descriptor["modules"][0]["children"][0]
+    assert card["type"] == "card"
+    card.update(extra)
+    return descriptor
+
+
+def test_a_container_key_outside_the_container_set_is_refused():
+    """A typo'd key on a container is caught by validate_module_tree, not ignored."""
+    problems = validate_descriptor(card_node(titl="写错了"))
+    assert codes(problems) == ["DATA_RULE_VIOLATION"]
+    assert "container may only carry children and identity keys" in problems[0]
+    assert "['titl']" in problems[0]
+
+
+def test_a_container_flat_param_is_refused_like_any_other_container_key():
+    """Flat params are a leaf convenience: containers must use params.title.
+
+    Reported exactly once -- the per-node unknown-key check stays out of containers
+    so the stricter container rule is the only verdict.
+    """
+    flat = validate_descriptor(card_node(title="本周打样"))
+    assert codes(flat) == ["DATA_RULE_VIOLATION"]
+    assert "container may only carry" in flat[0]
+    assert len(flat) == 1
+
+    nested = validate_descriptor(card_node(params={"title": "本周打样"}))
+    assert nested == []
