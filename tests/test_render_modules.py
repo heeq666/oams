@@ -290,6 +290,20 @@ def test_readonly_renders_static_fields_only(key):
     assert not widgets(html), key
 
 
+@pytest.mark.parametrize("key", sorted(set(ALL_KEYS) - {"evidence_gallery"}))
+def test_readonly_never_shows_a_wh_input_anywhere(key):
+    """「只读下一个字段控件都没有」对每个可见模块单独出证。
+
+    上面那条只管六个填报模块；容器与展示件本来就不长控件，拿它们间接覆盖
+    是虚的——换个模板把控件漏出来也不会红。所以这里对全部可见模块各证一遍：
+    `wh-input` 计数为 0。
+    """
+
+    html = render_read_only(one(key), VALUES, AGGREGATES)
+    assert 'class="wh-input"' not in html, key
+    assert not DATA_WIDGET.findall(html), key
+
+
 @pytest.mark.parametrize("key", sorted(CONTAINER_KEYS | DISPLAY_KEYS))
 def test_readonly_containers_and_displays_never_show_a_field(key):
     """容器与展示件在只读视角里同样没有字段控件。

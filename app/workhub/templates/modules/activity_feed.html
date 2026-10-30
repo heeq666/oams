@@ -2,7 +2,6 @@
 {% set p = params_of(module) %}
 {% set items = activity_items(p.get('limit')) %}
 <section class="wh-m wh-display wh-activity-feed" data-type="activity_feed">
-  {{ preview_tag(module, spec) }}
   {% if items %}
   <ul class="wh-feed">
     {% for item in items %}

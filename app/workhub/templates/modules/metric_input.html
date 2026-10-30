@@ -2,8 +2,7 @@
 {% set p = params_of(module) %}
 {% set unit = p.get('unit') or '' %}
 <section class="wh-m wh-input wh-metric-input" data-type="metric_input">
-  {{ preview_tag(module, spec) }}
-  {% if mode == 'edit' %}
+  {% if inline_widgets() %}
   {{ input_for('title') }}
   <div class="wh-inline">
     {{ input_for('metric_value') }}

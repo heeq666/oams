@@ -3,7 +3,6 @@
 {% set metrics = as_list(p.get('metrics')) %}
 {% set labels = as_list(p.get('labels')) %}
 <section class="wh-m wh-display wh-flow-strip" data-type="flow_strip">
-  {{ preview_tag(module, spec) }}
   {% for key in metrics %}
   {% if not loop.first %}<span class="wh-arrow" aria-hidden="true">&rarr;</span>{% endif %}
   {% set stage_label = labels[loop.index0] if loop.index0 < (labels | length) else metric_name(key) %}

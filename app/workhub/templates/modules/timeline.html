@@ -2,7 +2,6 @@
 {% set p = params_of(module) %}
 {% set items = as_list(p.get('items')) %}
 <section class="wh-m wh-input wh-timeline" data-type="timeline">
-  {{ preview_tag(module, spec) }}
   {% if items %}
   <ol class="wh-timeline-list">
     {% for item in items %}
@@ -14,7 +13,7 @@
     {% endfor %}
   </ol>
   {% endif %}
-  {% if mode == 'edit' %}
+  {% if inline_widgets() %}
   <div class="wh-grid-3">
     {{ input_for('title') }}
     {{ input_for('due_at') }}

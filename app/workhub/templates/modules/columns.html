@@ -2,7 +2,6 @@
 {% set p = params_of(module) %}
 <div class="wh-m wh-container wh-columns wh-columns-{{ as_int(p.get('columns'), 2) }} wh-gap-{{ gap_of(module) }}"
      data-type="columns">
-  {{ preview_tag(module, spec) }}
   {% for child in children_of(module) %}
   <div class="wh-cell">{{ render_module(child) }}</div>
   {% endfor %}

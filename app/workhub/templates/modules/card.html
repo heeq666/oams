@@ -2,7 +2,6 @@
 {% set p = params_of(module) %}
 {% set title = p.get('title') %}
 <section class="wh-m wh-container wh-card" data-type="card">
-  {{ preview_tag(module, spec) }}
   {% if title %}<h3 class="wh-card-title">{{ title }}</h3>{% endif %}
   <div class="wh-card-body">
     {% for child in children_of(module) %}
