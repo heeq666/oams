@@ -236,13 +236,31 @@ def render_interface(descriptor: dict, values: dict | None = None,
 
 def render_read_only(descriptor: dict, values: dict | None = None,
                      aggregates: dict[str, float] | None = None) -> str
-    # 管理层视角：不出现任何 input，跳过 aggregatable=False 的模块
+    # 管理层视角：一个字段控件都不出现（input / select / textarea 全无），只出静态值
 
 def render_preview(descriptor: dict, sample: bool = True) -> str
-    # MCP preview_descriptor 用：假数据 + 在每块右上角标出「进汇总 / 不进汇总」
+    # 审核视角：假数据 + 真实控件，但控件一律 disabled 且 tabindex="-1"（看得见、点不动）
+    # 不再标注「进汇总 / 不进汇总」；汇总口径的出口是 preview_descriptor 返回的
+    # aggregates_preview（app/workhub/mcp/tools.py:474）
 ```
 
 模块 → 片段：每个 key 对应 `templates/modules/<key>.html`，由 `render.py` 用 `jinja2.Environment` 载入并渲染，**上下文固定为** `{module, spec, values, aggregates, mode}`（`mode` ∈ `edit`/`readonly`/`preview`）。
+
+### 6.1 空值语义（行为级约定，不只是样式）
+
+- 空值统一渲染 **`—`（U+2014）**，`0` 只表示零，两者不许混。`render.py:226` 的 `EMPTY = "\u2014"` 是唯一写法。
+- `aggregate()` / `format_number()` 遇到 `None` / `""` 返回 `EMPTY`，**不返回 `0`，也不返回 `--`**。
+- `progress_percent()` 对未填返回 **`None`**（不是 `0`）；模板据此渲染 `—` + 空轨道，不能显示成 `0%`（`render.py:394-402`，`progress_row.html:16`）。
+- 这条是契约不是样式：谁把未填渲染成 `0`，汇总数字就会凭空多出一个零，属于必须拦下的错。
+
+### 6.2 只读视角剔除「不进公司汇总」的模块
+
+只读是**公司层看数**的视角，不是审核视角。规则：`aggregatable=False` 的模块在 `readonly` 下**整块不渲染**——不是「渲染出来但不给控件」。
+
+- **为什么**：只读的产物要进公司汇总，进不了汇总的模块留着只占地方；证据区的链接是部门私有的、不出楼，给公司层看既无汇总意义，又多一层外泄面。
+- **现在只有一个**：`evidence_gallery`，`MODULE_REGISTRY` 里唯一的 `aggregatable=False`（`app/workhub/modules.py:249`）。
+- **审核要看证据，走 `preview`**：真实控件 `disabled`、证据区照常渲染。两个视角分工清楚，不冲突。
+- 代码：`render.py:18-20` 的 docstring 写明 "skipped entirely"、`:732` 的 `state.mode == "readonly" and _hidden_in_readonly(...)`、`:755` `_hidden_in_readonly`；测试 `tests/test_render_modules.py:327` 断言只读下不出现 `data-type="evidence_gallery"`。
 
 ---
 

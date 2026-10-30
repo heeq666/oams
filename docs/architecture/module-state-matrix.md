@@ -11,19 +11,19 @@
 | 视图 | 谁看 | 应该长什么样 |
 | --- | --- | --- |
 | `edit` 填报 | 填这页的岗位 | 控件 + 我的值 + 私有提示（本部门可见） |
-| `readonly` 只读 | 上级 / 汇总 | 静态文本；私有件剔除，但 `evidence_gallery` **保留只读**（拍板 4） |
+| `readonly` 只读 | 上级 / 汇总 | 静态文本；**不进公司汇总的模块整块剔除**——`evidence_gallery` 是唯一一个（`aggregatable=False`，`app/workhub/modules.py:249`），只读下不渲染（拍板 4，2026-10-30 改按代码） |
 | `preview` 审核 | 部门管理员 / 平台 | **可填形态** + 示例假值 + 控件 `disabled tabindex="-1"`；**不带任何角标** |
 
 preview 不是「只读 + 角标」——那套旧方案**整体作废**，不是只把只读换成可填。审核审的是**这页的定义**：字段对不对、控件类型对不对、表列够不够，只读态看不出来。`disabled` 不参与提交，安全性不降。
 
-「进汇总 / 不进汇总」是 **descriptor 的属性**，不是模块长出来的东西：它出现在 `preview_descriptor` 的返回里和 `/preview` 页面的侧栏里，模块自身不画（2026-10-30 拍板，见 §5 第 6 条）。
+「进汇总 / 不进汇总」是 **descriptor 的属性**，不是模块长出来的东西：它出现在 `preview_descriptor` 返回的 `aggregates_preview` 里；**网页端目前没有预览页**，审核要看定义走 MCP 或 CLI，模块自身不画（2026-10-30 拍板，见 §5 第 6 条）。
 
 ### 1.2 八条拍板（2026-10-30 定）
 
 1. 三视图 = 填报 / 只读 / preview（可填形态 + 假值 + 控件 disabled）。
 2. **模块层不建「加载失败」态**。模块在服务端一次同步渲染，一次渲染里不存在「某个模块失败」；失败统一归页面级 Alert（Figma `140:3754`）。
 3. 空值统一 **`—`（U+2014）**，`0` 只表示零，两者不许混。
-4. `readonly` **保留 `evidence_gallery` 只读**，不再整块剔除。
+4. `readonly` **整块剔除**不进公司汇总的模块。现在只有 `evidence_gallery` 一个（`MODULE_REGISTRY` 里唯一的 `aggregatable=False`，`app/workhub/modules.py:249`）。理由：只读是**公司层看数**的视角，证据的链接是部门私有的、不出楼，给公司层看既无汇总意义，又多一层外泄面；**审核要看证据走 `preview`**（真实控件 `disabled`、证据区照常渲染），两个视角分工清楚。2026-10-30 改为按代码现状，先前「保留只读」那条作废。
 5. 图标只 4 枚：`plus` / `trash-2` / `external-link` / `arrow-right`，不给每个模块配语义图标。
 6. 表格编辑态走**单元格内联编辑**（高 28、聚焦才描边），行高从 42 收回 30。
 7. 多列断点两档：**> 1100 原列数 / 900–1100 最多 2 列 / < 900 单列**；5 列退 **2 列**（不退 1 列）。
@@ -124,7 +124,7 @@ preview 不是「只读 + 角标」——那套旧方案**整体作废**，不�
 
 ### 3.2 只读视图（`readonly`）
 
-三档里只读与填报的差别：**控件换静态文本、私有件剔除（但 `evidence_gallery` 保留，拍板 4）**。下表只列与 §3.1 不同的格子；写「同填报」的就是与 §3.1 同一格。
+三档里只读与填报的差别：**控件换静态文本、不进公司汇总的模块整块剔除**（`evidence_gallery`，拍板 4）。下表只列与 §3.1 不同的格子；写「同填报」的就是与 §3.1 同一格。
 
 | 模块 | 空 | 不全 | 有数据 |
 | --- | --- | --- | --- |
@@ -140,12 +140,12 @@ preview 不是「只读 + 角标」——那套旧方案**整体作废**，不�
 | 10 `timeline` | 「还没有里程碑。」（**无**加节点） | 同填报 | 固定项列表 + 我填的「下一条」 |
 | 11 `blocker_list` | 同填报 | 同填报 | 同填报（下拉换徽章） |
 | 12 `metric_input` | 未填 → `—` + 「未填」 | 同填报 | 标题 + 格式化数值 + 单位 |
-| 13 `evidence_gallery` | 「没有提供证据。」（与填报不同：不是「上传」） | 同填报 | **保留只读**（拍板 4）：标题 + 链接 + `external-link` |
+| 13 `evidence_gallery` | **整块不渲染**（只读剔除，拍板 4） | — | — |
 | 14–20 展示层 7 件 | 同填报 | 同填报 | 同填报（展示层三视图本就没有差别） |
 
 ### 3.3 preview 视图（`preview`）
 
-preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块上**不画角标**——「进汇总 / 不进汇总」属 descriptor，归 `preview_descriptor` 返回与 `/preview` 侧栏（§5 第 6 条）。
+preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块上**不画角标**——「进汇总 / 不进汇总」属 descriptor，归 `preview_descriptor` 返回的 `aggregates_preview`（§5 第 6 条）；网页端没有预览页，看预览走 MCP 或 CLI。
 
 唯一例外是 `tabs` 的 tab 条：它是**切换控件不是数据控件**，只换面板不动数据，edit / readonly / preview 三视图都保持可操作（§5 第 1 条）；面板里的字段控件才跟 mode 走。
 
@@ -191,12 +191,11 @@ preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块�
 | `timeline` | 空 | 还没有里程碑。+「加第一个节点」 | `timeline.html:25` 前插入 | 新增（现在 `milestones` 空时啥也不渲染） |
 | `metric_input` | 空 | 未填 | `metric_input.html:15` | 新增：`format_number()` 返回 `EMPTY` 时值位显示「未填」（12 号 `text/muted`），不是 `—`——这里表达的是「这个指标这期没报」 |
 | `evidence_gallery` | 空（填报） | 还没有上传证据。 | `evidence_gallery.html:14` 前插入 | 新增（现在无空态） |
-| `evidence_gallery` | 空（只读） | 没有提供证据。 | `evidence_gallery.html:14` 前插入 | 新增，只读分支 |
+| `evidence_gallery` | 空（只读） | —（整块不渲染） | — | 不写：只读剔除，这句只在 `preview` 空态用（§3.3 第 13 行已改） |
 | `status_chart` | 空 | 还没有状态数据。 | `status_chart.html:6` 前插入 | 新增：`rows` 空时不画空轨道 |
 | `note_block` | 空 | （无文案，整块隐藏） | `note_block.html:3` | 改：`text` 空 → `<section>` 整个不渲染（现在是空框） |
 | `progress_row` | 不全 | 未填写标题 | `progress_row.html:14` | 保留 |
 | `timeline` | 不全 | 未填写里程碑 / 未排期 | `timeline.html:25` / `:27` | 保留 |
-| 全部 20 件 | 三视图 | 删掉 `{{ preview_tag(module, spec) }}` | 各模板第 3–6 行 | 改：角标下线（§5 第 6 条） |
 
 `.wh-empty` 的样式口径：一行 13 号 `text/muted`，模块高度 ≤48、不塌不涨（§1.3）；需要动作时后缀一句可点文字，不加按钮。
 
@@ -205,6 +204,12 @@ preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块�
 模块层现在**零图标**（`templates/modules/` 全目录 grep 无 `svg` / `wh-icon`），且 `flow_strip.html:8` 拿 `&rarr;` 当箭头、`evidence_gallery` 的 `↗` 是 Figma 描述里有、代码里没有。收口口径按拍板 5：只上 4 枚动作/方向图标（§1.5），不给每个模块配语义图标。
 
 > 这条是**临时缺口记录**，4 枚图标落地（B4 批）后删掉本节。
+
+### 4.3 网页端缺一个审核预览页（2026-10-30 记，**未实现**）
+
+审核要看的是「这页的定义」，现在只有两个出口：MCP 的 `preview_descriptor` 工具（`app/workhub/mcp/tools.py:484`）和 CLI 的 `workhub plugin` 子命令（`app/workhub/plugin_cli.py:88`，离线预览）。**`web.py` 里没有任何 preview 路由**，`reviews.html` 也不渲染预览——本文档原先写的「`/preview` 页面 / 侧栏」是不存在的页面，2026-10-30 已按实话改掉。
+
+缺的是一页：网页里选一个 descriptor、按 `render_preview` 渲染（真实控件 `disabled`、假值），旁边一栏显示 `aggregates_preview` 的「进汇总 / 不进汇总」判定。在那之前，审核走 MCP 或 CLI，别按有预览页来设计。
 
 ## 5. 已拍板（2026-10-30）
 
@@ -215,17 +220,17 @@ preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块�
 | 1 | `tabs` 两套 UI（不可点的 tab 条 + `<details>` 手风琴） | **选 radio 纯 CSS 真 tab，删掉 `<details>` / `<summary>`** | ① 模块名就叫 tabs，做成手风琴等于改名；② `.wh-tab` 30 高胶囊在 Figma 里是正经组件，删 tab 条等于丢件；③ `<details>` 允许多个同时展开，跟 tab 语义相反；④ 现在 `<summary>` 的文案跟 tabbar 标签重复，肉眼就是同一行字出现两遍 |
 | 2 | `metric_card` 的「警告 / 告警」变体 | **删，只留常态** | 代码里没有任何阈值逻辑，变体是空的 |
 | 3 | `table` 的 `rows` 参数上限 5 | **保留 5** | 到顶在表尾提示拆表（`table.html:14` 的 `as_int(..., 1, high=5)` 不动） |
-| 4 | G16：preview 在 MCP / CLI 里是裸 HTML | **做**：预览产出自带最小 token 外壳 | 否则 `/preview` 之外看预览没有样式，审核看到的东西跟线上不是一回事 |
+| 4 | G16：preview 在 MCP / CLI 里是裸 HTML | **做**：预览产出自带最小 token 外壳 | 否则 MCP / CLI 里看预览没有样式，审核看到的东西跟线上不是一回事 |
 | 5 | G17：`.wh-input` 的 `padding: 6px 8px` 与圆角 | **删，只留 `width: 100%`** | 跟外壳「30 高 / 内距 0·12 / 圆角 18」是两套值，现在靠 `base.html:11-13` 的 `input:not(…)` 提优先级盖住，能跑但是坑。**删完必须三档截图核验 `base.html:11-13` 能盖住** |
-| 6 | preview 右上角「进汇总 / 不进汇总」角标 | **整条规则删掉**，模块上不画 | 汇总与否是 **descriptor 的属性**，不是模块该长出来的东西：它该出现在 `preview_descriptor` 的返回和 `/preview` 页面侧栏里。旧方案「只读 + 角标」是整体作废，不是只换形态 |
+| 6 | preview 右上角「进汇总 / 不进汇总」角标 | **整条规则删掉**，模块上不画 | 汇总与否是 **descriptor 的属性**，不是模块该长出来的东西：它该出现在 `preview_descriptor` 的返回（`aggregates_preview`）里。旧方案「只读 + 角标」是整体作废，不是只换形态 |
 
 第 1 条的具体口径：tabbar 的 `<span role="tab">` 换成 `<input type="radio">` + `<label>`（`id` 用 `module.id` + 序号），面板从 `<details>` 改回 `<div class="wh-tabpanel">`，靠 `:checked` 兄弟选择器切换。**切换控件在 edit / readonly / preview 三视图下都保持可操作**——它只换面板、不动数据；只有面板里的字段控件跟 mode 走。
 
-第 6 条的代码现状（留给下线时对照）：`aggregate_tag()`（`render.py:647`）与 `preview_tag()`（`:620`）仍在，20 个模块模板全部调用 `preview_tag`，要一并去掉，判定逻辑挪到 `preview_descriptor` 的返回和 `/preview` 侧栏。
+第 6 条的代码现状：**已下线**。`preview_tag()` / `aggregate_tag()` 已从 `render.py` 与 20 个模块模板中移除，模块不再画角标；汇总口径的出口改在 `preview_descriptor` 返回的 `aggregates_preview`（`app/workhub/mcp/tools.py:474`）。两处测试注释也记了这次下线：`tests/test_render_modules.py:260`、`tests/test_render_interface.py:223`。
 
 ## 6. 验收怎么跑
 
 1. 逐模块逐格对照 §3，**文案一字不差**；缺格、多出「加载失败」列、模块上出现「进汇总 / 不进汇总」角标，都算不通过。
 2. `pytest`：本机有库时 **0 skipped** 才算绿（口径见 `AGENTS.md`「约定」）；preview 那条测试要改成「控件必须 disabled」。
-3. `node scripts/cdp-grid-check.mjs` + 1440 / 1024 / 768 三档截图，窄屏无横向滚动；模块层截图与 Figma 逐件对照。
+3. ego 浏览器跑 1440 / 1024 / 768 三档截图，窄屏无横向滚动（断言 `document.documentElement.scrollWidth === clientWidth`，命令见 `AGENTS.md`「浏览器自动化」）；模块层截图与 Figma 逐件对照。
 4. Figma 侧同步：14 件单帧 COMPONENT 改成变体、宽度从 `FIXED 700` 改 FILL、4 枚图标进 `224:14183`——Figma 没改完，代码不算验收通过（改视觉先改 Figma）。
