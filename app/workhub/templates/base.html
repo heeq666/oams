@@ -553,6 +553,31 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .grid-12 > :not(.card) { align-self: start; }
   /* 栅格里的兄弟卡片由 gap 负责间距，别让通用的 .card + .card 再推一次。 */
   .grid-12 > .card + .card { margin-top: 0; }
+  /* ---- 三页（进度中心 / 看板 / 审核）落栅格时补的几条 ----
+     1) 指标行与计分卡、diff 与决定区同排：两块都有底，行高必须齐平，
+        所以指标格要跟着同行最高的那块走（auto-fit 默认只按内容高）。 */
+  .grid-12 > .grid.metrics { align-self: stretch; align-content: stretch; grid-auto-rows: 1fr; }
+  /* 6 个指标挤在 8 列里时 auto-fit 会排出「5 + 1」的孤儿行，宽屏固定 3 列两行。 */
+  @media (min-width: 1090px) {
+    .grid-12 > .grid.metrics.span-8 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  .grid-12 > .channel-scorecard { margin: 0; align-self: stretch; }
+  /* 2) 审核页：决定区也做成有底的小面板，才能和左边的 diff 齐平；
+     决定按钮在右栏，审核时不用滚到卡底。 */
+  .review-card > .grid-12 { margin-top: 16px; }
+  .review-card .diff-block { margin-top: 0; }
+  .review-card .decide { background: var(--subtle); border-radius: var(--r-small); padding: 12px; }
+  /* diff 有底、决定区有底：两块都要拉满行高，短的那块不许浮在中间。 */
+  .grid-12 > .diff-block,
+  .grid-12 > .decide { align-self: stretch; }
+  /* 3) 进度中心：部门卡右栏是一块浅底小面板（4 个数字 + 一个入口）。
+     数字在前、词在后，横着铺满 4 列会因为两端对齐把「未完成」和「3」拉开半屏。 */
+  .progress-side { display: flex; flex-direction: column; gap: 12px;
+                   background: var(--subtle); border-radius: var(--r-small); padding: 12px; }
+  .progress-side .side-row { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+  .progress-side .side-row .n { font-size: 16px; font-weight: 600; min-width: 20px; }
+  .progress-side .side-row .k { color: var(--muted); }
+  .progress-side .side-link { font-size: 13px; }
   /* 只折叠两档：900–1089 把 2:1 拆成上下、4 档/3 档退到两栏或单列；<900 全部单列。 */
   @media (max-width: 1089px) {
     .span-8, .span-4 { grid-column: span 12; }

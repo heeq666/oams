@@ -13,11 +13,12 @@
 {% elif saved == 'rejected' %}<div class="flash" role="status">已退回，部门会看到退回原因。</div>{% endif %}
 {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
 
-{% if pending %}
-<div class="stack-16">
+{# 待审核卡占满一整行，卡内再分 8 / 4：左边是「这一版改了什么」，
+   右边是决定区 —— 审核时决定按钮始终在视线内，不用滚到卡底。 #}
+<div class="grid-12">
 {% for p in pending %}
 {% set b = p.bundle %}
-<section class="card review-card">
+<section class="card review-card span-12">
   <div class="card-head">
     <div>
       <div class="row" style="gap:8px">
@@ -34,7 +35,8 @@
     <a class="spacer" href="/interfaces/{{ p.interface_id }}">预览与试填 →</a>
   </div>
 
-  <div class="diff-block">
+  <div class="grid-12">
+  <div class="span-8 diff-block">
     <p class="diff-head">
       <strong>这一版改了什么</strong>
       <span class="meta">{{ b.summary.headline }}</span>
@@ -67,7 +69,7 @@
     {% endif %}
   </div>
 
-  <div class="decide" style="margin-top:16px">
+  <div class="span-4 decide">
     <form method="post" action="/reviews/{{ p.interface_id }}/approve">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <div class="caption">通过</div>
@@ -93,14 +95,12 @@
       </div>
     </form>
   </div>
+  </div>
 </section>
 {% endfor %}
-</div>
-{% else %}
-<div class="card"><p class="empty">没有待审核的页面。</p></div>
-{% endif %}
+{% if not pending %}<div class="card span-12"><p class="empty">没有待审核的页面。</p></div>{% endif %}
 
-<div class="card" id="decided" style="margin-top:20px">
+<div class="card span-12" id="decided">
   <div class="card-head"><h2 style="margin:0">最近决定</h2></div>
   {% if decided %}
   <table style="margin-top:12px">
@@ -125,5 +125,6 @@
   {% else %}
   <p class="empty" style="margin-top:12px">还没有审核记录。</p>
   {% endif %}
+</div>
 </div>
 {% endblock %}
