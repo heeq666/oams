@@ -365,7 +365,7 @@ def test_preview_has_no_side_effects(registry):
     assert result.payload["errors"] == []
     assert result.payload["persisted"] is False
     assert "<div" in result.payload["rendered_html"]
-    assert "进汇总" in result.payload["rendered_html"]
+    assert "data-mode=" in result.payload["rendered_html"]
     # Nothing was created, and the only audit line is the preview itself.
     assert registry.context.store.all_versions() == []
     assert [e.tool for e in registry.context.audit.entries] == ["preview_descriptor"]

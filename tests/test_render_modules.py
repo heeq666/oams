@@ -25,7 +25,6 @@ from workhub.modules import MODULE_REGISTRY, get_module  # noqa: E402
 from workhub.render import (  # noqa: E402
     MAX_RENDER_DEPTH,
     RenderError,
-    aggregate_tag,
     known_module_keys,
     render_interface,
     render_preview,
@@ -228,19 +227,28 @@ def test_input_modules_offer_widgets_in_edit(key):
 
 
 @pytest.mark.parametrize("key", sorted(CONTAINER_KEYS | DISPLAY_KEYS))
-def test_containers_and_displays_never_offer_widgets(key):
+def test_containers_and_displays_never_offer_data_widgets(key):
+    """容器只排版、展示件只读数，两者都不该长出一个可填的数据字段控件。
+
+    例外是组件自己的视觉机制：tabs 用 `wh-tab-radio` 做纯 CSS 分段切换，
+    不绑任何字段，不算数据控件。
+    """
     html = render_interface(one(key), VALUES, AGGREGATES)
-    assert "<input" not in html
+    assert 'class="wh-input"' not in html
     assert "<select" not in html
     assert "<textarea" not in html
 
 
 @pytest.mark.parametrize("key", ALL_KEYS)
-def test_readonly_never_renders_a_widget(key):
+def test_readonly_never_renders_a_data_widget(key):
+    """只读视角不出现**数据字段**控件：看见的每个值都是排好版的字。
+
+    `wh-input` 是字段控件的类（input / select / textarea 三种都带它）；
+    tabs 的分段切换用 `wh-tab-radio`，那是组件自己的纯 CSS 机制、不绑字段，
+    只读视角照样能切，不算违规。
+    """
     html = render_read_only(one(key), VALUES, AGGREGATES)
-    assert "<input" not in html
-    assert "<select" not in html
-    assert "<textarea" not in html
+    assert 'class="wh-input"' not in html
 
 
 @pytest.mark.parametrize("key", ALL_KEYS)
@@ -257,7 +265,7 @@ def test_containers_carry_no_data_binding_of_their_own(key):
     html = render_interface(one(key), VALUES, AGGREGATES)
     assert 'class="wh-field-label"' not in html
     assert 'class="wh-field"' not in html
-    assert "<input" not in html
+    assert 'class="wh-input"' not in html
 
 
 def test_readonly_skips_department_private_modules():
@@ -270,43 +278,6 @@ def test_readonly_skips_department_private_modules():
 def test_readonly_drops_a_container_whose_children_are_all_private():
     tree = {"type": "card", "params": {"title": "证据"}, "children": [MODULES["evidence_gallery"]]}
     assert "sheet.pdf" not in render_read_only(page(tree), VALUES, AGGREGATES)
-
-
-@pytest.mark.parametrize("key", sorted(INPUT_KEYS | CONTAINER_KEYS | DISPLAY_KEYS))
-def test_preview_tags_every_module_with_its_aggregation_status(key):
-    html = render_preview(one(key))
-    # one tag for the module under test, plus one per note_block leaf it nests
-    expected = 1 + _node_count(MODULES[key]) - 1 + _descendants(MODULES[key]) - _descendants(MODULES[key])
-    assert html.count('class="wh-tag ') >= 1
-
-
-def _descendants(node: dict) -> int:
-    return sum(1 + _descendants(child) for child in node.get("children") or [])
-
-
-def _node_count(node: dict) -> int:
-    return 1 + _descendants(node)
-
-
-@pytest.mark.parametrize("key", ["progress_row", "table", "timeline", "blocker_list",
-                                 "metric_input"])
-def test_aggregating_input_modules_say_so_in_preview(key):
-    assert aggregate_tag(MODULES[key]) == "进汇总"
-    assert "进汇总" in render_preview(one(key))
-
-
-def test_non_aggregating_modules_say_so_in_preview():
-    assert aggregate_tag(MODULES["evidence_gallery"]) == "不进汇总"
-    assert "不进汇总" in render_preview(one("evidence_gallery"))
-    for key in sorted(CONTAINER_KEYS | DISPLAY_KEYS):
-        assert aggregate_tag(MODULES[key]) == "不进汇总", key
-
-
-def test_a_container_never_claims_to_aggregate_even_when_its_children_do():
-    tree = {"type": "rows", "children": [MODULES["progress_row"]]}
-    html = render_preview(page(tree))
-    assert html.count('class="wh-tag wh-tag-on"') == 1     # the progress_row
-    assert html.count('class="wh-tag wh-tag-off"') == 1     # the rows container
 
 
 # --------------------------------------------------------------------------- #
@@ -324,7 +295,7 @@ def test_metric_card_shows_the_aggregate_value_and_unit():
 def test_metric_card_without_aggregates_does_not_invent_a_number():
     html = render_interface(one("metric_card"), {}, {})
     values = re.findall(r'<span class="wh-metric-value">(.*?)</span>', html)
-    assert values == ["--"]
+    assert values == ["\u2014"]        # em dash，不是 0、也不是两个减号
     assert not re.search(r'wh-metric-value">[\d¥]', html)
 
 
