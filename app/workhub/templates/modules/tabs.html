@@ -1,19 +1,14 @@
-{#- Container: tab strip + panels. No JavaScript: <details> keeps it honest and accessible. -#}
+{#- Container: real tabs -- one radio group, labels are the chips, no JS. -#}
 {% set p = params_of(module) %}
 {% set labels = as_list(p.get('labels')) %}
+{% set uid = tabs_uid(module) %}
 <div class="wh-m wh-container wh-tabs" data-type="tabs">
-  {{ preview_tag(module, spec) }}
-  <div class="wh-tabbar" role="tablist">
-    {% for label in labels %}
-    <span class="wh-tab{% if loop.first %} on{% endif %}" role="tab"
-          aria-selected="{{ 'true' if loop.first else 'false' }}">{{ label }}</span>
-    {% endfor %}
-  </div>
   {% for child in children_of(module) %}
-  <details class="wh-tabpanel"{% if loop.first %} open{% endif %}>
-    {% set panel_label = labels[loop.index0] if loop.index0 < (labels | length) else '标签 ' ~ loop.index %}
-    <summary>{{ panel_label }}</summary>
-    {{ render_module(child) }}
-  </details>
+  {% set index = loop.index0 %}
+  {% set label = labels[index] if index < (labels | length) else '标签 ' ~ loop.index %}
+  <input class="wh-tab-radio" type="radio" name="{{ uid }}" id="{{ uid }}-{{ index }}"
+         {% if loop.first %}checked{% endif %}>
+  <label class="wh-tab" for="{{ uid }}-{{ index }}">{{ label }}</label>
+  <div class="wh-tabpanel" data-panel="{{ index }}">{{ render_module(child) }}</div>
   {% endfor %}
 </div>

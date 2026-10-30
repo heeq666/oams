@@ -1,7 +1,6 @@
 {#- Input: the blocked items that need a decision, and who has to make it. -#}
 <section class="wh-m wh-input wh-blocker-list" data-type="blocker_list">
-  {{ preview_tag(module, spec) }}
-  {% if mode == 'edit' %}
+  {% if inline_widgets() %}
   {{ input_for('title') }}
   {{ input_for('blocked_reason', textarea=True) }}
   {{ input_for('needs_decision') }}

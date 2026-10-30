@@ -1,7 +1,6 @@
 {#- Input: one progress row -- status, percentage, note and evidence for a work item. -#}
 <section class="wh-m wh-input wh-progress-row" data-type="progress_row">
-  {{ preview_tag(module, spec) }}
-  {% if mode == 'edit' %}
+  {% if inline_widgets() %}
   <div class="wh-grid-2">
     {{ input_for('title') }}
     {{ input_for('status') }}
@@ -13,11 +12,11 @@
   <div class="wh-row">
     <span class="wh-title">{{ value_of('title') or '未填写标题' }}</span>
     {{ status_badge() }}
-    <span class="wh-num">{{ progress_percent() }}%</span>
+    <span class="wh-num">{{ progress_text() }}</span>
   </div>
   {% if value_of('note') %}<p class="wh-note">{{ value_of('note') }}</p>{% endif %}
   {% if value_of('evidence') %}<p class="wh-evidence">依据：{{ value_of('evidence') }}</p>{% endif %}
   {% endif %}
-  <div class="wh-bar wh-bar-{{ bucket(progress_percent(), 100) }}"><span></span></div>
+  {% if progress_percent() is not none %}<div class="wh-bar wh-bar-{{ bucket(progress_percent(), 100) }}"><span></span></div>{% endif %}
   {{ private_note(module, spec) }}
 </section>

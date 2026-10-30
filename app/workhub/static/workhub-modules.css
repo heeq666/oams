@@ -71,9 +71,22 @@
 }
 
 .wh-container {
-  background: var(--wh-bg-muted);
+  /* 模块块面一律 bg/surface 白底（Figma 模块 / card 148:5953），不再用灰底：
+     灰底叠在白卡里会多出一层看不出用途的框。 */
+  background: var(--wh-bg);
   /* 卡片内距 16（Figma 模块 / card 148:5953） */
   padding: 16px;
+}
+
+/* 排版容器只排版：columns / rows / grid 不带面、不带边、不带内距（2026-10-30 定）。
+   它们原来吃共享规则的灰底 + 1px 边 + 内距 16，页面上平白多一层框。 */
+.wh-columns,
+.wh-rows,
+.wh-grid {
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
 }
 
 .wh-card-title {
@@ -93,7 +106,7 @@
 .wh-gap-none { gap: 0; }
 .wh-gap-sm { gap: 8px; }
 .wh-gap-md { gap: 12px; }
-.wh-gap-lg { gap: 20px; }
+.wh-gap-lg { gap: 16px; }
 
 /* --- containers --- */
 .wh-columns,
@@ -110,9 +123,19 @@
 .wh-columns-3 { --wh-cols: 3; }
 .wh-columns-4 { --wh-cols: 4; }
 .wh-columns-6 { --wh-cols: 6; }
-/* 5 列已弃用：窄屏放不下五个可读的列，十二等分也除不尽它。
-   这里显式退回单列，而不是靠 --wh-cols 的默认值兜底，免得看起来像生效了。 */
-.wh-columns-5 { --wh-cols: 1; }
+/* 5 列放不下五个可读的列，退回 2 列（不是 1 列：1 列让 5 个并列项塌成一条长虫）。 */
+.wh-columns-5 { --wh-cols: 2; }
+
+/* 两档断点（2026-10-30 定）：>1100 原列数；900–1100 最多 2 列；<900 单列。
+   列数是整数，`repeat()` 不接受 min()，所以按列数逐条压，不搞表达式。 */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .wh-columns-3,
+  .wh-columns-4,
+  .wh-columns-5,
+  .wh-columns-6 {
+    --wh-cols: 2;
+  }
+}
 
 @media (max-width: 900px) {
   .wh-columns-1,
@@ -149,9 +172,32 @@
   margin-bottom: 12px;
 }
 
+.wh-tabs {
+  /* 一行芯片 + 一行面板：radio 换面板，零 JS。面板都以 grid-row 2 落同一格，
+     只有选中那一条 display:block，所以顺序变化不会让面板左右并排。 */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, max-content);
+  align-items: start;
+  gap: 8px;
+}
+
+.wh-tab-radio {
+  /* 隐藏但保持可聚焦（clip 而不是 display:none，键盘 Tab 才进得来） */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .wh-tab {
   /* Tab 芯片对齐控件高 30（Figma tabs 148:5967 / 外壳 3:329） */
   display: inline-flex;
+  cursor: pointer;
   align-items: center;
   height: 30px;
   padding: 0 12px;
@@ -163,31 +209,33 @@
   color: var(--wh-muted);
 }
 
-.wh-tab.on {
+.wh-tab-radio:checked + .wh-tab {
   background: var(--wh-accent);
   border-color: var(--wh-accent);
   color: var(--wh-on-accent);
 }
 
+.wh-tab-radio:focus-visible + .wh-tab {
+  outline: 2px solid var(--wh-accent);
+  outline-offset: 2px;
+}
+
 .wh-tabpanel {
+  display: none;
+  grid-row: 2;
+  grid-column: 1 / -1;
   border: 1px solid var(--wh-line);
   border-radius: var(--wh-radius);
   padding: 12px;
   background: var(--wh-bg);
-  margin-top: 8px;
 }
 
-.wh-tabpanel > summary {
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--wh-muted);
-  list-style: none;
+.wh-tab-radio:checked + .wh-tab + .wh-tabpanel {
+  display: block;
 }
 
-.wh-tabpanel[open] > summary {
-  color: var(--wh-ink);
-  margin-bottom: 8px;
-}
+/* 没有选中项（比如标签比面板多、或是第一次渲染）时至少露出一块，别开盲盒 */
+
 
 /* divider / spacer */
 .wh-divider {

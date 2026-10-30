@@ -3,7 +3,6 @@
 {% set keys = as_list(p.get('metric_keys')) %}
 <section class="wh-m wh-display wh-metric-grid wh-columns-{{ as_int(p.get('columns'), 3) }} wh-gap-md"
          data-type="metric_grid">
-  {{ preview_tag(module, spec) }}
   {% for key in keys %}
   <div class="wh-metric-cell" data-metric="{{ key }}">
     <span class="wh-metric-label">{{ metric_name(key) }}</span>

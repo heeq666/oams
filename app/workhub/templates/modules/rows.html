@@ -1,6 +1,5 @@
 {#- Container: vertical stack. -#}
 <div class="wh-m wh-container wh-rows wh-gap-{{ gap_of(module) }}" data-type="rows">
-  {{ preview_tag(module, spec) }}
   {% for child in children_of(module) %}
   {{ render_module(child) }}
   {% endfor %}

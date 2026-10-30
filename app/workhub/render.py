@@ -18,8 +18,8 @@ Three viewpoints share the same templates; 'mode' is the only difference:
 * 'edit'     -- department filling the page in: inputs, live values.
 * 'readonly' -- management reading the page: no input anywhere, and modules that
                 can never reach the company aggregate are skipped entirely.
-* 'preview'  -- MCP preview_descriptor / review screen: fake data, plus a corner
-                tag on every module saying whether it feeds the aggregate.
+* 'preview'  -- MCP preview_descriptor / review screen: sample data rendered
+                with disabled widgets -- the reviewer inspects the page's definition.
 
 The registry lives in workhub.modules (unit A). While that file is still being
 written, the import below falls back to a mirror of the frozen contract table
@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import contextvars
 import html
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -223,14 +224,18 @@ def _number(value: Any) -> float | None:
         return None
 
 
+EMPTY = "\u2014"  # 空值的唯一写法（em dash）；0 永远显示成 0
+
+
 def format_number(value: Any, unit: str = "", with_unit: bool = True) -> str:
     """Human formatting for one aggregate number (unit-aware, never raises).
 
     with_unit=False keeps the number bare so a card can show the unit in its own
     element; currency and percent always carry their own mark either way.
+    Missing is EMPTY ("—"), never "0" and never "--": 未填 与 零 是两件事。
     """
     if value is None or value == "":
-        return "--"
+        return EMPTY
     number = _number(value)
     if number is None:
         return str(value)
@@ -256,6 +261,7 @@ class _RenderState:
     key_by_standard: dict
     status_words: tuple
     seen_fields: dict  # field key -> how many widgets already rendered for it
+    uid_seq: int = 0  # monotonic counter for unique in-page DOM ids
 
 
 _STATE: contextvars.ContextVar = contextvars.ContextVar("workhub_render_state", default=None)
@@ -387,15 +393,40 @@ def status_badge() -> Markup:
     return Markup(f'<span class="wh-badge wh-badge-{tone}">{_text(word)}</span>')
 
 
-def progress_percent() -> int:
+def progress_percent() -> int | None:
+    """Rounded 0-100 progress, or None when the department has not filled it in.
+
+    None is not 0: an untouched progress field must not read as "0% done", and
+    the bar must not paint a zero-length track as if it were a measurement.
+    """
     raw = _value_for("progress_value")
     if raw is None or raw == "":
-        return 0
+        return None
     try:
         number = float(raw)
     except (TypeError, ValueError):
-        return 0
+        return None
     return int(max(0, min(100, round(number))))
+
+
+def tabs_uid(module: Any) -> str:
+    """Stable, unique-per-render id base for a tab group (radio group name)."""
+    state = _state()
+    state.uid_seq += 1
+    raw = str((module or {}).get("id") or "") if isinstance(module, dict) else ""
+    tail = re.sub(r"[^a-zA-Z0-9_-]+", "-", raw).strip("-") or str(state.uid_seq)
+    return f"wh-tabs-{tail}"
+
+
+def progress_text() -> str:
+    """Progress as the page shows it: "35%" or a dash when nothing was filled in."""
+    percent = progress_percent()
+    return EMPTY if percent is None else f"{percent}%"
+
+
+def inline_widgets() -> bool:
+    """True when this viewpoint still shows widgets (edit live, preview disabled)."""
+    return _state().mode in INLINE_MODES
 
 
 # --- widgets ----------------------------------------------------------------
@@ -412,14 +443,18 @@ def _input_html(field: dict, value: Any, *, textarea: bool = False) -> Markup:
     state.seen_fields[key] = occurrence
     fid = f"wh-f-{_text(key)}" if occurrence == 1 else f"wh-f-{_text(key)}-{occurrence}"
     raw = "" if value is None else str(value)
-    required = " required" if field.get("required") else ""
-    if state.mode != "edit":
+    if state.mode not in INLINE_MODES:
         shown = _text(raw) if raw else "&mdash;"
         return Markup(f'<div class="wh-field wh-field-static"><span class="wh-field-label">{label}</span>'
                       f'<span class="wh-field-value">{shown}</span></div>')
+    # preview renders the same widgets with sample values, but dead: 审核看的是这页
+    # 的定义，能不能填、填完长什么样，所以控件要在场而不能提交。
+    dead = state.mode != "edit"
+    required = "" if dead else (" required" if field.get("required") else "")
+    inert = ' disabled tabindex="-1"' if dead else ""
     if textarea:
         return Markup(f'<div class="wh-field"><label class="wh-field-label" for="{fid}">{label}</label>'
-                      f'<textarea class="wh-input" id="{fid}" name="{_text(key)}" rows="2"{required}>'
+                      f'<textarea class="wh-input" id="{fid}" name="{_text(key)}" rows="2"{required}{inert}>'
                       f'{_text(raw)}</textarea></div>')
     widget = FIELD_TYPE_TO_INPUT.get(str(field.get("type") or "text"), "text")
     if widget == "select":
@@ -429,7 +464,7 @@ def _input_html(field: dict, value: Any, *, textarea: bool = False) -> Markup:
             selected = " selected" if str(option) == raw else ""
             inner.append(f'<option value="{_text(option)}"{selected}>{_text(option)}</option>')
         return Markup(f'<div class="wh-field"><label class="wh-field-label" for="{fid}">{label}</label>'
-                      f'<select class="wh-input" id="{fid}" name="{_text(key)}"{required}>'
+                      f'<select class="wh-input" id="{fid}" name="{_text(key)}"{required}{inert}>'
                       f'{"".join(inner)}</select></div>')
     attrs = ""
     if widget == "number":
@@ -439,7 +474,7 @@ def _input_html(field: dict, value: Any, *, textarea: bool = False) -> Markup:
     placeholder = _text(field.get("example") or "")
     return Markup(f'<div class="wh-field"><label class="wh-field-label" for="{fid}">{label}</label>'
                   f'<input class="wh-input" id="{fid}" name="{_text(key)}" type="{widget}"'
-                  f'{attrs}{required} placeholder="{placeholder}" value="{_text(raw)}"></div>')
+                  f'{attrs}{required}{inert} placeholder="{placeholder}" value="{_text(raw)}"></div>')
 
 
 def input_for(source: Any, *, textarea: bool = False) -> Markup:
@@ -484,7 +519,7 @@ def aggregate(metric_key: Any, with_unit: bool = True) -> str:
     """
     raw = aggregate_raw(metric_key)
     if raw is None or raw == "":
-        return "--"
+        return EMPTY
     if _real_format_metric is not None and metric_key and with_unit:
         try:
             return str(_real_format_metric(str(metric_key), raw))
@@ -599,15 +634,6 @@ def bucket(value: Any, total: Any) -> str:
     return f"p{max(0, min(100, step))}"
 
 
-def preview_tag(module: Any, spec: Any = None) -> Markup:
-    """Corner tag used by the review viewpoint only."""
-    if _state().mode != "preview":
-        return Markup("")
-    label = aggregate_tag(module, spec)
-    tone = "wh-tag-on" if label == "进汇总" else "wh-tag-off"
-    return Markup(f'<span class="wh-tag {tone}">{label}</span>')
-
-
 def private_note(module: Any, spec: Any = None) -> Markup:
     """Inline honesty note in the department view for never-aggregated modules."""
     if _state().mode != "edit":
@@ -624,15 +650,6 @@ def status_tone(words: Any) -> str:
     standard = (descriptor.get("status_map") or {}).get(str(words), "")
     return {"blocked": "blocked", "done": "done", "in_progress": "progress",
             "planned": "planned"}.get(str(standard), "plain")
-
-
-def aggregate_tag(module: Any, spec: Any = None) -> str:
-    """The preview corner tag: does this module feed the company aggregate."""
-    spec = spec or resolve_spec((module or {}).get("type") if isinstance(module, dict) else None)
-    flag = module.get("aggregatable") if isinstance(module, dict) else None
-    if not isinstance(flag, bool):
-        flag = getattr(spec, "aggregatable", None)
-    return "进汇总" if flag is True else "不进汇总"
 
 
 # ---------------------------------------------------------------------------
@@ -661,9 +678,11 @@ _ENV.globals.update({
     "status_word": status_word,
     "status_badge": status_badge,
     "progress_percent": progress_percent,
+    "progress_text": progress_text,
+    "tabs_uid": tabs_uid,
+    "inline_widgets": inline_widgets,
     "aggregate": aggregate,
     "aggregate_raw": aggregate_raw,
-    "aggregate_tag": aggregate_tag,
     "metric_name": metric_name,
     "metric_unit": metric_unit,
     "status_counts": status_counts,
@@ -674,7 +693,6 @@ _ENV.globals.update({
     "gap_of": gap_of,
     "children_of": children_of,
     "bucket": bucket,
-    "preview_tag": preview_tag,
     "private_note": private_note,
     "status_tone": status_tone,
     "format_number": format_number,
@@ -842,7 +860,7 @@ def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
     state = _RenderState(descriptor=descriptor, values=dict(values or {}),
                          aggregates=dict(aggregates or {}), mode=mode,
                          fields_by_key=fields, key_by_standard=key_by_standard,
-                         status_words=status_words, seen_fields={})
+                         status_words=status_words, seen_fields={}, uid_seq=0)
     token_state = _STATE.set(state)
     token_depth = _DEPTH.set(0)
     token_stack = _STACK.set(())
