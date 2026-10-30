@@ -29,13 +29,14 @@ MEASURE = """(() => {
 
 def test_layout_wide_content(site, tmp_path) -> None:
     skip_without_browser()
-    # Sign in first in every profile: a bare /settings would redirect to /login
-    # and there would be no .app-frame to measure.
-    path = f"/login?token={admin_token()}&next=%2Fsettings"
+    # Sign in first: a bare /settings would redirect to /login and there would be
+    # no .app-frame to measure. The driver confirms the landing page before it
+    # starts measuring, so a stale cookie cannot turn this into a login-screen run.
+    login = f"/login?token={admin_token()}&next=%2Fsettings"
     failures = []
     for width in (1280, 1680, 2200):
-        data = measure([path], MEASURE, viewport={"width": width, "height": 900},
-                       tmp_path=tmp_path)[path]["before"]
+        data = measure(["/settings"], MEASURE, viewport={"width": width, "height": 900},
+                       tmp_path=tmp_path, login=login)["/settings"]["before"]
         if "error" in data:
             print("FAIL", width, data)
             failures.append(width)

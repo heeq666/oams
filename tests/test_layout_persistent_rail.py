@@ -66,9 +66,9 @@ def sign_in_path(token: str) -> str:
 
 def test_layout_persistent_rail(site, tmp_path) -> None:
     skip_without_browser()
-    paths = [sign_in_path(admin_token())] + DEFAULT_PATHS
-    report = measure(paths, MEASURE_JS, viewport=VIEWPORT,
-                     scroll=SCROLL, tmp_path=tmp_path)
+    report = measure(DEFAULT_PATHS, MEASURE_JS, viewport=VIEWPORT,
+                     scroll=SCROLL, tmp_path=tmp_path,
+                     login=sign_in_path(admin_token()))
     failures = []
     for path in DEFAULT_PATHS:
         before, after = report[path]["before"], report[path]["afterScroll"]
