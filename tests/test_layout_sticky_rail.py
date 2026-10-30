@@ -3,91 +3,47 @@
 The first version of this check scrolled the window, so it reported success while
 the rail was actually sliding under the top bar. It now scrolls the content pane,
 which is the region that scrolls in this shell, and asserts the rail never moves
-and never hides behind the bar above it. Requires headless Chrome and node; both
-are skipped (not failed) when absent.
+and never hides behind the bar above it. The browser is ego (see AGENTS.md
+「浏览器自动化」), skipped (not failed) when it is not installed.
 """
-import json
-import os
-import shutil
-import socket
-import subprocess
-import sys
-import tempfile
-import time
-import urllib.request
-from pathlib import Path
-
 import pytest
 
-pytestmark = pytest.mark.db  # needs the served app plus headless Chrome
+from layout_browser import admin_token, measure, skip_without_browser
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+pytestmark = pytest.mark.db  # needs the served app plus a real browser
+
 DEFAULT_PATHS = ["/board", "/progress", "/reports", "/settings"]
+VIEWPORT = {"width": 1280, "height": 700}  # short enough that the content scrolls
+SCROLL = "document.querySelector('.app-frame > main').scrollTop = 600"
+PROBE = """(() => {
+  const rail = document.querySelector('.app-rail');
+  const main = document.querySelector('.app-frame > main');
+  const bar = document.querySelector('header.topbar');
+  if (!rail || !main) return { error: 'missing shell elements' };
+  const r = rail.getBoundingClientRect();
+  const b = bar ? bar.getBoundingClientRect() : null;
+  return {
+    railTop: Math.round(r.top), railBottom: Math.round(r.bottom), railHeight: Math.round(r.height),
+    barBottom: b ? Math.round(b.bottom) : null,
+    viewport: window.innerHeight,
+    mainScrollTop: Math.round(main.scrollTop),
+    mainScrollable: main.scrollHeight - main.clientHeight,
+    railFullyVisible: r.top >= -1 && r.bottom <= window.innerHeight + 1,
+    // The top bar floats above the frame (a capsule with gutters), so the rail
+    // starts at the viewport top instead of being pushed below the bar.
+    railSpansViewport: Math.abs(r.top) <= 2 && Math.abs(r.bottom - window.innerHeight) <= 2,
+    barFloats: b ? (Math.abs(b.top - 20) <= 2 && Math.abs(b.height - 40) <= 2) : false,
+    barScrolled: bar ? bar.classList.contains('is-scrolled') : false,
+    barWidth: b ? Math.round(b.width) : null,
+  };
+})()"""
 
 
-def skip_without_browser() -> None:
-    if not os.path.exists(CHROME):
-        pytest.skip(f"headless Chrome is not installed at {CHROME}")
-    if shutil.which("node") is None:
-        pytest.skip("node is not on PATH, so the CDP driver cannot run")
-
-
-def admin_token() -> str:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
-    import psycopg
-    from psycopg.rows import dict_row
-    from workhub.security import issue_session
-
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        row = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'ADMIN001'"
-        ).fetchone()
-    if row is None:
-        pytest.skip("the served database has no ADMIN001 member")
-    token, _ = issue_session(row["member_id"])
-    return token
-
-
-def chrome_ws(port):
-    for _ in range(80):
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=1) as resp:
-                for tab in json.load(resp):
-                    if tab.get("type") == "page":
-                        return tab["webSocketDebuggerUrl"]
-        except Exception:
-            time.sleep(0.25)
-    raise AssertionError("chrome did not expose a page target")
-
-
-def measure(paths):
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
-    profile = tempfile.mkdtemp(prefix="wh-sticky-")
-    chrome = subprocess.Popen(
-        [CHROME, "--headless=new", "--no-sandbox", "--disable-gpu",
-         "--disable-dev-shm-usage", "--no-first-run",
-         "--no-default-browser-check", f"--user-data-dir={profile}",
-         "--window-size=1280,700", f"--remote-debugging-port={port}", "about:blank"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
-        ws_url = chrome_ws(port)
-        out = subprocess.run(
-            ["node", str(Path(__file__).resolve().parents[1] / "scripts" / "cdp-vertical.mjs"),
-             ws_url, json.dumps(paths)],
-            capture_output=True, text=True, timeout=180)
-        assert out.returncode == 0, out.stderr.strip()[-600:]
-        return json.loads(out.stdout)
-    finally:
-        chrome.kill()
-        shutil.rmtree(profile, ignore_errors=True)
-
-
-def test_layout_sticky_rail(site) -> None:
+def test_layout_sticky_rail(site, tmp_path) -> None:
     skip_without_browser()
     paths = ["/login?token=" + admin_token()] + DEFAULT_PATHS
-    report = measure(paths)
+    report = measure(paths, PROBE, viewport=VIEWPORT, scroll=SCROLL,
+                     tmp_path=tmp_path)
 
     failures = []
     for path in DEFAULT_PATHS:

@@ -1,26 +1,16 @@
-"""Measure the running site over CDP: is the department rail a persistent column?
+"""Measure the running site in a real browser: is the rail a persistent column?
 
-Layout is a claim about pixels, so it is checked in a real browser rather than
-by reading the served HTML. Requires headless Chrome and node; both are skipped
-(not failed) when absent, and the page list is measured while signed in as the
-seeded administrator.
+Layout is a claim about pixels, so it is checked in a real browser rather than by
+reading the served HTML. The browser is ego (see AGENTS.md「浏览器自动化」),
+skipped (not failed) when it is not installed, and the page list is measured while
+signed in as the seeded administrator.
 """
-import json
-import os
-import shutil
-import socket
-import subprocess
-import sys
-import tempfile
-import time
-import urllib.request
-from pathlib import Path
-
 import pytest
 
-pytestmark = pytest.mark.db  # needs the served app plus headless Chrome
+from layout_browser import admin_token, measure, skip_without_browser
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+pytestmark = pytest.mark.db  # needs the served app plus a real browser
+
 DEFAULT_PATHS = ["/board", "/progress", "/reports", "/settings"]
 MEASURE_JS = """(() => {
   const rail = document.querySelector('.app-rail');
@@ -59,15 +49,13 @@ MEASURE_JS = """(() => {
 })()"""
 
 
-def base_url() -> str:
-    return os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000")
-
-
-def skip_without_browser() -> None:
-    if not os.path.exists(CHROME):
-        pytest.skip(f"headless Chrome is not installed at {CHROME}")
-    if shutil.which("node") is None:
-        pytest.skip("node is not on PATH, so the CDP driver cannot run")
+VIEWPORT = {"width": 1280, "height": 900}
+# The shell scrolls the content column, not the window, so scroll whichever
+# element actually owns the scrollbar before taking the second reading.
+SCROLL = """document.querySelectorAll('.app-frame > main').forEach(function (m) {
+  if (m.scrollHeight > m.clientHeight) m.scrollTop = 500;
+});
+window.scrollTo(0, 500);"""
 
 
 def sign_in_path(token: str) -> str:
@@ -76,62 +64,11 @@ def sign_in_path(token: str) -> str:
     return "/login?token=" + token
 
 
-def admin_token() -> str:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
-    import psycopg
-    from psycopg.rows import dict_row
-    from workhub.security import issue_session
-
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        row = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'ADMIN001'"
-        ).fetchone()
-    if row is None:
-        pytest.skip("the served database has no ADMIN001 member")
-    token, _ = issue_session(row["member_id"])
-    return token
-
-
-def chrome_ws(port):
-    for _ in range(80):
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=1) as resp:
-                for tab in json.load(resp):
-                    if tab.get("type") == "page":
-                        return tab["webSocketDebuggerUrl"]
-        except Exception:
-            time.sleep(0.25)
-    raise AssertionError("chrome did not expose a page target")
-
-
-def measure(paths):
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
-    profile = tempfile.mkdtemp(prefix="wh-layout-")
-    chrome = subprocess.Popen(
-        [CHROME, "--headless=new", "--no-sandbox", "--disable-gpu",
-         "--disable-dev-shm-usage", "--no-first-run",
-         "--no-default-browser-check", f"--user-data-dir={profile}",
-         "--window-size=1280,900", f"--remote-debugging-port={port}", "about:blank"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
-        ws_url = chrome_ws(port)
-        out = subprocess.run(
-            ["node", str(Path(__file__).resolve().parents[1] / "scripts" / "cdp-measure.mjs"),
-             ws_url, MEASURE_JS, json.dumps(paths)],
-            capture_output=True, text=True, timeout=180)
-        assert out.returncode == 0, out.stderr.strip()[-600:]
-        return json.loads(out.stdout)
-    finally:
-        chrome.kill()
-        shutil.rmtree(profile, ignore_errors=True)
-
-
-def test_layout_persistent_rail(site) -> None:
+def test_layout_persistent_rail(site, tmp_path) -> None:
     skip_without_browser()
     paths = [sign_in_path(admin_token())] + DEFAULT_PATHS
-    report = measure(paths)
+    report = measure(paths, MEASURE_JS, viewport=VIEWPORT,
+                     scroll=SCROLL, tmp_path=tmp_path)
     failures = []
     for path in DEFAULT_PATHS:
         before, after = report[path]["before"], report[path]["afterScroll"]
