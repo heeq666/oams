@@ -1,6 +1,6 @@
 # 在你电脑上跑起来（本地试用）
 
-这份说明让这套系统在你自己的电脑上跑起来，并点开三个页面。全部是本机地址，不对外网开放。
+这份说明让这套系统在你自己的电脑上跑起来，并点开几个页面。全部是本机地址，不对外网开放。
 
 ## 一次性准备
 
@@ -25,10 +25,14 @@ export WORKHUB_MIGRATOR_URL=$WORKHUB_DATABASE_URL
 ## 准备一个部门
 
 ```sh
+export WORKHUB_MIGRATOR_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
+export WORKHUB_DATABASE_URL=$WORKHUB_MIGRATOR_URL
 export WORKHUB_ADMIN_MEMBER_ID=<上一步的 member_id>
 .venv/bin/python scripts/load_department_data.py data/live-design-department.json --apply
 .venv/bin/python scripts/seed-live-interface.py
 ```
+
+`load_department_data.py` 会自己起一个临时服务把部门、岗位、成员、授权跑一遍完整接口（跑完自动关），默认在 127.0.0.1:8126，端口被占用时用 `WORKHUB_LOADER_PORT` 换一个。`WORKHUB_MIGRATOR_URL` 和 `WORKHUB_ADMIN_MEMBER_ID` 两个都要给，缺一个会直接报错退出。
 
 第二个脚本会把[设计部打样进度界面](data/live-design-interface.json)启用，作为你点开就能看的示例。
 
@@ -93,7 +97,7 @@ export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/work
 http://127.0.0.1:8000/login?token=<access_token>&next=/interfaces
 ```
 
-## 三个页面
+## 四个页面
 
 | 页面 | 地址 | 用途 |
 |---|---|---|
@@ -113,3 +117,4 @@ http://127.0.0.1:8000/login?token=<access_token>&next=/interfaces
 - 登录链接等同临时密码，不要发到群里；有效期 8 小时（默认）。
 - 这是本机试用环境，数据库只监听本机端口，不要暴露到公网。
 - 现在的账号仍需管理员签发链接，账号中心尚未接入。
+- 某个示例页面点开后被带回上一页，多半是库里那份描述还是旧版模块名（v0.1）：重跑 `scripts/seed-live-interface.py`，它会按当前版本重新启用这个页面。
