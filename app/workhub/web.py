@@ -1365,14 +1365,18 @@ def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
     # template has to be signed off, so the row keeps 'department' while the page
     # waits and the approval is what promotes it.
     requested_visibility = review_rules.visibility_of(page["descriptor"] or {})
+    # The row records the level that actually signed, not the level a reviewer
+    # happens to be sitting at: a department approval that goes straight live must
+    # not read as if the company had signed it, and the row, the stamp inside the
+    # descriptor and the audit entry have to tell the same story.
     conn.execute(
         """UPDATE workhub.interfaces
-              SET status = 'active', review_stage = 'department',
+              SET status = 'active', review_stage = %s,
                   reviewed_by = %s, reviewed_at = now(),
                   review_note = %s, visibility = COALESCE(%s, visibility),
                   descriptor = %s, updated_at = now()
             WHERE interface_id = %s""",
-        (principal["member_id"], note.strip() or None,
+        (signed_level, principal["member_id"], note.strip() or None,
          requested_visibility if requested_visibility in ("department", "public") else None,
          Jsonb(stamped), page["interface_id"]))
     # The approval records what was actually reviewed, so "why did the number move
