@@ -36,20 +36,36 @@ export WORKHUB_ADMIN_MEMBER_ID=<上一步的 member_id>
 
 `load_department_data.py` 不带 `--apply` 时是**只看不写**的预演（逐条打印 `[new]` / `[exists]`，末尾一行 `N new, M already present`）。先跑一遍确认要建的东西对，再加 `--apply` 落库。
 
+不想敲命令也可以跳过这一节：服务起来之后用 [`/setup` 引导页](#建部门岗位成员用-setup-引导页最快) 点几下就建好了，那是本机试用里最快的一条路。
+
 它会自己起一个临时服务把部门、岗位、成员、授权跑一遍完整接口（跑完自动关），默认在 127.0.0.1:8126，端口被占用时用 `WORKHUB_LOADER_PORT` 换一个。`WORKHUB_MIGRATOR_URL` 和 `WORKHUB_ADMIN_MEMBER_ID` 两个都要给，缺一个会直接报错退出。
 
 第二个脚本会把[设计部打样进度界面](data/live-design-interface.json)启用，作为你点开就能看的示例。它每跑一次都是「归档上一版、启用新的一版」，所以**页面的地址（`/interfaces/<id>` 里那个 id）会变**，之前收藏的旧链接会失效、打开后被带回能看的页面。要的就是这个效果：页面描述升级过之后重跑一次，旧版自动退场。
 
 ## 启动服务
 
+**推荐用 `workhub serve`**：它读同一份配置，不用记 uvicorn 的参数。
+
 ```sh
 export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
+.venv/bin/python -m workhub.cli serve
+```
+
+默认起在 `127.0.0.1:8000`。要换端口就设 `WORKHUB_BIND_PORT`（换监听地址设 `WORKHUB_BIND_HOST`），例如：
+
+```sh
+WORKHUB_BIND_PORT=8001 .venv/bin/python -m workhub.cli serve
+```
+
+它底层就是 uvicorn，直接调 uvicorn 是等价的备选写法（不带环境变量时，下面这条与 `workhub serve` 的默认值完全一样）：
+
+```sh
 .venv/bin/python -m uvicorn workhub.api:app --host 127.0.0.1 --port 8000
 ```
 
 保持这个终端开着。
 
-8000 被别的进程占着时，这条会起不来（`address already in use`）。换一个端口，例如 `--port 8001`，然后**下文所有 `127.0.0.1:8000` 的地址都要跟着换成 8001**——登录链接、四个页面的地址都一样。
+8000 被别的进程占着时，这条会起不来（`address already in use`）。换一个端口——`workhub serve` 用 `WORKHUB_BIND_PORT=8001`，直接调 uvicorn 用 `--port 8001`——然后**下文所有 `127.0.0.1:8000` 的地址都要跟着换成 8001**：登录链接、四个页面的地址都一样。
 
 ## 设计开发阶段：免登录
 
@@ -70,6 +86,20 @@ WORKHUB_DEV_AUTOLOGIN=0 ./scripts/start-local-trial.sh
 点开那枚角标就是身份切换菜单：列出库里所有在职成员，按权限强弱排（系统管理员 → 部门管理员 → 普通员工），右边标出这个人的实际层级（由 grants 推出来，不是岗位名）。点一个就换成他看这一页，不用改环境变量、不用重启服务；切换结果记在 `workhub_dev_worker` cookie 里，12 小时有效，菜单底部还能「恢复默认身份」回到启动参数指定的那个。
 
 调试权限时很好用：同一个页面，管理员看到的导航和普通员工不一样，点两下就能对照。免登录关掉后这个菜单和 `POST /dev/identity` 一起消失（返回 404），cookie 也不会再让人登进来。
+
+## 建部门、岗位、成员：用 `/setup` 引导页（最快）
+
+**这是本机试用里建部门/岗位/成员最快的路径**，不用敲 bootstrap 和 loader。服务起来、以管理员身份登录（免登录时就是 `ADMIN001`）后打开：
+
+```
+http://127.0.0.1:8000/setup
+```
+
+页面按顺序引导三步：建部门 → 建岗位 → 建成员并分配岗位。点「建立成员并生成登录链接」会当场给出一次性登录链接，同时把该岗位的汇报权限一起授好（含 `workforce.reports/read` 与 `reports/submit`，所以建出来的号能直接打开填写页）。
+
+和「准备一个部门」那节的差别：那边走种子数据（`DESIGNER` 岗位缺 `reports/read`，要按上文补），这边建号自动带全。两条路都能用，选一条就行。重复用同一个部门代号或岗位代号提交会被拒（页面提示已存在，`web.py:1774` / `:1795`），不会建出两份。
+
+`/setup` 的入口在「设置」页左栏的「试用与开关」，也可以直接敲地址。
 
 ## 三级角色与两个页面的可见范围
 
@@ -122,7 +152,7 @@ http://127.0.0.1:8000/login?token=<access_token>&next=/interfaces
 
 ## 注意
 
-- 登录链接等同临时密码，不要发到群里；有效期 8 小时（`SESSION_TTL_HOURS` 可改，`issue-token` 本身没有时长参数）。
+- 登录链接等同临时密码，不要发到群里；有效期 8 小时（`SESSION_TTL_HOURS` 可改，`issue-token` 本身没有时长参数）。`SESSION_TTL_HOURS` 管的就是**登录会话多久过期**——签出来的链接和浏览器里的 cookie 一起到点失效；它不管请求超时，也不管任务时限，改完要重新签链接才生效。
 - 这是本机试用环境，数据库只监听本机端口，不要暴露到公网。
 - 现在的账号仍需管理员签发链接，账号中心尚未接入。
 - 某个示例页面点开后被带回上一页，多半是库里那份描述还是旧版模块名（v0.1）：重跑 `scripts/seed-live-interface.py`，它会按当前版本重新启用这个页面。注意重跑后页面地址（`/interfaces/<id>`）会变，按新地址重开。
