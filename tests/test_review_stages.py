@@ -16,6 +16,7 @@ import contextlib
 import hashlib
 import hmac
 import json
+import urllib.parse
 import uuid
 
 import pytest
@@ -30,7 +31,11 @@ pytestmark = pytest.mark.db
 
 DESIGN_REVIEWER = "DESIGN001"   # 设计部负责人：有 review，没有 review_company
 PLATFORM = "ADMIN001"           # 系统管理员：有 review_company，兜底全公司
-AUTHOR = "MVP1002"              # 一个不审任何东西的人，用来当作者
+DESIGN_AUTHOR = "DESIGN002"     # 设计部设计师：能建页、能提交，审不了（本文件的事务里现造）
+HR_AUTHOR = "MVP1001"           # 人事经理：人事部的默认作者，用来造「别的部门」的页
+
+# 作者是谁现在由部门决定：真实入口要求作者本人就在那个部门里（平台身份除外）。
+# 种子里 DESIGN 部只有负责人一个，而他是审核人，所以 fixture 里补一个设计师。
 
 DESCRIPTOR = {
     "schema_version": "0.2",
@@ -44,11 +49,15 @@ DESCRIPTOR = {
                                "source_fields": ["title", "state_word"]}]}],
     "fields": [
         {"key": "title", "label": "款号", "type": "text", "required": True,
-         "map_to": "title", "aggregatable": True},
+         "map_to": "title", "aggregatable": True, "example": "AW24-001"},
         {"key": "state_word", "label": "状态", "type": "enum", "required": True,
-         "map_to": "status", "aggregatable": True, "options": ["进行中", "已完成"]},
+         "map_to": "status", "aggregatable": True, "example": "进行中",
+         "options": ["进行中", "已完成"]},
+        {"key": "evidence", "label": "凭据", "type": "text", "required": False,
+         "map_to": "evidence", "aggregatable": True, "example": "SY-2410"},
     ],
     "status_map": {"进行中": "in_progress", "已完成": "done"},
+    "rules": {"evidence_required": False},
     "meta": {"author_position_code": "DESIGN_LEAD", "version": 1,
              "visibility": "department", "review": {"status": "draft"}},
 }
@@ -94,9 +103,19 @@ def _token(cookie: str) -> str:
     return hmac.new(cookie.encode(), b"workhub:review-form:v1", hashlib.sha256).hexdigest()
 
 
+def _page_token(cookie: str) -> str:
+    return hmac.new(cookie.encode(), b"workhub:page-form:v1", hashlib.sha256).hexdigest()
+
+
 @pytest.fixture()
 def room(seeded_database, monkeypatch):
-    """一笔事务里的种子库 + 一个能按身份切人的 TestClient。"""
+    """一笔事务里的种子库 + 一个能按身份切人的 TestClient。
+
+    待审页一律从真实入口造：作者本人点 `/departments/{org}/new` 建页，再提交审核。
+    种子里 DESIGN 部只有负责人一个，而他就是审核人；建页要求作者本人在那个部门里，
+    所以这里补一个设计师（只在本次事务里存在，结束时回滚）。补的是人，不是待审页——
+    页子仍然一张一张走流程，`review_stage` 由谁批出来，路由说了算。
+    """
 
     import psycopg
     from psycopg.rows import dict_row
@@ -105,10 +124,41 @@ def room(seeded_database, monkeypatch):
     monkeypatch.setattr(web, "connection", lambda: _one_transaction(conn))
     monkeypatch.setattr(workhub.api, "connection", lambda: _one_transaction(conn))
 
-    people = {code: seeded_database.member_id(code)
-              for code in (DESIGN_REVIEWER, PLATFORM, AUTHOR)}
+    conn.execute(
+        """INSERT INTO workhub.positions (position_code, title, org_unit_id)
+           SELECT 'DESIGNER', '设计师', org_unit_id FROM workhub.org_units
+            WHERE org_code = 'DESIGN'""")
+    conn.execute(
+        """INSERT INTO workhub.workforce_members
+                 (employee_code, display_name, employment_status, joined_at)
+           VALUES (%s, '设计师小李', 'active', current_date - 30)""", (DESIGN_AUTHOR,))
+    conn.execute(
+        """INSERT INTO workhub.position_assignments
+                 (member_id, position_id, assignment_type, status, starts_at, reason)
+           SELECT m.member_id, p.position_id, 'primary', 'active',
+                  now() - interval '30 days', 'seed'
+             FROM workhub.workforce_members m, workhub.positions p
+            WHERE m.employee_code = %s AND p.position_code = 'DESIGNER'""", (DESIGN_AUTHOR,))
+    # 设计师能建页、能提交，但审不了：审核权留在负责人手里，这一层才有意义。
+    conn.execute(
+        """INSERT INTO workhub.permission_grants
+                 (subject_type, position_id, resource, action, scope_type, valid_from, reason)
+           SELECT 'position', p.position_id, g.resource, g.action, 'all', now(), 'seed'
+             FROM workhub.positions p
+             JOIN (VALUES ('workforce.org_units', 'read'),
+                          ('workforce.positions', 'read'),
+                          ('workforce.work_items', 'read'),
+                          ('workforce.reports', 'read'),
+                          ('workforce.reports', 'submit')) AS g(resource, action)
+               ON p.position_code = 'DESIGNER'""")
+
     design = seeded_database.org_unit_id("DESIGN")
     hr = seeded_database.org_unit_id("HR")
+    # 同一条连接查：刚补的设计师还没提交，别的连接看不见。
+    people = {code: conn.execute(
+        "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+        (code,)).fetchone()["member_id"]
+        for code in (DESIGN_REVIEWER, PLATFORM, DESIGN_AUTHOR, HR_AUTHOR)}
     state = {"me": DESIGN_REVIEWER, "cookie": "review-stage-test"}
     monkeypatch.setattr(workhub.api, "principal_from_request",
                         lambda request: {"member_id": people[state["me"]],
@@ -121,22 +171,63 @@ def room(seeded_database, monkeypatch):
         made.cookies.set(settings.web_session_cookie, state["cookie"])
         return made
 
-    def page(org, *, stage="department", descriptor=None, author=AUTHOR, status="pending"):
-        interface_id = uuid.uuid4()
-        conn.execute(
-            """INSERT INTO workhub.interfaces
-                 (interface_id, org_unit_id, slug, name, status, visibility, schema_version,
-                  descriptor, version_no, created_by, updated_by, review_stage)
-               VALUES (%s, %s, %s, %s, %s, 'department', '0.2', %s::jsonb, 1, %s, %s, %s)""",
-            (interface_id, org, f"review-stage-{interface_id.hex[:8]}", "审核分级样张",
-             status, json.dumps(descriptor or DESCRIPTOR), people[author],
-             people[author], stage))
+    def as_(code):
+        state["me"] = code
+
+    def author_for(org):
+        """这个部门里谁来当作者：平台身份哪个部门都进得去，所以兜底给他。"""
+        return {design: DESIGN_AUTHOR, hr: HR_AUTHOR}.get(org, PLATFORM)
+
+    def create(org, *, descriptor=None, author=None, name="审核分级样张", slug=None):
+        """在部门工作台里新建一页，返回它的 interface_id。"""
+        who = author or author_for(org)
+        slug = slug or f"review-stage-{uuid.uuid4().hex[:8]}"
+        as_(who)
+        made = client().post(f"/departments/{org}/new",
+                             data={"csrf": _page_token(state["cookie"]), "slug": slug,
+                                   "name": name,
+                                   "descriptor_text": json.dumps(descriptor or DESCRIPTOR)},
+                             follow_redirects=False)
+        assert made.status_code == 303, made.text
+        location = urllib.parse.unquote(made.headers["location"])
+        assert "error=" not in location, location
+        return uuid.UUID(location.split("?")[0].rsplit("/", 1)[-1])
+
+    def submit(org, interface_id):
+        """作者把页子交上去：draft → pending（部门初审）。"""
+        handed = client().post(f"/departments/{org}/{interface_id}/submit-review",
+                               data={"review_csrf": _page_token(state["cookie"])},
+                               follow_redirects=False)
+        assert handed.status_code == 303, handed.text
+        location = urllib.parse.unquote(handed.headers["location"])
+        assert "error=" not in location, location
         return interface_id
 
+    def page(org, *, stage="department", descriptor=None, author=None):
+        """造一张待审页——但走的是真实入口：新建 → 提交审核。
+
+        `stage="company"` 不是「把 review_stage 写成 company」，而是真的让部门初审过一票：
+        只有公开页/公司汇总页会被推上去，所以这一档的描述符必须是公开页。
+        """
+        who = author or author_for(org)
+        wanted = json.loads(json.dumps(descriptor or DESCRIPTOR))
+        if stage == "company":
+            wanted.setdefault("meta", {})["visibility"] = "public"
+        interface_id = create(org, descriptor=wanted, author=who)
+        submit(org, interface_id)
+        if stage == "company":
+            as_(DESIGN_REVIEWER)
+            pushed = _approve(room, interface_id, note="部门初审过")
+            assert pushed.headers["location"] == "/reviews?saved=passed", pushed.headers["location"]
+            assert _row(room, interface_id)["review_stage"] == "company"
+        as_(who)
+        return interface_id
+
+    room = {"conn": conn, "client": client, "as_": as_, "token": _token(state["cookie"]),
+            "page": page, "create": create, "submit": submit,
+            "design": design, "hr": hr, "people": people}
     try:
-        yield {"conn": conn, "client": client, "as_": lambda code: state.update(me=code),
-               "token": _token(state["cookie"]), "page": page, "design": design, "hr": hr,
-               "people": people}
+        yield room
     finally:
         conn.rollback()
         conn.close()
@@ -160,6 +251,13 @@ def _row(room, interface_id):
         """SELECT status, review_stage, reviewed_at, reviewed_by, visibility
              FROM workhub.interfaces WHERE interface_id = %s""",
         (interface_id,)).fetchone()
+
+
+def _stamp(room, interface_id):
+    """描述符里那枚批准章：谁签的、哪一级、第几版。"""
+    return room["conn"].execute(
+        "SELECT descriptor FROM workhub.interfaces WHERE interface_id = %s",
+        (interface_id,)).fetchone()["descriptor"]["meta"]["review"]
 
 
 def test_a_department_lead_sees_only_their_own_first_level_pages(room):
@@ -327,3 +425,63 @@ def test_a_standing_in_approval_says_so_in_the_audit_record(room):
         "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
         (PLATFORM,)).fetchone()["member_id"]
     assert event["actor_member_id"] == platform_id
+
+
+def test_a_public_page_is_signed_by_two_people_from_end_to_end(room):
+    """两级审核从头到尾走界面，一步 SQL 都不用：建页 → 提交 → 部门初审 → 公司终审 → 启用。
+
+    这条路以前走不通：公开页在起草时就被要求「已经批准」，而能写这个字段的只有作者，
+    于是「等公司终审的公开页」在真实流程里根本造不出来。现在批准是启用那一票盖的章，
+    所以这条链子必须能一路走到底，而且盖的是谁的章、哪一级，库里读得回来。
+    """
+    # 1. 设计师建页，声明要对外公开
+    room["as_"](DESIGN_AUTHOR)
+    page = room["create"](room["design"], descriptor=_page(visibility="public"))
+    assert _row(room, page)["status"] == "draft"
+
+    # 2. 他提交审核：draft → pending（部门初审）
+    room["submit"](room["design"], page)
+    row = _row(room, page)
+    assert (row["status"], row["review_stage"]) == ("pending", "department")
+    assert row["reviewed_at"] is None
+
+    # 3. 部门负责人过第一关：不给章，只把页子推上去
+    room["as_"](DESIGN_REVIEWER)
+    first = _approve(room, page, note="部门初审过")
+    assert first.headers["location"] == "/reviews?saved=passed"
+    row = _row(room, page)
+    assert (row["status"], row["review_stage"]) == ("pending", "company")
+    assert row["reviewed_at"] is None, "部门这一票不是最终决定，不该留下 reviewed_*"
+    # 作者自己写的 draft 没有被当成批准：章要等启用那一票才盖
+    assert _stamp(room, page)["status"] == "draft"
+
+    # 4. 平台终审：这一票才盖章启用
+    room["as_"](PLATFORM)
+    final = _approve(room, page, note="公司终审过")
+    assert final.headers["location"] == "/reviews?saved=approved"
+
+    row = _row(room, page)
+    assert (row["status"], row["visibility"]) == ("active", "public")
+    assert row["reviewed_by"] == room["people"][PLATFORM]
+    assert row["reviewed_by"] != room["people"][DESIGN_AUTHOR], "审批人不能是作者自己"
+
+    stamp = _stamp(room, page)
+    assert stamp["status"] == "approved"
+    assert stamp["reviewed_by"] == PLATFORM, "章上写的是审批人的工号，不是作者"
+    assert stamp["stage"] == "company", "最终签字属于公司那一级"
+    assert stamp["version_no"] == 1
+    assert stamp["reviewed_at"], "签名没有时间就没法追责"
+
+    # 5. 启用之后页面真的能打开
+    opened = room["client"]().get(f"/interfaces/{page}")
+    assert opened.status_code == 200
+    assert "审核分级样张" in opened.text
+
+    # 6. 审计里两级各留一条，级别各自对得上
+    events = room["conn"].execute(
+        """SELECT event_type, after_state FROM workhub.workforce_audit_events
+            WHERE subject_id = %s ORDER BY occurred_at""", (page,)).fetchall()
+    by_type = {event["event_type"]: event["after_state"] for event in events}
+    assert by_type["interface.review_stage_passed"]["stage"] == "department"
+    assert by_type["interface.approved"]["stage"] == "company"
+    assert by_type["interface.approved"]["acting"] == "company"
