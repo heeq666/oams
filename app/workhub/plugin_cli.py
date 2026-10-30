@@ -7,9 +7,17 @@ These three commands are the whole local loop:
     workhub plugin preview examples/production-dept.yaml
     workhub plugin upgrade old-0.1-interface.json --out upgraded.json
 
-All three are offline: no database, no network. A descriptor is data, so checking
-one is a pure function over a file -- which is what makes it safe to run in an
-editor hook, in CI, or in a pre-commit. `upgrade` moves a schema 0.1 descriptor
+All three are offline by default: no database, no network. A descriptor is data,
+so checking one is a pure function over a file -- which is what makes it safe to
+run in an editor hook, in CI, or in a pre-commit.
+
+One judgement cannot be made offline: whether the person named in
+`meta.review.reviewed_by` actually works here. A signature is a fact about the
+company, not a string in the file, so `check --database` asks the database for
+the active employee codes and verifies the name against them. Without the flag
+the shape is still checked, and the report says in as many words that the name
+went unverified -- an offline check that quietly certifies a made-up signer is
+worse than one that admits its own blind spot. `upgrade` moves a schema 0.1 descriptor
 onto the 0.2 module vocabulary; it prints the machine-made decisions as hint
 lines so a person can confirm them.
 """
@@ -60,27 +68,59 @@ def load_descriptor(path: str | Path) -> dict[str, Any]:
     return data
 
 
-def check_file(path: str | Path) -> list[str]:
+def active_employee_codes() -> set[str]:
+    """The employee codes of everyone currently working here.
+
+    Only called when the caller asked for a database-backed check; importing the
+    connection module lazily keeps the default run of `check` free of any
+    database dependency (and of a DATABASE_URL requirement).
+    """
+    from workhub.db import connection
+
+    with connection() as conn:
+        rows = conn.execute(
+            """SELECT employee_code FROM workhub.workforce_members
+                WHERE employment_status = 'active' AND employee_code IS NOT NULL""").fetchall()
+    return {row["employee_code"] for row in rows if row["employee_code"]}
+
+
+def check_file(path: str | Path, *,
+               known_employee_codes: set[str] | None = None) -> list[str]:
     """Return every problem with the descriptor at *path*. Empty list means it can go up.
 
     A plugin file is installed from a shell, with no review page in between, so
     the file has to carry its own sign-off: `require_recorded_approval` is what
     makes "approved" a recorded fact here instead of a sentence the author typed
-    about themselves.
+    about themselves. `known_employee_codes` closes the other half of that hole:
+    the signer must be a member of this company, so a hand-typed `reviewed_by`
+    fails here instead of sailing through.
     """
     try:
         descriptor = load_descriptor(path)
     except PluginFileError as exc:
         return [str(exc)]
-    return rules.validate_descriptor(descriptor, require_recorded_approval=True)
+    return rules.validate_descriptor(descriptor, require_recorded_approval=True,
+                                     known_employee_codes=known_employee_codes)
 
 
-def render_report(path: str | Path, problems: list[str]) -> str:
-    """A check report a person can act on."""
+def render_report(path: str | Path, problems: list[str], *,
+                  signer_verified: bool = True) -> str:
+    """A check report a person can act on.
+
+    `signer_verified` is false when no database was asked: the report then says
+    what was left unverified instead of letting "OK 通过" stand for more than it
+    looked at.
+    """
     lines = [f"检查 {path}"]
     if not problems:
         lines.append("  OK 通过。字段映射、状态映射、模块版本、容器深度都没问题。")
+        if not signer_verified:
+            lines.append("  没验的一条：meta.review.reviewed_by 是不是库内成员工号。"
+                         "这条要连库，加 --database 再跑一次。")
         return "\n".join(lines)
+    if not signer_verified:
+        lines.append("  提醒：本次没连库，meta.review.reviewed_by 是不是库内成员工号没有验；"
+                     "上面若没提这条，加 --database 再跑一次才算查完。")
     lines.append(f"  FAIL 发现 {len(problems)} 条问题：")
     for index, problem in enumerate(problems, start=1):
         lines.append(f"  {index}. {problem}")
@@ -144,6 +184,12 @@ def main(argv: list[str] | None = None) -> int:
             "--out",
             help="preview 时写 HTML、upgrade 时写升级后的 descriptor（不写就打 stdout）",
         )
+        if name in ("check", "preview"):
+            sub.add_argument(
+                "--database", action="store_true",
+                help="连库多验一条：meta.review.reviewed_by 是不是库内在职成员工号"
+                     "（不连库只验形状，报告里会写明这条没验）",
+            )
 
     args = parser.parse_args(argv)
 
@@ -173,19 +219,32 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(upgraded, ensure_ascii=False, indent=2))
         return 0
 
+    if getattr(args, "database", False):
+        try:
+            known_employee_codes = active_employee_codes()
+        except Exception as exc:  # noqa: BLE001 - 报清楚比抛栈有用
+            print(f"连不上数据库，没法验签字人：{exc}", file=sys.stderr)
+            return 2
+        signer_verified = True
+    else:
+        known_employee_codes = None
+        signer_verified = False
+
     if args.verb == "check":
-        problems = check_file(args.path)
+        problems = check_file(args.path, known_employee_codes=known_employee_codes)
         if args.json:
-            payload = {"path": str(args.path), "ok": not problems, "problems": problems}
+            payload = {"path": str(args.path), "ok": not problems, "problems": problems,
+                       "signer_verified": signer_verified}
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
-            print(render_report(args.path, problems))
+            print(render_report(args.path, problems, signer_verified=signer_verified))
         return 0 if not problems else 1
 
-    problems = check_file(args.path)
+    problems = check_file(args.path, known_employee_codes=known_employee_codes)
     if problems:
         # A preview of an invalid descriptor would teach the wrong thing.
-        print(render_report(args.path, problems), file=sys.stderr)
+        print(render_report(args.path, problems, signer_verified=signer_verified),
+              file=sys.stderr)
         return 1
     try:
         html = preview_file(args.path)
