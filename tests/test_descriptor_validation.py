@@ -216,3 +216,31 @@ def test_a_stamped_descriptor_reads_back_as_approved():
     # The author's own copy is untouched: stamping is not an in-place edit that a
     # caller could be surprised by.
     assert descriptor["meta"]["review"] != reloaded["meta"]["review"]
+
+
+def test_a_status_word_that_is_not_approved_is_not_a_signature():
+    """回归：`{"status": "draft"}` 曾经因为「非空即算填」被读成已批准。
+
+    签名是三个人一组的东西——谁签、什么时候、签的什么结论。前两个字段填满不代表
+    第三个字段成立：一页自己写着 draft，就是作者在说「还没批」。
+
+    这里故意用**部门可见 + 公司汇总能力**：这条判据没有「公开」那条兜底，缺口报不报
+    全看「三个人一组齐没齐」，所以它才是那个 bug 的原发地——旧口径下 draft 被当成
+    填好了，一页没批的公司汇总页就这么上线了。
+    """
+    from workhub.descriptor import recorded_approval_gaps
+
+    descriptor = base()
+    descriptor["capabilities"] = ["entries:write", "aggregate:read:company"]
+    # 谁签、什么时候都填满了，只有结论写着 draft。
+    descriptor["meta"]["review"] = {"status": "draft", "reviewed_by": "GM",
+                                    "reviewed_at": "2026-10-13"}
+
+    gaps = recorded_approval_gaps(descriptor)
+    assert gaps, "draft 不算批准，缺口必须报出来"
+    assert any("second-level approval" in gap for gap in gaps)
+    assert validate_descriptor(descriptor, require_recorded_approval=True) != []
+
+    # 只把结论改成 approved，其余一个字不动，缺口就该消失——证明上面那条不是空跑。
+    descriptor["meta"]["review"]["status"] = "approved"
+    assert recorded_approval_gaps(descriptor) == []
