@@ -1,6 +1,7 @@
 {#- Input: a small detail table. Columns are declared by the descriptor; cells bind to fields. -#}
 {% set p = params_of(module) %}
 {% set cols = as_list(p.get('columns')) %}
+{% set row_count = as_int(p.get('rows'), 1, low=1, high=5) %}
 <section class="wh-m wh-input wh-table-module" data-type="table">
   {% if cols %}
   <table class="wh-table">
@@ -10,7 +11,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for row in range(as_int(p.get('rows'), 1, low=1, high=5)) %}
+      {% for row in range(row_count) %}
       <tr>
         {% for col in cols %}
         <td>
@@ -22,6 +23,9 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if row_count >= 5 %}
+  <p class="wh-table-hint">行数已到上限 5，超过请拆成多个表。</p>
+  {% endif %}
   {% else %}
   <p class="wh-empty">{% if inline_widgets() %}缺列配置：这个表还没声明列。{% else %}还没有明细。{% endif %}</p>
   {% endif %}
