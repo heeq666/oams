@@ -21,8 +21,9 @@
       <div class="flash">当前页面<b>{{ page_status_label }}</b>。这里填的内容只存在测试区，不会进入公司汇总。</div>
     {% endif %}
     {% if saved == 'withdrawn' %}<div class="flash">已撤回提交，页面回到待提交审核状态。试填内容都保留着。</div>
-    {% elif saved == 'review' %}<div class="flash">已提交审核。公司审核通过后，这个页面就会正式使用并进入公司汇总。</div>
-    {% elif saved %}<div class="flash">已保存到{{ '测试区' if draft_mode else '公司汇总' }}。</div>{% endif %}
+    {% elif saved == 'review' %}<div class="flash">已提交审核。部门负责人通过后就正式使用；要对外公开、要进公司汇总、或这一版是拿别的部门的页面做底子的，还会转到公司终审。</div>
+    {% elif saved == 'linked' %}<div class="flash">{{ '已更新关联。页面还没正式使用，这条汇报仍只在测试区。' if draft_mode else '已更新关联。汇报关联到工作项后，才会计入公司汇总。' }}</div>
+    {% elif saved %}<div class="flash">{{ '已保存到测试区——页面还没正式使用，这条不计入公司汇总。' if draft_mode else '已保存。关联到工作项后，这条才会计入公司汇总。' }}</div>{% endif %}
     {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
     {# The funnel this department feeds, same five stages as the company page and
@@ -81,7 +82,7 @@
           </form>
           {% endif %}
         {% else %}
-          <p class="meta">当前版本 v{{ page.version_no }}。试填满意后提交公司审核，通过后正式启用并进入公司汇总。</p>
+          <p class="meta">当前版本 v{{ page.version_no }}。试填满意后提交审核：只给本部门用的，部门初审通过就正式使用；要对外公开或进公司汇总的，再走公司终审。</p>
           <form method="post" action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/submit-review" style="margin-top:10px">
             <input type="hidden" name="review_csrf" value="{{ review_csrf }}">
             <button type="submit">提交审核</button>
