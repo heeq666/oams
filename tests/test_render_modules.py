@@ -438,10 +438,10 @@ def test_table_empty_copy_depends_on_the_viewpoint():
 
 
 def test_readonly_drops_the_evidence_gallery_before_any_empty_state():
-    # 「没有提供证据。」这句在只读视角里到不了：证据件不进公司汇总，
-    # 经理视角在 render_module 里就被 _hidden_in_readonly 整块摘掉了（见
-    # app/workhub/render.py:755）；填报视角走的是控件分支。所以这里锁的是
-    # 「整块不出现」，别拿空态文案当只读的验收点。
+    # 证据件不进公司汇总，经理视角在 render_module 里就被 _hidden_in_readonly
+    # 整块摘掉了（见 app/workhub/render.py:755），所以只读视角没有「证据」这一块，
+    # 也不该有「没有提供证据」这类空态文案——那句话原本永远到不了，已按裁决删掉。
+    # 这里锁的是「整块不出现」，别拿空态文案当只读的验收点。
     html = render_read_only(one("evidence_gallery"), {}, {})
     assert "wh-evidence-gallery" not in html
     assert empty_lines(html) == []
@@ -471,9 +471,6 @@ def test_metric_input_marks_a_missing_number_as_unfilled_not_as_a_dash():
     assert ">0 件<" in zero
 
 
-@pytest.mark.xfail(reason="status_chart.html 补了空态文案，但没跳过四条轨道：total=0 时"
-                         "「还没有状态数据。」和 4 条空轨道一起出现（模板 for 循环外缺 total 判断）",
-                  strict=True)
 def test_status_chart_draws_no_track_when_there_is_no_data():
     html = render_interface(one("status_chart"), {}, {})
     assert empty_lines(html) == ["还没有状态数据。"]

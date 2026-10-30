@@ -772,7 +772,9 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         name="preview_descriptor",
         description=(
             "预览一个描述符：返回 valid / errors / rendered_html / aggregates_preview。"
-            "纯只读——不写入任何版本，用假数据渲染，每块右上角标注「进汇总/不进汇总」。"
+            "纯只读——不写入任何版本，用假数据渲染。是否进公司汇总只看 aggregates_preview："
+            "resolved 是能进汇总的指标绑定（metric_key / mode / agg / from_field / where_status），"
+            "unresolved 是解析不上的 binding；页面上不再逐块标注「进汇总/不进汇总」角标。"
             "改完草稿后应先预览再提交。"
         ),
         input_schema=_schema({

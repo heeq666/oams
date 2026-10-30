@@ -15,7 +15,7 @@
         {% for col in cols %}
         <td>
           {% set key = col.get('key') %}
-          {% if inline_widgets() %}{{ input_for_key(key) or static_for(key) }}{% else %}{{ static_for(key) }}{% endif %}
+          {% if inline_widgets() %}{{ input_for_key(key, labelled=False) or static_for(key) }}{% else %}{{ static_for(key) }}{% endif %}
         </td>
         {% endfor %}
       </tr>
@@ -23,7 +23,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="wh-empty">这个明细表还没有配置列。</p>
+  <p class="wh-empty">{% if inline_widgets() %}缺列配置：这个表还没声明列。{% else %}还没有明细。{% endif %}</p>
   {% endif %}
   {{ private_note(module, spec) }}
 </section>

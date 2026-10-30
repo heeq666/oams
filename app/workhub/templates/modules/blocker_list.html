@@ -10,7 +10,13 @@
     <span class="wh-title">{{ value_of('title') or '阻塞事项' }}</span>
     {{ status_badge() }}
   </div>
-  <p class="wh-note">{{ value_of('blocked_reason') or '当前没有阻塞。' }}</p>
+  {% if value_of('blocked_reason') %}
+  <p class="wh-note">{{ value_of('blocked_reason') }}</p>
+  {% elif value_of('title') %}
+  <p class="wh-empty">未填写原因</p>
+  {% else %}
+  <p class="wh-empty">当前没有阻塞。</p>
+  {% endif %}
   {% if value_of('needs_decision') %}
   <p class="wh-evidence">需要决策：{{ value_of('needs_decision') }}</p>
   {% endif %}

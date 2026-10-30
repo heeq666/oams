@@ -82,7 +82,8 @@
    它们原来吃共享规则的灰底 + 1px 边 + 内距 16，页面上平白多一层框。 */
 .wh-columns,
 .wh-rows,
-.wh-grid {
+.wh-grid,
+.wh-metric-grid {
   background: none;
   border: 0;
   padding: 0;
@@ -110,7 +111,8 @@
 
 /* --- containers --- */
 .wh-columns,
-.wh-grid {
+.wh-grid,
+.wh-metric-grid {
   display: grid;
   /* 列数收进变量：模块的 `span: 1..4` 是「跨父级的几列」，所以模块层保留 repeat(N)，
      不套外壳的 12 栅格（外壳那套见 docs/design/layout-grid.md §2，模块层的理由见 §6）。 */
@@ -173,11 +175,13 @@
 }
 
 .wh-tabs {
-  /* 一行芯片 + 一行面板：radio 换面板，零 JS。面板都以 grid-row 2 落同一格，
-     只有选中那一条 display:block，所以顺序变化不会让面板左右并排。 */
-  display: grid;
-  grid-template-columns: repeat(auto-fit, max-content);
-  align-items: start;
+  /* 一行芯片 + 一块面板：radio 换面板，零 JS。
+     用 flex 而不是 grid：面板要占满整行（grid-column: 1/-1）会把 auto-fit 的列数
+     压成一列，芯片于是被拉成通栏胶囊。flex 里芯片天然按内容宽，面板 flex-basis 100%
+     自己另起一行。 */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -196,7 +200,9 @@
 
 .wh-tab {
   /* Tab 芯片对齐控件高 30（Figma tabs 148:5967 / 外壳 3:329） */
+  order: 1;
   display: inline-flex;
+  flex: 0 0 auto;
   cursor: pointer;
   align-items: center;
   height: 30px;
@@ -222,8 +228,8 @@
 
 .wh-tabpanel {
   display: none;
-  grid-row: 2;
-  grid-column: 1 / -1;
+  order: 2;
+  flex: 1 0 100%;
   border: 1px solid var(--wh-line);
   border-radius: var(--wh-radius);
   padding: 12px;
@@ -509,6 +515,13 @@
 
 .wh-metric-label {
   font-size: 12px;
+  color: var(--wh-muted);
+}
+
+.wh-num-empty {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 400;
   color: var(--wh-muted);
 }
 

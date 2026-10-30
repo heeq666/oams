@@ -438,9 +438,23 @@ def test_a_stale_form_token_cannot_post(monkeypatch, room):
     thread = room.manage("HR")
     body = "拿别人的令牌发的"
     with _served_as(monkeypatch, room, HR_MANAGER) as client:
-        # 令牌用纯 ASCII：`_check_form_token` 走 hmac.compare_digest，传非 ASCII
-        # 会 TypeError（见给负责人的清单第 1 条），那不是这里要验的东西。
         response = _send(client, thread["thread_id"], body, token="stale-token-abc")
+    assert response.status_code == 403
+    assert _bodies(room, thread, body) == 0
+
+
+def test_a_token_with_chinese_characters_is_refused_not_crashed(monkeypatch, room):
+    """令牌里带中文也必须是 403。
+
+    比字符串的恒定时间比较对非 ASCII 的 str 会抛 TypeError，于是「令牌错」变成
+    「服务端崩了」（500）。两者对外的区别本身就是信息：500 说这里是能被打崩的
+    代码路径，403 只说这个令牌不认。所以这条锁的是状态码，不是文案。
+    """
+
+    thread = room.manage("HR")
+    body = "中文令牌发的"
+    with _served_as(monkeypatch, room, HR_MANAGER) as client:
+        response = _send(client, thread["thread_id"], body, token="中文令牌-不是真的")
     assert response.status_code == 403
     assert _bodies(room, thread, body) == 0
 

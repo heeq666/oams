@@ -1,14 +1,11 @@
-{#- Input: evidence links. Never aggregated -- the links leave the building. -#}
+{#- Input: evidence links. Never aggregated -- the links leave the building.
+    证据区只在 edit / preview 渲染；readonly 整块被 _hidden_in_readonly 剔除，
+    所以这里不需要「无控件」分支。 -#}
 <section class="wh-m wh-input wh-evidence-gallery" data-type="evidence_gallery">
   {% if inline_widgets() %}
   {{ input_for('title') }}
   {{ input_for('evidence_url') }}
   {{ input_for('note', textarea=True) }}
-  {% else %}
-  <div class="wh-row">
-    <span class="wh-title">{{ value_of('title') or '证据' }}</span>
-  </div>
-  {% if value_of('note') %}<p class="wh-note">{{ value_of('note') }}</p>{% endif %}
   {% endif %}
   {% set url = safe_url(value_of('evidence_url')) %}
   {% if url %}

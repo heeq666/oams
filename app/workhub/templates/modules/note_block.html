@@ -1,5 +1,7 @@
 {#- Display: plain explanatory text. The only module allowed to carry free text (params.text). -#}
 {% set p = params_of(module) %}
+{% if p.get('text') %}
 <section class="wh-m wh-display wh-note-block" data-type="note_block">
   <p class="wh-note-text">{{ p.get('text') or '' }}</p>
 </section>
+{% endif %}
