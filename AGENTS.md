@@ -44,4 +44,6 @@ pytest                                # 带 db 标记的用例在没数据库时
 
 - 中文优先：注释、文档、界面文案都用中文。
 - 提交前跑 `pytest`；改 UI 要截图自检（1440 / 1024 / 768 三档，窄屏不许横向滚动）。
+- **验收 pytest 要两种机器状态都跑，并且看 skip 数**：本机有库 → **0 skipped**，这才是真绿；故意指向不存在的库 → 允许 skip，那只证明「无库不炸」。skip 数一涨就说明有库没被用上，别拿 `0 failed` 当验收口径。
+- db 用例不许在 import 期写 `WORKHUB_DATABASE_URL`，地址一律由 fixture 注入。
 - 不往生产库写、不连公网暴露 PostgreSQL；改动 `.env` 前先看 `.env.example`。
