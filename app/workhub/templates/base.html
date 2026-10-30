@@ -50,7 +50,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   /* Position is metadata, not a state -- grey text at the row end instead of a
      badge that competes with status colours. Warnings keep one accent each. */
   .row1 .pos { margin-left: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
-  .row1 .pos .vac { color: var(--blocked); font-style: normal; margin-left: 6px; }
+  .row1 .pos .vac { color: var(--blocked); font-style: normal; margin-left: 8px; }
   /* States read as a tinted word, not a chip with a frame: the fill carries the
      state and the text keeps its status colour, so nothing has to be outlined. */
   .badge { font-size: 12px; line-height: 18px; padding: 1px 8px; border-radius: var(--r-pill);
@@ -60,8 +60,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .badge.agent { color: var(--agent); background: var(--agent-soft); }
   .badge.human { color: var(--ink-2); background: var(--subtle); }
   .badge.vacant { color: var(--blocked); background: var(--danger-soft); }
-  .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
-  .note { margin-top: 6px; font-size: 14px; }
+  .meta { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .note { margin-top: 8px; font-size: 14px; }
   .evidence { color: var(--muted); font-size: 13px; margin-top: 4px; }
   .empty { color: var(--muted); font-size: 14px; padding: 8px 0; }
   /* Keyboard users get to see where they are; WCAG 2.4.7. */
@@ -99,7 +99,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .channel-scorecard .head .k { color: var(--muted); font-size: 12px; }
   .channel-scorecard .head .n { font-size: 20px; font-weight: 600; }
   .channel-scorecard .split { display: flex; height: 8px; border-radius: var(--r-pill); overflow: hidden;
-                              background: var(--line); margin: 8px 0 6px; }
+                              background: var(--line); margin: 8px 0; }
   .channel-scorecard .split .agent { background: var(--agent); }
   .channel-scorecard .split .human { background: var(--ink-2); }
   .channel-scorecard .legend { display: flex; gap: 16px; color: var(--muted); font-size: 12px; }
@@ -108,7 +108,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .tabs a { padding: 6px 16px; border-radius: var(--r-control); border: 1px solid var(--line);
             background: var(--card); color: var(--ink); text-decoration: none; font-size: 14px; }
   .tabs a.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-  .tabs a .cnt { margin-left: 6px; font-size: 12px; opacity: .65; }
+  .tabs a .cnt { margin-left: 8px; font-size: 12px; opacity: .65; }
   /* Layers are text chips: the department selector above is navigation, stages
      below are a flow -- both get a different silhouette, so the three rows never
      read as the same kind of control. */
@@ -119,11 +119,14 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .tabs.layers a.on { background: var(--accent); color: var(--on-accent); }
   .tabs.layers a .cnt { font-weight: 600; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-  .flowstrip { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  /* Figma FlowStrip 3:330 的外层 itemSpacing 是 0（stage 与箭头紧贴），
+     代码这边按「行内小件之间 8」收：箭头是独立元素，留 8 才不会粘住胶囊边框。 */
+  .flowstrip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
                background: var(--subtle); border: 0; border-radius: var(--r-small); padding: 12px 12px; }
   .flowstrip .arrow, .flowstrip .fork { color: var(--muted); font-size: 13px; }
   .flowstrip .fork { margin-left: 12px; }
-  .flowstrip .stage { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 16px;
+  /* Label↔Count 8（Figma 的 Stage 内 itemSpacing 就是 8）。 */
+  .flowstrip .stage { display: inline-flex; align-items: baseline; gap: 8px; padding: 6px 16px;
                       border: 1px solid var(--line); border-radius: var(--r-control); background: var(--card);
                       color: var(--ink); font-size: 14px; text-decoration: none; }
   .flowstrip a.stage:hover { border-color: var(--accent); }
@@ -144,7 +147,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .link.danger { color: var(--blocked); }
   .stack { margin-bottom: 16px; }
   .form-row .check { flex-direction: row; align-items: center; gap: 8px; }
-  .bar { height: 4px; background: var(--line); border-radius: var(--r-pill); margin-top: 6px; overflow: hidden; }
+  .bar { height: 4px; background: var(--line); border-radius: var(--r-pill); margin-top: 8px; overflow: hidden; }
   .bar > span { display: block; height: 100%; background: var(--accent); }
   .flowstrip .clear:hover { color: var(--ink); text-decoration: underline; }
   .report-item { margin-bottom: 16px; }
@@ -161,9 +164,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      first, so a reviewer's eye can skip the low ones and stop at the costly ones. */
   .diff-block { margin-top: 12px; padding: 12px 12px; border: 0;
                 border-radius: var(--r-small); background: var(--subtle); }
-  .diff-head { margin: 0 0 6px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .diff-head { margin: 0 0 8px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
   .diff-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex;
-               flex-direction: column; gap: 6px; }
+               flex-direction: column; gap: 8px; }
   .diff-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 14px; }
   .diff-area { font-size: 12px; color: var(--muted); border: 1px solid var(--line);
                border-radius: var(--r-micro); padding: 0 6px; }
@@ -174,9 +177,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      the middle cell and overflowed the page, so only the page padding is kept. */
   @media (max-width: 720px) { main { padding: 64px 16px 48px; } .orgnav { flex-wrap: wrap; } }
   /* A department's own pages, as tabs inside the content area. */
-  .page-tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+  /* tab 之间 8。Figma Tabs 3:329 的外层是 2（tab 紧贴成一条），2 是档外值，代码按行内小件 8 收。 */
+  .page-tabs { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
   .page-tab { padding: 8px 16px; border: 1px solid transparent; border-bottom: none; border-radius: var(--r-small) var(--r-small) 0 0;
-    color: var(--muted); text-decoration: none; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    color: var(--muted); text-decoration: none; font-size: 14px; display: flex; align-items: center; gap: 8px; }
   .page-tab:hover { color: var(--ink); background: var(--subtle); }
   .page-tab.on { background: var(--card); border-color: var(--line); color: var(--ink); font-weight: 600; margin-bottom: -1px; }
   .page-tab.add { color: var(--muted); }
@@ -372,7 +376,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      时两圈弧线才同心（角上的白缝 = 边上的白缝 = 16）。内距给小了角缝会变窄，
      首末行高亮看着就像咬在弹层的圆角上。推导见 docs/design/design-system-v1.md §3.1。 */
   .account-menu { min-width: 208px; padding: 16px; text-align: left; }
-  .account-menu .menu-head { padding: 8px 12px 12px; margin-bottom: 6px;
+  .account-menu .menu-head { padding: 8px 12px 12px; margin-bottom: 8px;
                              border-bottom: 1px solid var(--line); }
   .account-menu .menu-name { color: var(--ink); font-size: 13px; font-weight: 500; }
   .account-menu .menu-role { margin-top: 2px; color: var(--muted); font-size: 12px;
@@ -449,7 +453,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      弹层 28 配行 12 时，8 的内距才能让角上的留白明显大于边上的留白。 */
   .wh-list { padding: 16px; max-height: 320px; overflow-y: auto;
              overscroll-behavior: contain; }
-  .wh-list .wh-opt { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+  /* 对勾↔文字 8（Figma Menu Item 在 140:3953 里的 itemSpacing 是 8）。 */
+  .wh-list .wh-opt { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px;
                      border-radius: var(--r-small); color: var(--ink); font-size: 13px; line-height: 32px;
                      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
   .wh-list .wh-opt .tick { flex: 0 0 12px; width: 12px; color: var(--accent); font-size: 12px; }
@@ -509,7 +514,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .auth-brand img { display: block; width: 77px; height: 60px; }
   .auth-card { margin-top: 24px; background: var(--card); border: 1px solid var(--line);
                border-radius: var(--r-xl); padding: 32px; }
-  .auth-card h1 { font-size: 24px; margin: 0 0 6px; }
+  .auth-card h1 { font-size: 24px; margin: 0 0 8px; }
   .auth-card .sub { margin: 0 0 24px; }
   .auth-card .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
   .auth-card input { width: 100%; height: 44px; }
@@ -721,7 +726,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .dev-badge {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     height: 28px;
     padding: 0 12px;
     border-radius: var(--r-pill);
@@ -741,7 +746,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .dev-menu { min-width: 268px; padding: 16px; }
   .dev-menu-head {
     margin: 0;
-    padding: 8px 12px 6px;
+    padding: 8px 12px;
     color: var(--muted);
     font-size: 11px;
     line-height: 1.4;
@@ -766,7 +771,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .dev-item:hover, .dev-item.is-on { background: var(--subtle); }
   .dev-item .nm { font-weight: 500; }
   .dev-item .role { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .dev-menu .sep { height: 1px; margin: 6px 0; background: var(--line); }
+  .dev-menu .sep { height: 1px; margin: 8px 0; background: var(--line); }
 </style>
 </head>
 {% set path = request.url.path %}

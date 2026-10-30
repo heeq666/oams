@@ -122,7 +122,8 @@ body.collab-open .collab-panel { transform: translateY(0); }
 .collab-search {
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* 放大镜↔输入 8（Figma Search 140:3625 两个变体 itemSpacing 都是 8）。 */
+  gap: 8px;
   flex: 1;
   min-width: 0;
   height: 36px;
@@ -449,7 +450,8 @@ body.collab-open .collab-panel { transform: translateY(0); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  /* 标题↔说明 8（行与行）。Figma Empty 140:3804 是 10，10 本身是档外值，代码统一按 8。 */
+  gap: 8px;
   flex: 1;
   min-height: 0;
   padding: 24px;
