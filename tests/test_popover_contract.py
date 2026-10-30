@@ -137,8 +137,10 @@ def test_the_look_lives_in_one_rule_only():
 
 def test_the_carrier_loads_before_its_clients():
     head = BASE.read_text(encoding="utf-8")
-    carrier = head.index("/static/wh-popover.js")
-    assert carrier < head.index("/static/wh-select.js"), (
+    # 引用改成 static_url() 之后带内容哈希版本串，先后顺序仍然写在模板里，
+    # 所以断言还是这两行的位置：载体在前，客户端在后。
+    carrier = head.index("static_url('wh-popover.js')")
+    assert carrier < head.index("static_url('wh-select.js')"), (
         "wh-popover.js 必须先加载：wh-select.js 展开时要在 window.whPopover 上挂面板"
     )
 

@@ -41,9 +41,8 @@ PROBE = """(() => {
 
 def test_layout_sticky_rail(site, tmp_path) -> None:
     skip_without_browser()
-    paths = ["/login?token=" + admin_token()] + DEFAULT_PATHS
-    report = measure(paths, PROBE, viewport=VIEWPORT, scroll=SCROLL,
-                     tmp_path=tmp_path)
+    report = measure(DEFAULT_PATHS, PROBE, viewport=VIEWPORT, scroll=SCROLL,
+                     tmp_path=tmp_path, login="/login?token=" + admin_token())
 
     failures = []
     for path in DEFAULT_PATHS:

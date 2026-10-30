@@ -46,13 +46,22 @@ def skip_without_browser() -> None:
         pytest.skip(f"ego-browser is not installed at {EGO}")
 
 
-def measure(paths, expression, *, viewport, tmp_path, scroll=None, settle=2200, timeout=240):
-    """Walk ``paths`` in one fresh ego page; return {path: {before, afterScroll}}."""
+def measure(paths, expression, *, viewport, tmp_path, scroll=None, settle=2200, timeout=240,
+            login=None):
+    """Walk ``paths`` in one fresh ego page; return {path: {before, afterScroll}}.
+
+    ``login`` is the sign-in URL to visit (and confirm) before measuring: the
+    session cookie arrives on that response's redirect, and navigating straight
+    to the next page can beat the cookie into the jar. The driver retries until a
+    real page (frame + top bar) is on screen, so a run cannot silently measure the
+    login screen for every page.
+    """
     config = tmp_path / "ego-measure.json"
     out = tmp_path / "ego-measure.out.json"
     config.write_text(json.dumps({
         "out": str(out),
         "base": os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000"),
+        "login": login,
         "paths": paths,
         "expression": expression,
         "viewport": viewport,
