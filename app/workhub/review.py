@@ -6,13 +6,16 @@ the page looks fine, nothing stands out, approved.  The thing that actually
 needs a human eye is the delta -- the field that quietly changed its summary
 mapping, the status word that disappeared, the capability that was added.
 
-So this module owns two things and nothing else:
+So this module owns three things and nothing else:
 
 1. diff_descriptors() -- a stable, human-readable list of changes between the
    version that is live and the version asking to replace it.
 2. REJECTION_CODES -- the fixed vocabulary a reviewer sends a page back with,
    so a rejection carries a machine-readable reason instead of a sentence
    nobody can count.
+3. stamp_approval() -- the one way "approved" gets written into a descriptor.
+   Authors do not write it; the signature is copied in from the person who
+   actually clicked, at the moment the page goes live.
 
 Severity is not decoration: it is the answer to "does this change alter what the
 company's numbers mean?".  A page that only renames a label is low; a page that
@@ -23,6 +26,8 @@ Nothing here touches the database; the callers hand in two descriptors.
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
 # --- severity ---------------------------------------------------------------
@@ -554,3 +559,50 @@ def review_bundle(old: Mapping | None, new: Mapping | None) -> dict:
         "summary": summary,
         "high_changes": [item for item in changes if item["severity"] == SEVERITY_HIGH],
     }
+
+
+# --- approval stamp ---------------------------------------------------------
+
+#: Which half of the two-stage review a signature belongs to.
+APPROVAL_STAGES = ("department", "company")
+
+
+def stamp_approval(descriptor: Mapping | None, *, reviewed_by: str,
+                   stage: str = "company", reviewed_at: str | None = None,
+                   version_no: int | None = None) -> dict:
+    """The descriptor as it stands *after* this signature: who approved it, when.
+
+    The document a department writes and the document that runs are two
+    different objects. An author can type `"review": {"status": "approved"}`
+    into their own JSON -- that is a sentence about themselves, and before this
+    there was nothing in the system that could tell it apart from a real
+    sign-off, which is what made "declare a public page" impossible to do
+    honestly. So the signature is written here instead: at the moment the page
+    goes live, from the person who clicked the button, overwriting whatever the
+    author claimed. A hand-written approval is not a weaker signature; it is
+    none, and this is where it gets replaced.
+
+    `stage` says which half signed (`department` / `company`); a department
+    pass that only moves the page up does not stamp anything, because the page
+    is not live yet and can still be withdrawn.
+
+    Pure: no clock, no database, no mutation of the caller's dict. The caller
+    owns the transaction and hands in the timestamp.
+    """
+    stamped = json.loads(json.dumps(descriptor or {}, default=str))
+    meta = stamped.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
+    meta["review"] = {
+        "status": "approved",
+        "reviewed_by": reviewed_by,
+        "reviewed_at": reviewed_at or _utc_now(),
+        "stage": stage if stage in APPROVAL_STAGES else "company",
+        "version_no": version_no,
+    }
+    stamped["meta"] = meta
+    return stamped
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")

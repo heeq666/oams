@@ -173,13 +173,17 @@ def test_smuggled_script_rejected():
 
 
 # ---------------------------------------------------------------------------
-# Visibility: public needs a recorded approval
+# Visibility: public is a request; the strict check guards the doors that skip review
 # ---------------------------------------------------------------------------
 
-def test_public_template_needs_approval():
+def test_public_template_can_be_declared_but_not_installed_unsigned():
     descriptor = base()
     descriptor["meta"]["visibility"] = "public"
-    assert any("status=approved" in p for p in problems(descriptor))
+    # Asking for a public page is not a problem -- refusing the ask is what made
+    # departments give up on it. The signature is what the strict door wants.
+    assert problems(descriptor) == []
+    assert any("status=approved" in p
+               for p in validate_descriptor(descriptor, require_recorded_approval=True))
 
 
 def test_approved_public_template_allowed():
@@ -188,3 +192,27 @@ def test_approved_public_template_allowed():
     descriptor["meta"]["review"] = {"status": "approved", "reviewed_by": "GM",
                                     "reviewed_at": "2026-10-13"}
     assert problems(descriptor) == []
+    assert validate_descriptor(descriptor, require_recorded_approval=True) == []
+
+
+def test_a_stamped_descriptor_reads_back_as_approved():
+    """The stamp has to survive the round trip to JSON, because that is what the
+    database stores and what the next load reads: a signature that only exists in
+    the request handler is not a record."""
+    import json
+
+    from workhub.review import stamp_approval
+
+    descriptor = base()
+    descriptor["meta"]["visibility"] = "public"
+    stamped = stamp_approval(descriptor, reviewed_by="DESIGN001", stage="department",
+                             reviewed_at="2026-10-31T09:00:00Z", version_no=3)
+    reloaded = json.loads(json.dumps(stamped))
+
+    assert reloaded["meta"]["review"] == {
+        "status": "approved", "reviewed_by": "DESIGN001",
+        "reviewed_at": "2026-10-31T09:00:00Z", "stage": "department", "version_no": 3}
+    assert validate_descriptor(reloaded, require_recorded_approval=True) == []
+    # The author's own copy is untouched: stamping is not an in-place edit that a
+    # caller could be surprised by.
+    assert descriptor["meta"]["review"] != reloaded["meta"]["review"]

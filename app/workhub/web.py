@@ -44,7 +44,7 @@ from workhub import admin_labels, api, collab, funnel, metrics, review as review
 from workhub.config import settings
 from workhub.datacenter import DataCenter, DataCenterNotConfigured, build_datacenter
 from workhub.db import connection
-from workhub.descriptor import validate_descriptor
+from workhub.descriptor import recorded_approval_gaps, validate_descriptor
 from workhub.render import RenderError, render_interface, render_read_only
 from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, WorkItemCreate)
@@ -1238,8 +1238,32 @@ def _acting_stage(powers: dict[str, Any], page: Any) -> str:
 
 
 def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
-                   acting: str = "department") -> None:
-    """Make an approved page the live screen for its department slug."""
+                   acting: str = "department") -> str | None:
+    """Make an approved page the live screen for its department slug.
+
+    Returns None when the page went live, or a sentence explaining why the
+    approval could not be written into it. That second case is not expected to
+    happen; it is here because publishing a page whose own descriptor denies it
+    was approved is precisely the lie this round exists to remove, and refusing
+    is cheaper than explaining later.
+    """
+    # Which level this signature belongs to, spelled out instead of inferred from
+    # `acting` later: a stand-in still signs the *department's* half, and a reader
+    # of the log must not have to know the vocabulary to see that.
+    signed_level = "company" if acting == "company" else "department"
+    # The signature is written here, not read from the document. An author can
+    # type "approved" into their own JSON; until this line existed nothing in
+    # the system could tell that apart from a real sign-off, which is what made
+    # "declare a public page" impossible to do honestly.
+    stamped = review_rules.stamp_approval(
+        page["descriptor"] or {},
+        reviewed_by=str(principal.get("employee_code") or principal["member_id"]),
+        stage=signed_level,
+        version_no=page["version_no"],
+    )
+    gaps = recorded_approval_gaps(stamped)
+    if gaps:
+        return "批准没能写进页面描述，页面没有上线：" + "；".join(gaps[:3])
     # Approving replaces whatever was live for this slug: a department must never
     # end up with two pages claiming to be the current one.
     conn.execute(
@@ -1255,23 +1279,20 @@ def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
               SET status = 'active', review_stage = 'department',
                   reviewed_by = %s, reviewed_at = now(),
                   review_note = %s, visibility = COALESCE(%s, visibility),
-                  updated_at = now()
+                  descriptor = %s, updated_at = now()
             WHERE interface_id = %s""",
         (principal["member_id"], note.strip() or None,
          requested_visibility if requested_visibility in ("department", "public") else None,
-         page["interface_id"]))
+         Jsonb(stamped), page["interface_id"]))
     # The approval records what was actually reviewed, so "why did the number move
     # on the 12th" can be answered from the audit log alone.
     bundle = _review_bundle(conn, page)
     summary = bundle["summary"]["headline"] if bundle else ""
-    # Which level this signature belongs to, spelled out instead of inferred from
-    # `acting` later: a stand-in still signs the *department's* half, and a reader
-    # of the log must not have to know the vocabulary to see that.
-    signed_level = "company" if acting == "company" else "department"
     api.audit(conn, principal["member_id"], "interface.approved", "interface", page["interface_id"],
               (note.strip() or "review approved") + (f"｜{summary}" if summary else ""),
               {"to": "active", "version_no": page["version_no"], "stage": signed_level,
                "acting": acting, "changes": bundle["summary"]["total"] if bundle else 0})
+    return None
 
 
 @router.get("/reviews", response_class=HTMLResponse)
@@ -1360,12 +1381,16 @@ def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
             return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(refusal), status_code=303)
         acting = _acting_stage(powers, page)
         if page["review_stage"] == "company":
-            _activate_page(conn, principal, page, note, acting=acting)
+            failed = _activate_page(conn, principal, page, note, acting=acting)
+            if failed:
+                return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(failed), status_code=303)
             return RedirectResponse(url="/reviews?saved=approved", status_code=303)
         escalate = review_rules.needs_company_review(
             page["descriptor"] or {}, cross_department=_cross_department(conn, page))
         if not escalate:
-            _activate_page(conn, principal, page, note, acting=acting)
+            failed = _activate_page(conn, principal, page, note, acting=acting)
+            if failed:
+                return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(failed), status_code=303)
             return RedirectResponse(url="/reviews?saved=approved", status_code=303)
         conn.execute(
             """UPDATE workhub.interfaces SET review_stage = 'company', updated_at = now()
@@ -1650,7 +1675,11 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
         positions_known = {row["position_code"] for row in conn.execute(
             "SELECT position_code FROM workhub.positions WHERE status = 'active'").fetchall()}
         problems = validate_descriptor(descriptor, known_org_unit_codes=codes,
-                                       known_position_codes=positions_known)
+                                       known_position_codes=positions_known,
+                                       # This is the one door that reaches a live
+                                       # page without anyone signing it, so the
+                                       # file has to carry the signature itself.
+                                       require_recorded_approval=True)
         if problems:
             return RedirectResponse(url="/setup/interfaces?error=" +
                                     urllib.parse.quote("；".join(problems)[:500]), status_code=303)
