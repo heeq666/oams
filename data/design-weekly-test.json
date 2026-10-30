@@ -1,0 +1,95 @@
+{
+  "schema_version": "0.2",
+  "interface_id": "design-weekly-test",
+  "name": "设计部周测试页",
+  "org_unit_code": "DESIGN",
+  "position_codes": [
+    "DESIGN_LEAD"
+  ],
+  "capabilities": [
+    "entries:write",
+    "entries:read:dept",
+    "aggregate:read:dept"
+  ],
+  "modules": [
+    {
+      "key": "layout",
+      "type": "rows",
+      "params": {
+        "gap": "md"
+      },
+      "children": [
+        {
+          "key": "progress",
+          "type": "progress_row",
+          "module_version": "^1.0",
+          "source_fields": [
+            "title",
+            "state_word",
+            "note",
+            "evidence_ref"
+          ]
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "title",
+      "label": "事项",
+      "type": "text",
+      "required": true,
+      "map_to": "title",
+      "aggregatable": true,
+      "example": "本周打样"
+    },
+    {
+      "key": "state_word",
+      "label": "状态",
+      "type": "enum",
+      "required": true,
+      "map_to": "status",
+      "aggregatable": true,
+      "example": "进行中",
+      "options": [
+        "未开始",
+        "进行中",
+        "已完成"
+      ]
+    },
+    {
+      "key": "note",
+      "label": "备注",
+      "type": "text",
+      "required": false,
+      "map_to": "display_only",
+      "aggregatable": false,
+      "example": "本周推进到哪里"
+    },
+    {
+      "key": "evidence_ref",
+      "label": "依据",
+      "type": "text",
+      "required": true,
+      "map_to": "evidence",
+      "aggregatable": true,
+      "example": "台账 10-13"
+    }
+  ],
+  "status_map": {
+    "未开始": "planned",
+    "进行中": "in_progress",
+    "已完成": "done"
+  },
+  "rules": {
+    "evidence_required": true
+  },
+  "meta": {
+    "author_position_code": "DESIGN_LEAD",
+    "version": 9,
+    "visibility": "department",
+    "review": {
+      "status": "active"
+    }
+  }
+}
