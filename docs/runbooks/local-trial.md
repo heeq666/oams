@@ -10,7 +10,7 @@
 ```sh
 docker run -d --name workhub-live \
   -e POSTGRES_PASSWORD=change-me -e POSTGRES_DB=workhub \
-  -p 55460:5432 postgres:16-alpine
+  -p 127.0.0.1:55460:5432 postgres:16-alpine
 
 export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
 export WORKHUB_MIGRATOR_URL=$WORKHUB_DATABASE_URL
@@ -22,6 +22,8 @@ export WORKHUB_MIGRATOR_URL=$WORKHUB_DATABASE_URL
 
 把 bootstrap 打印的 `member_id` 记下来，下一步要用。
 
+这条命令只能成功一次：库里已经有全公司管理员时，它会直接拒绝并退出（`An all-scope administrator grant already exists; refusing to bootstrap another administrator.`），这时不会有 `member_id` 打印出来——去 `/setup` 页的「现有成员」里认，或从库里查。
+
 ## 准备一个部门
 
 ```sh
@@ -32,9 +34,11 @@ export WORKHUB_ADMIN_MEMBER_ID=<上一步的 member_id>
 .venv/bin/python scripts/seed-live-interface.py
 ```
 
-`load_department_data.py` 会自己起一个临时服务把部门、岗位、成员、授权跑一遍完整接口（跑完自动关），默认在 127.0.0.1:8126，端口被占用时用 `WORKHUB_LOADER_PORT` 换一个。`WORKHUB_MIGRATOR_URL` 和 `WORKHUB_ADMIN_MEMBER_ID` 两个都要给，缺一个会直接报错退出。
+`load_department_data.py` 不带 `--apply` 时是**只看不写**的预演（逐条打印 `[new]` / `[exists]`，末尾一行 `N new, M already present`）。先跑一遍确认要建的东西对，再加 `--apply` 落库。
 
-第二个脚本会把[设计部打样进度界面](data/live-design-interface.json)启用，作为你点开就能看的示例。
+它会自己起一个临时服务把部门、岗位、成员、授权跑一遍完整接口（跑完自动关），默认在 127.0.0.1:8126，端口被占用时用 `WORKHUB_LOADER_PORT` 换一个。`WORKHUB_MIGRATOR_URL` 和 `WORKHUB_ADMIN_MEMBER_ID` 两个都要给，缺一个会直接报错退出。
+
+第二个脚本会把[设计部打样进度界面](data/live-design-interface.json)启用，作为你点开就能看的示例。它每跑一次都是「归档上一版、启用新的一版」，所以**页面的地址（`/interfaces/<id>` 里那个 id）会变**，之前收藏的旧链接会失效、打开后被带回能看的页面。要的就是这个效果：页面描述升级过之后重跑一次，旧版自动退场。
 
 ## 启动服务
 
@@ -44,6 +48,8 @@ export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/work
 ```
 
 保持这个终端开着。
+
+8000 被别的进程占着时，这条会起不来（`address already in use`）。换一个端口，例如 `--port 8001`，然后**下文所有 `127.0.0.1:8000` 的地址都要跟着换成 8001**——登录链接、四个页面的地址都一样。
 
 ## 设计开发阶段：免登录
 
@@ -71,11 +77,11 @@ WORKHUB_DEV_AUTOLOGIN=0 ./scripts/start-local-trial.sh
 
 | 层级 | 判定 | 典型是谁 |
 | --- | --- | --- |
-| 系统管理员 | 持有 `workforce.grants:manage`（也就是能打开设置页的那条） | 全公司一名 |
-| 部门管理员 | 持有任意一条 `*:manage`（工作项 / 成员 / 界面 / 岗位 / 任岗 / 部门），但没有 `grants:manage` | 每个部门默认一名；系统管理员也可以单独授予某个员工 |
+| 系统管理员 | 持有 `workforce.grants/manage`（也就是能打开设置页的那条） | 全公司一名 |
+| 部门管理员 | 持有任意一条 `workforce.<资源>/manage`（工作项 / 成员 / 界面 / 岗位 / 任岗 / 部门），但没有 `workforce.grants/manage` | 每个部门默认一名；系统管理员也可以单独授予某个员工 |
 | 普通员工 | 其余所有人（只有 read / submit / review 这类只读或本人权限） | 大多数成员 |
 
-「审页面」（`workforce.interfaces:review`）是**只读**权限，不会把人提到部门管理员。
+「审页面」（`workforce.interfaces/review`）是**只读**权限，不会把人提到部门管理员。
 
 两个页面对齐这套层级：
 
@@ -104,7 +110,9 @@ http://127.0.0.1:8000/login?token=<access_token>&next=/interfaces
 | 部门界面 | /interfaces | 部门成员打开本部门界面填写 |
 | 填写页 | /interfaces/<id> | 按描述渲染出的表单 |
 | 界面制作 | /setup/interfaces | 粘贴 AI 产出的描述，校验并启用 |
-| 汇报汇总 | /interfaces/board | 管理层按部门查看最近汇报 |
+| 汇报中心 | /interfaces/board | 管理层按部门查看最近汇报 |
+
+这三个填写相关的页面都要求 `workforce.reports/read`：填写页要读汇总数据才知道自己填的进了哪个口径。**两条建号路径给的权限集不一样**：`/setup` 引导页建成员时会自动授予 `reports/read` 和 `reports/submit`，而「准备一个部门」那步用的种子数据里，普通设计师岗（`DESIGNER`）只有 `reports/submit`——照第 1 章建号，普通员工打开 `/interfaces`、`/departments/<id>`、`/interfaces/<id>` 会被直接带回进度中心，不给提示条。要让人能填，就把 `workforce.reports/read` 补到他的岗位上（种子数据缺这条，已按此口径补齐）。
 
 ## 停掉服务
 
@@ -114,7 +122,7 @@ http://127.0.0.1:8000/login?token=<access_token>&next=/interfaces
 
 ## 注意
 
-- 登录链接等同临时密码，不要发到群里；有效期 8 小时（默认）。
+- 登录链接等同临时密码，不要发到群里；有效期 8 小时（`SESSION_TTL_HOURS` 可改，`issue-token` 本身没有时长参数）。
 - 这是本机试用环境，数据库只监听本机端口，不要暴露到公网。
 - 现在的账号仍需管理员签发链接，账号中心尚未接入。
-- 某个示例页面点开后被带回上一页，多半是库里那份描述还是旧版模块名（v0.1）：重跑 `scripts/seed-live-interface.py`，它会按当前版本重新启用这个页面。
+- 某个示例页面点开后被带回上一页，多半是库里那份描述还是旧版模块名（v0.1）：重跑 `scripts/seed-live-interface.py`，它会按当前版本重新启用这个页面。注意重跑后页面地址（`/interfaces/<id>`）会变，按新地址重开。
