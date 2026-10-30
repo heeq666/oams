@@ -75,6 +75,8 @@ def validate_module_tree(modules: list[dict]) -> list[str]        # 全部结构
 
 **参数写法（2026-10-30 补）**：声明过的参数可以写在 `params` 里，也可以平铺在节点上（`rows: 3` 与 `params: {rows: 3}` 等价；两处都写时以 `params` 为准）。两种写法都按声明校验：`table` 的 `rows` 只能是 1–5 的整数，越界或写错类型**明确报错**（`DATA_RULE_VIOLATION`），不再静默忽略。节点上出现既不是声明参数、也不在节点固定键（`key`/`type`/`order`/`params`/`module_version`/`children`/`source_fields`/`aggregatable`）里的键，同样报错。
 
+**但平铺只对叶子模块成立（2026-10-30 补）**：容器节点只能写在 `params` 里，不许平铺。容器的键白名单是 `CONTAINER_ALLOWED_KEYS`（`key`/`type`/`order`/`children`/`params`/`module_version`），比叶子的窄——`source_fields`、`aggregatable` 一律不许带；在容器上写 `title: "xx"` 会被 `DATA_RULE_VIOLATION` 拒掉，那不是 bug。这个不对称是有意的：容器已经带 `children`，参数再平铺上来，读者分不清哪个键是结构、哪个是参数。锚：`app/workhub/modules.py:73`（白名单）、`:597`（校验）、`app/workhub/descriptor.py:391-397`（为什么不在容器上再查一遍）。
+
 **铁律（校验器必须拦）**：容器节点不允许出现 `source_fields`；容器不允许有 `params.text`；任何文字/数字只能来自 `note_block`、`metric_card` 等预设模块。容器只能有 `children`。
 
 **深度语义（重要，别把叶子算成一层）**：`CONTAINER_DEPTH_LIMIT = 2` 指的是**最多两层嵌套容器**。即下面的结构是**合法**的：
