@@ -255,7 +255,7 @@
 
 Figma 侧同一节奏：B1 前把 14 件从单帧改成变体（G14）+ 宽度改 FILL；B4 前加 4 枚图标。
 
-验收：`pytest`（本机有库时 **0 skipped**）+ `node scripts/cdp-grid-check.mjs` + 1440/1024/768 三档截图、窄屏无横向滚动；模块层截图与 Figma 逐件对照，写进 `docs/design/` 的验收记录。
+验收：`pytest`（本机有库时 **0 skipped**）+ ego 浏览器跑 1440/1024/768 三档截图、窄屏无横向滚动（见 `AGENTS.md`「浏览器自动化」）；模块层截图与 Figma 逐件对照，写进 `docs/design/` 的验收记录。
 
 ## 5. 需要拍板的 8 条
 
