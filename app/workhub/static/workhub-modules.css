@@ -323,7 +323,11 @@
 }
 
 .wh-link {
-  display: inline-block;
+  /* 行内图标与链接文字同一行：inline-flex 才能在 13 号正文里对齐。 */
+  display: inline-flex;
+  align-items: center;
+  /* 链接文字与尾随图标 6（标签↔控件档） */
+  gap: 6px;
   /* 链接与上一段 8（Figma evidence_gallery 148:6088） */
   margin-top: 8px;
   font-size: 13px;
@@ -333,6 +337,18 @@
 }
 
 .wh-link:hover { text-decoration: underline; }
+
+/* --- 图标（Lucide 24 网格 / 描边 2 / 显示 16） --- */
+/* 与 13 号正文基线对齐：-0.2em ≈ 13px 正文下一个 16px 图标的下沉量。 */
+.wh-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--wh-muted);
+  vertical-align: -0.2em;
+}
+
+.wh-icon-external { color: var(--wh-info); }
 
 /* --- form widgets (edit mode only) --- */
 .wh-field {
@@ -555,9 +571,9 @@
   flex-wrap: wrap;
 }
 
-.wh-arrow {
+/* 流程条段间箭头：换成 Lucide arrow-right（2026-10-30 起不再用字符 →）。 */
+.wh-flow-strip .wh-icon-arrow {
   color: var(--wh-muted);
-  font-size: 13px;
 }
 
 .wh-stage {

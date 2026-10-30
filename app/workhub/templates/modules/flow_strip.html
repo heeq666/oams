@@ -4,7 +4,7 @@
 {% set labels = as_list(p.get('labels')) %}
 <section class="wh-m wh-display wh-flow-strip" data-type="flow_strip">
   {% for key in metrics %}
-  {% if not loop.first %}<span class="wh-arrow" aria-hidden="true">&rarr;</span>{% endif %}
+  {% if not loop.first %}<svg class="wh-icon wh-icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>{% endif %}
   {% set stage_label = labels[loop.index0] if loop.index0 < (labels | length) else metric_name(key) %}
   <span class="wh-stage" data-metric="{{ key }}">
     <span class="wh-stage-label">{{ stage_label }}</span>
