@@ -61,12 +61,18 @@ def load_descriptor(path: str | Path) -> dict[str, Any]:
 
 
 def check_file(path: str | Path) -> list[str]:
-    """Return every problem with the descriptor at *path*. Empty list means it can go up."""
+    """Return every problem with the descriptor at *path*. Empty list means it can go up.
+
+    A plugin file is installed from a shell, with no review page in between, so
+    the file has to carry its own sign-off: `require_recorded_approval` is what
+    makes "approved" a recorded fact here instead of a sentence the author typed
+    about themselves.
+    """
     try:
         descriptor = load_descriptor(path)
     except PluginFileError as exc:
         return [str(exc)]
-    return rules.validate_descriptor(descriptor)
+    return rules.validate_descriptor(descriptor, require_recorded_approval=True)
 
 
 def render_report(path: str | Path, problems: list[str]) -> str:

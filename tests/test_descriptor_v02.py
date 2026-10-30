@@ -242,18 +242,27 @@ def test_unknown_capability_is_escalation():
     assert "entries:delete:any" in problems[0]
 
 
-def test_company_aggregate_needs_recorded_approval():
-    unapproved = base(capabilities=["aggregate:read:company"])
-    problems = validate_descriptor(unapproved)
-    assert codes(problems) == ["CAPABILITY_ESCALATION"]
-    assert "second-level approval" in problems[0]
+def test_company_aggregate_is_a_flow_question_not_a_document_field():
+    """Declaring a company figure is allowed at creation; the signature is written
+    when the page goes live, not typed by its author.
+
+    Anything that reaches a live page with no review in between -- /setup, the
+    plugin CLI -- still asks for the recorded approval, and asking there is the
+    whole point: what got checked before was the author's own sentence.
+    """
+    declared = base(capabilities=["aggregate:read:company"])
+    assert validate_descriptor(declared) == []
+
+    strict = validate_descriptor(declared, require_recorded_approval=True)
+    assert codes(strict) == ["CAPABILITY_ESCALATION"]
+    assert "second-level approval" in strict[0]
 
     approved = base(
         capabilities=["aggregate:read:company"],
         meta={"visibility": "department",
               "review": {"status": "approved", "reviewed_by": "CTO", "reviewed_at": "2026-01-01"}},
     )
-    assert validate_descriptor(approved) == []
+    assert validate_descriptor(approved, require_recorded_approval=True) == []
 
 
 def test_duplicate_capability_is_a_data_rule_violation():
@@ -263,11 +272,21 @@ def test_duplicate_capability_is_a_data_rule_violation():
     assert "declared twice" in problems[0]
 
 
-def test_public_visibility_requires_approval():
-    broken = base(meta={"visibility": "public", "review": {"status": "draft"}})
-    problems = validate_descriptor(broken)
+def test_public_visibility_is_allowed_at_creation():
+    """A public page used to be impossible to declare, so departments declared
+    department-visible and gave up. The audience is a request the review grants;
+    the strict check is for the doors that skip that review."""
+    asked = base(meta={"visibility": "public", "review": {"status": "draft"}})
+    assert validate_descriptor(asked) == []
+
+    problems = validate_descriptor(asked, require_recorded_approval=True)
     assert codes(problems) == ["DATA_RULE_VIOLATION"] * len(problems)
     assert len(problems) == 3
+
+    signed = base(meta={"visibility": "public",
+                        "review": {"status": "approved", "reviewed_by": "CTO",
+                                   "reviewed_at": "2026-01-01"}})
+    assert validate_descriptor(signed, require_recorded_approval=True) == []
 
 
 # --------------------------------------------------------------------------- #

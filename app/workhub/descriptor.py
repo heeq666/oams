@@ -497,14 +497,11 @@ def _check_capabilities(problems: _Problems, descriptor: dict, version: str) -> 
         declared.add(capability)
 
     # aggregate:read:company reads every department's data, so it needs a
-    # recorded second-level approval (concept §4.5).
-    meta = descriptor.get("meta") if isinstance(descriptor.get("meta"), dict) else {}
-    review = meta.get("review") if isinstance(meta.get("review"), dict) else {}
-    for capability in sorted(declared & set(REVIEWED_CAPABILITIES)):
-        if review.get("status") != "approved" or not review.get("reviewed_by") or not review.get("reviewed_at"):
-            problems.add("CAPABILITY_ESCALATION", f"capabilities[{capability}]",
-                         "needs a recorded second-level approval: meta.review must carry "
-                         "status=approved, reviewed_by and reviewed_at")
+    # recorded second-level approval (concept §4.5).  Whether that approval is
+    # already on the document is a *process* question, not a shape question --
+    # see `recorded_approval_gaps`.  Here we only make sure the declaration is
+    # legal; an unreviewed draft has to be allowed to say what it is asking for,
+    # or nobody could ever submit the page this approval is about.
     return declared
 
 
@@ -539,17 +536,69 @@ def _check_visibility(problems: _Problems, descriptor: dict) -> None:
     visibility = meta.get("visibility")
     if visibility not in VISIBILITIES:
         problems.add("DATA_RULE_VIOLATION", "meta.visibility", f"must be one of {VISIBILITIES}")
-    elif visibility == "public":
-        review = meta.get("review") or {}
+
+
+# --------------------------------------------------------------------------- #
+# Recorded approval: who signs, and where that signature lives
+# --------------------------------------------------------------------------- #
+
+#: The three fields a recorded approval needs to say anything at all. A status
+#: without a person is a rumour, and a person without a time cannot be audited.
+APPROVAL_FIELDS: tuple[str, ...] = ("status", "reviewed_by", "reviewed_at")
+
+
+def _approval_gaps(descriptor: Any) -> list[tuple[str, str, str]]:
+    """What a descriptor still lacks when it claims something only a sign-off allows.
+
+    Returned as (code, path, message) so `validate_descriptor` can print them
+    with the same coding rules as every other problem, and so a caller that only
+    wants the list can print them itself.
+
+    Two claims need a signature (concept §4.5, contract §4): going `public`, and
+    asking for `aggregate:read:company`. Everywhere else a department decides
+    alone and no signature is owed. This is a *gate*, not a shape check: a page
+    waiting for review is supposed to be missing exactly this, which is why
+    `validate_descriptor` only looks at it when the caller says so.
+    """
+    if not isinstance(descriptor, dict):
+        return []
+    meta = descriptor.get("meta") if isinstance(descriptor.get("meta"), dict) else {}
+    review = meta.get("review") if isinstance(meta.get("review"), dict) else {}
+    complete = all(review.get(field) for field in APPROVAL_FIELDS) and review.get("status") == "approved"
+    if complete:
+        return []
+    gaps: list[tuple[str, str, str]] = []
+    if meta.get("visibility") == "public":
+        # `status` is the one field where any non-empty value is not enough: a
+        # page that says "draft" says so on purpose, and counting that as filled
+        # in is how a rejected page would read as approved.
         if review.get("status") != "approved":
-            problems.add("DATA_RULE_VIOLATION", "meta.review",
-                         "public templates require status=approved")
-        if not review.get("reviewed_by"):
-            problems.add("DATA_RULE_VIOLATION", "meta.review",
-                         "public templates require reviewed_by")
-        if not review.get("reviewed_at"):
-            problems.add("DATA_RULE_VIOLATION", "meta.review",
-                         "public templates require reviewed_at")
+            gaps.append(("DATA_RULE_VIOLATION", "meta.review",
+                         "public templates require status=approved"))
+        for field in ("reviewed_by", "reviewed_at"):
+            if not review.get(field):
+                gaps.append(("DATA_RULE_VIOLATION", "meta.review",
+                             f"public templates require {field}"))
+    declared = descriptor.get("capabilities")
+    if isinstance(declared, (list, tuple)):
+        for capability in sorted({str(item) for item in declared} & set(REVIEWED_CAPABILITIES)):
+            gaps.append(("CAPABILITY_ESCALATION", f"capabilities[{capability}]",
+                         "needs a recorded second-level approval: meta.review must carry "
+                         "status=approved, reviewed_by and reviewed_at"))
+    return gaps
+
+
+def recorded_approval_gaps(descriptor: dict[str, Any]) -> list[str]:
+    """The approval a descriptor claims but has not got, printed for a person.
+
+    Empty list means every claim on this document is backed by a recorded
+    signature. Callers that refuse to publish a file without one (`/setup`,
+    `workhub plugin`) print this; authoring and submitting do not ask, because
+    the signature is produced by the review that follows.
+    """
+    coded = not isinstance(descriptor, dict) or descriptor.get("schema_version") != LEGACY_SCHEMA_VERSION
+    return [f"[{code}] {path}: {message}" if coded else f"{path}: {message}"
+            for code, path, message in _approval_gaps(descriptor)]
 
 
 def _check_aggregate(problems: _Problems, mapped_fields: set[str], produced: set[str]) -> None:
@@ -573,13 +622,20 @@ def validate_descriptor(descriptor: dict[str, Any],
                         known_org_unit_codes: set[str] | None = None,
                         known_position_codes: set[str] | None = None,
                         *,
-                        strict_v02: bool = True) -> list[str]:
+                        strict_v02: bool = True,
+                        require_recorded_approval: bool = False) -> list[str]:
     """Return a list of problems. Empty list means the descriptor may be rendered.
 
     `strict_v02` (default on) makes a v0.2 document use only the v0.2 module
     registry and the §5 field vocabulary. Turning it off opens the migration
     window: v0.1 field mappings are tolerated in a v0.2 document. Everything else
     -- capabilities, metrics, nesting, the forbidden-key scan -- always applies.
+
+    `require_recorded_approval` is off by default and off is the honest default:
+    a page being written or waiting for review is *supposed* to be missing the
+    signature that this flag demands. Only the paths that publish a file without
+    a review turn it on (`/setup/interfaces`, `workhub plugin`); the page that
+    does get reviewed is signed by the approval itself, not by its author.
     """
     if not isinstance(descriptor, dict):
         return ["descriptor must be a JSON object"]
@@ -629,6 +685,12 @@ def validate_descriptor(descriptor: dict[str, Any],
 
     _check_visibility(problems, descriptor)
     _check_capabilities(problems, descriptor, version)
+    if require_recorded_approval:
+        # Only the callers that publish without a review ask for this. Note the
+        # order: everything above is about the document's shape; this last block
+        # is about the process it has been through.
+        for code, path, message in _approval_gaps(descriptor):
+            problems.add(code, path, message)
     _check_metrics(problems, descriptor, version, by_key)
     _check_aggregate(problems, mapped_fields, produced)
 
@@ -647,6 +709,7 @@ def layout_depth(descriptor: dict) -> int:
 
 
 __all__ = [
+    "APPROVAL_FIELDS",
     "CAPABILITIES", "CONTAINER_DEPTH_LIMIT", "CURRENT_SCHEMA_VERSION",
     "DEFAULT_MODULE_TYPES", "DISPLAY_METRIC_PARAMS", "DISPLAY_ONLY",
     "DescriptorError", "FIELD_TYPES", "FORBIDDEN_KEYS", "LEGACY_SCHEMA_VERSION",
@@ -655,5 +718,5 @@ __all__ = [
     "REVIEWED_CAPABILITIES", "SCHEMA_VERSIONS", "STANDARD_FIELDS",
     "STANDARD_FIELD_VOCAB", "STANDARD_STATUSES", "V02_ONLY_MODULE_KEYS",
     "V02_ONLY_TOP_LEVEL_KEYS", "VISIBILITIES", "assert_descriptor",
-    "layout_depth", "validate_descriptor",
+    "layout_depth", "recorded_approval_gaps", "validate_descriptor",
 ]
