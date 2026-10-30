@@ -9,7 +9,7 @@
   <span class="pill neutral">待我审 {{ pending | length }}</span>
 </div>
 
-{% if saved == 'approved' %}<div class="flash" role="status">已通过。该页面现在正式使用，数据进入公司汇总。</div>
+{% if saved == 'approved' %}<div class="flash" role="status">已通过。这一页现在正式使用。</div>
 {% elif saved == 'rejected' %}<div class="flash" role="status">已退回，部门会看到退回原因。</div>
 {% elif saved == 'passed' %}<div class="flash" role="status">部门初审通过。这一页要进公司汇总/对外公开，已转到公司终审。</div>{% endif %}
 {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
