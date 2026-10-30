@@ -180,7 +180,7 @@ x<0 是成熟度梯子（对比 / 草稿 / 试验 / 档案，八档固定坐标�
 | 上送 | `arrow-up` `246:15106` | 发送 / 提交类场景（14–16 见方） |
 | 新增 | `plus` `256:15531` | 页面级「新增一行 / 新增一项」等动作（16 见方） |
 | 删除 | `trash-2` `256:15538` | 页面级删除动作（16 见方） |
-| 外链 | `external-link` `256:15543` | `evidence_gallery` 证据链接行尾（16 见方，`wh-icon-external`） |
+| 外链 | `external-link` `256:15543` | `evidence_gallery` 证据链接行尾（16 见方，`wh-icon-external`，一律 `text/muted`） |
 | 指向 | `arrow-right` `256:15547` | `flow_strip` 段间（替掉字符 `→`，16 见方） |
 
 B4 批次已把模块层四枚补齐（2026-10-30）：`external-link` 用在 `evidence_gallery` 链接行尾、`arrow-right` 用在 `flow_strip` 段间；`plus` / `trash-2` 是页面级动作图标——模块层是渲染器不是编辑器，空态与表尾不放按钮，所以模板里暂时没有落点，等页面级「编辑页面」入口开工再用。

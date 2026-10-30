@@ -348,7 +348,8 @@
   vertical-align: -0.2em;
 }
 
-.wh-icon-external { color: var(--wh-info); }
+/* 图标一律 muted：图标是辅助标记不是状态，语义色留给真正的状态提示。 */
+.wh-icon-external { color: var(--wh-muted); }
 
 /* --- form widgets (edit mode only) --- */
 .wh-field {
