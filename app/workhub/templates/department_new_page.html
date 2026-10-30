@@ -32,6 +32,15 @@
         </select>
       </div>
     </div>
+    {% if bases %}
+    <div class="field"><label for="based_on">基于哪个页面（可留空）</label>
+      <select id="based_on" name="based_on">
+        <option value="">（从零开始）</option>
+        {% for b in bases %}<option value="{{ b.interface_id }}">{{ b.org_name }} · {{ b.name }}</option>{% endfor %}
+      </select>
+      <p class="sub" style="margin:6px 0 0">选别的部门的页面，等于说「这页是照着它们做的」。这种页子部门审完还要公司再终审一次；本部门自己的上一版会自动接上，不用在这里选。</p>
+    </div>
+    {% endif %}
     <div class="field"><label for="descriptor_text">页面描述（JSON）</label>
       <textarea id="descriptor_text" name="descriptor_text" rows="16" required
         placeholder='粘贴 AI 产出的界面描述。字段必须映射到标准字段，状态词要能对上标准状态，否则会被拒绝并告诉你原因。'></textarea>
