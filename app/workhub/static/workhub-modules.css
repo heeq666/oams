@@ -530,6 +530,7 @@
   font-size: 24px;
   font-weight: 600;
   line-height: 1.25;
+  font-variant-numeric: tabular-nums;
 }
 
 .wh-metric-unit {
@@ -577,6 +578,7 @@
 .wh-stage-value {
   font-size: 14px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .wh-status-row {
@@ -591,7 +593,13 @@
 
 .wh-status-row:last-child { margin-bottom: 0; }
 
-.wh-status-label { color: var(--wh-muted); }
+/* 标签列定宽 88，超长截断，别把轨道挤变形。 */
+.wh-status-label {
+  color: var(--wh-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .wh-track {
   height: 8px;
@@ -649,9 +657,19 @@
   font-variant-numeric: tabular-nums;
 }
 
-.wh-rank-label { flex: 1; }
+.wh-rank-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-.wh-rank-value { font-weight: 600; }
+.wh-rank-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 
 .wh-feed {
   list-style: none;
@@ -681,11 +699,25 @@
 .wh-feed-who {
   color: var(--wh-muted);
   font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 时间列定宽 96，超长只截自己，别把正文挤下去。 */
+.wh-feed-when {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .wh-feed-what {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* 行数到顶的提示：与表身同列宽，12 号 muted，块内另起一行。 */
+.wh-table-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--wh-muted);
 }
 
 .wh-note-block {
