@@ -360,7 +360,10 @@
   /* 行内图标与链接文字同一行：inline-flex 才能在 13 号正文里对齐。 */
   display: inline-flex;
   align-items: center;
-  /* 链接文字与尾随图标 6（标签↔控件档） */
+  /* 链接文字与尾随图标 6px。**这是档外值**：口径只有 16 / 12 / 8（4 只给方框内部），
+     而且它不是「标签↔控件 6」——那一档 2026-10-31 已按 Figma 实测撤销（标签↔控件是 8）。
+     6 在这里是抬一下图标的视觉重量，和 base.html 里 flowstrip / page-tabs 那几处
+     gap: 6px 一起归「全站间距对齐」收，收的时候带三档回归一起改。 */
   gap: 6px;
   /* 链接与上一段 8（Figma evidence_gallery 148:6088） */
   margin-top: 8px;
