@@ -198,6 +198,38 @@ def visibility_of(descriptor: Mapping) -> object:
     return _visibility(descriptor)
 
 
+#: The one place that answers "does this approval have to go up one more level".
+def needs_company_review(descriptor: Mapping | None, *, cross_department: bool = False) -> bool:
+    """Whether a page cannot be signed off by its own department alone.
+
+    Three things take a page out of the department's hands, and they are the
+    three the plan named:
+
+    * it asks to be `public`, so it stops being that department's screen;
+    * it claims a capability the company has to sign for by name
+      (`REVIEWED_CAPABILITIES`, today only `aggregate:read:company`) -- those
+      decide what enters company numbers;
+    * it was written on top of another department's page (`cross_department`),
+      which the caller works out from `based_on` because the descriptor does not
+      carry the owner of the version it started from.
+
+    Everything else a department can approve itself: its own screen, its own
+    fields, its own status words.
+    """
+    from workhub.descriptor import REVIEWED_CAPABILITIES
+
+    if not isinstance(descriptor, Mapping):
+        return False
+    if _visibility(descriptor) == "public":
+        return True
+    if cross_department:
+        return True
+    declared = descriptor.get("capabilities")
+    if not isinstance(declared, (list, tuple)):
+        return False
+    return bool({str(capability) for capability in declared} & set(REVIEWED_CAPABILITIES))
+
+
 def _visibility(descriptor: Mapping) -> object:
     """The page's audience lives under meta in descriptors the department saves.
 

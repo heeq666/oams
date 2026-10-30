@@ -248,6 +248,11 @@ def test_versions_side_by_side(site) -> None:
     with psycopg.connect(url, row_factory=dict_row) as conn:
         admin = conn.execute(
             "SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'ADMIN001'").fetchone()["member_id"]
+        # The reviewer is somebody other than the author on purpose: a page is
+        # reviewed by a second pair of eyes or it is not reviewed at all, and the
+        # queue refuses to show a reviewer their own submission.
+        reviewer_member = conn.execute(
+            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'DESIGN001'").fetchone()["member_id"]
         org = conn.execute(
             "SELECT org_unit_id FROM workhub.org_units WHERE org_code = 'DESIGN'").fetchone()["org_unit_id"]
         conn.execute("DELETE FROM workhub.interfaces WHERE slug = %s", (PROBE_SLUG,))
@@ -265,6 +270,8 @@ def test_versions_side_by_side(site) -> None:
     try:
         token, _ = issue_session(str(admin))
         call = _session(base, token)
+        review_token, _ = issue_session(str(reviewer_member))
+        review = _session(base, review_token)
 
         # The department writes the next version through the real form, because
         # the rule being tested lives in the handler: creating a draft used to
@@ -317,7 +324,7 @@ def test_versions_side_by_side(site) -> None:
               status == 303 and "saved=review" in headers.get("location", ""),
               headers.get("location", "")[:160])
 
-        status, html, _ = call("/reviews")
+        status, html, _ = review("/reviews")
         check("review queue opens", status == 200, status)
         check("queue reads the change, not the whole page", "这一版改了什么" in html)
         check("high change is called out", "需注意" in html)
@@ -331,7 +338,7 @@ def test_versions_side_by_side(site) -> None:
         check("the live version keeps serving while the new one waits", live_status == "active", live_status)
 
         csrf = _token_of(html)
-        status, _, headers = call(f"/reviews/{draft}/reject", "POST",
+        status, _, headers = review(f"/reviews/{draft}/reject", "POST",
                                   {"csrf": csrf, "note": "状态词删得没道理", "reason_code": "NOT_A_CODE"})
         location = headers.get("location", "")
         check("an unknown rejection code is refused", status == 303 and "error=" in location, location[:120])
@@ -341,7 +348,7 @@ def test_versions_side_by_side(site) -> None:
         check("the refused decision changed nothing", row["status"] == "pending" and row["review_code"] is None,
               dict(row))
 
-        status, _, headers = call(f"/reviews/{draft}/reject", "POST",
+        status, _, headers = review(f"/reviews/{draft}/reject", "POST",
                                   {"csrf": csrf, "note": "状态词删得没道理",
                                    "reason_code": "STATUS_UNMAPPED"})
         check("a documented code is accepted", status == 303 and "error=" not in headers.get("location", ""),
@@ -353,7 +360,7 @@ def test_versions_side_by_side(site) -> None:
         check("the page goes back to draft", row["status"] == "draft", row["status"])
         check("the reason code is recorded", row["review_code"] == "STATUS_UNMAPPED", row["review_code"])
 
-        status, html, _ = call("/reviews")
+        status, html, _ = review("/reviews")
         check("the decision list shows the reason by name", "状态词没有映射" in html)
 
         # A department editing v2 must know the company still reads v1.

@@ -1031,7 +1031,8 @@ def department_submit_review(request: Request, org_unit_id: UUID, interface_id: 
             return RedirectResponse(url=base + "?error=" + urllib.parse.quote("这个页面已经启用，无需再次提交"),
                                     status_code=303)
         conn.execute(
-            """UPDATE workhub.interfaces SET status = 'pending', review_note = NULL, updated_at = now()
+            """UPDATE workhub.interfaces
+                  SET status = 'pending', review_stage = 'department', review_note = NULL, updated_at = now()
                WHERE interface_id = %s""", (interface_id,))
         api.audit(conn, principal["member_id"], "interface.review_requested", "interface", interface_id,
                   "department submitted the page for review", {"from": prior["status"], "to": "pending"})
@@ -1074,7 +1075,7 @@ def department_withdraw_review(request: Request, org_unit_id: UUID, interface_id
                 url=base + "?error=" + urllib.parse.quote("审核已给出意见，不能撤回；请按意见修改后再提交"),
                 status_code=303)
         conn.execute(
-            """UPDATE workhub.interfaces SET status = 'draft', updated_at = now()
+            """UPDATE workhub.interfaces SET status = 'draft', review_stage = 'department', updated_at = now()
                WHERE interface_id = %s""", (interface_id,))
         api.audit(conn, principal["member_id"], "interface.review_withdrawn", "interface", interface_id,
                   "department withdrew the review request", {"from": "pending", "to": "draft"})
@@ -1104,19 +1105,190 @@ def _review_bundle(conn, row):
     return bundle
 
 
+def _department_reviewers(conn) -> dict[Any, set[Any]]:
+    """Who can sign the first level, per department -- one query, not one per page.
+
+    The queue needs this for a single question: for this page, is there anybody
+    else who could do the department's half?  When the answer is nobody the
+    platform has to be able to stand in (see `_review_refusal`); otherwise a page
+    submitted by the only reviewer of its department waits forever.
+
+    Grants carrying `effect='deny'` still count as reviewers here, although
+    `has_permission` would refuse them. A wrong "somebody else can do it" is
+    recoverable (ask a colleague); a wrong "nobody can do it" locks the page.
+    """
+    rows = conn.execute(
+        """WITH reviewer_members AS (
+               SELECT DISTINCT a.member_id
+                 FROM workhub.permission_grants g
+                 JOIN workhub.position_assignments a
+                   ON (g.subject_type = 'position' AND a.position_id = g.position_id)
+                   OR (g.subject_type = 'member' AND a.member_id = g.member_id)
+                WHERE g.resource = 'workforce.interfaces' AND g.action = 'review'
+                  AND g.revoked_at IS NULL AND g.scope_type = 'all'
+                  AND g.valid_from <= now()
+                  AND (g.valid_until IS NULL OR now() < g.valid_until)
+                  AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
+                  AND (a.ends_at IS NULL OR now() < a.ends_at))
+           SELECT DISTINCT r.member_id, p.org_unit_id
+             FROM reviewer_members r
+             JOIN workhub.position_assignments a
+               ON a.member_id = r.member_id
+              AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
+              AND (a.ends_at IS NULL OR now() < a.ends_at)
+             JOIN workhub.positions p
+               ON p.position_id = a.position_id AND p.status = 'active'""").fetchall()
+    by_unit: dict[Any, set[Any]] = {}
+    for row in rows:
+        by_unit.setdefault(row["org_unit_id"], set()).add(row["member_id"])
+    return by_unit
+
+
+#: What a member may sign off, and where -- resolved once, read everywhere.
+def _review_powers(conn, principal: dict[str, Any]) -> dict[str, Any]:
+    """Two rights, two jobs, and neither implies the other.
+
+    `review` lets someone sign off the pages of the departments their own
+    positions sit in; `review_company` lets the platform sign off anything that
+    reached the final stage. A department reviewer's range is deliberately
+    `active_org_unit_ids` and not `administered_org_unit_ids`: administering a
+    department is a different job from reviewing its pages, and most reviewers
+    administer nothing at all.
+    """
+    member_id = principal["member_id"]
+    department = has_permission(conn, member_id, "workforce.interfaces", "review")
+    company = has_permission(conn, member_id, "workforce.interfaces", "review_company")
+    units = active_org_unit_ids(conn, member_id) if department else set()
+    # Only the platform needs the roster, and only to find out that a department
+    # has nobody left to ask; a department reviewer never acts outside their own.
+    reviewers = _department_reviewers(conn) if company else {}
+    return {"member_id": member_id, "department": department, "company": company,
+            "units": units, "reviewers": reviewers}
+
+
+def _stands_in(powers: dict[str, Any], page: Any) -> bool:
+    """Whether the platform has to take the first level, nobody else being left.
+
+    The page's own author counts out on purpose: a reviewer who wrote the version
+    cannot also sign it, so they do not save the department from needing somebody
+    else -- that is the whole point of keeping authors away from their own page.
+    """
+    if not powers["company"]:
+        return False
+    others = powers["reviewers"].get(page["org_unit_id"], set())
+    return not (others - {powers["member_id"], page["updated_by"]})
+
+
+def _review_refusal(powers: dict[str, Any], page: Any) -> str | None:
+    """Why this member may not decide this page, or None when they may.
+
+    The queue asks it to decide whether to draw buttons and the two POST routes
+    ask it before writing: one rule, so a page can never show "approve" and then
+    refuse the click. Authors are refused on purpose -- a page nobody else looked
+    at is not a reviewed page.
+
+    The last branch is the platform standing in for a department that has nobody
+    left to ask. It is not a shortcut: it only opens when every other reviewer of
+    that department is the author, and the audit records that no department
+    signature happened.
+    """
+    if page["status"] != "pending":
+        return "这个页面不在待审核状态"
+    if page["updated_by"] is not None and page["updated_by"] == powers["member_id"]:
+        return "自己提交的页面要由别人审"
+    if page["review_stage"] == "company":
+        return None if powers["company"] else "公司终审需要 workforce.interfaces/review_company 权限"
+    if powers["department"] and page["org_unit_id"] in powers["units"]:
+        return None
+    if _stands_in(powers, page):
+        return None
+    if powers["department"]:
+        return "这个页面不在你所在部门的范围内"
+    return "初审需要 workforce.interfaces/review 权限"
+
+
+def _cross_department(conn, page: Any) -> bool:
+    """Whether this version was written on top of another department's page.
+
+    The descriptor does not carry the owner of the version it started from, so the
+    honest answer comes from the row `based_on` points at; a page with no
+    reference is its own department's work and no escalation on that account.
+    """
+    if not page["based_on"]:
+        return False
+    reference = conn.execute(
+        "SELECT org_unit_id FROM workhub.interfaces WHERE interface_id = %s",
+        (page["based_on"],)).fetchone()
+    return reference is not None and reference["org_unit_id"] != page["org_unit_id"]
+
+
+def _acting_stage(powers: dict[str, Any], page: Any) -> str:
+    """Which signature this click actually is -- written into the audit record.
+
+    `department` and `company` are the two normal ones; `company_proxy` is the
+    platform taking a first level because the department had nobody else. The
+    record has to say so: the department never signed that version, and a later
+    reader must not be told otherwise.
+    """
+    if page["review_stage"] == "company":
+        return "company"
+    if powers["department"] and page["org_unit_id"] in powers["units"]:
+        return "department"
+    return "company_proxy"
+
+
+def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
+                   acting: str = "department") -> None:
+    """Make an approved page the live screen for its department slug."""
+    # Approving replaces whatever was live for this slug: a department must never
+    # end up with two pages claiming to be the current one.
+    conn.execute(
+        """UPDATE workhub.interfaces SET status = 'archived', updated_at = now()
+           WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
+        (page["org_unit_id"], page["slug"]))
+    # The audience the department asked for only takes effect now: a public
+    # template has to be signed off, so the row keeps 'department' while the page
+    # waits and the approval is what promotes it.
+    requested_visibility = review_rules.visibility_of(page["descriptor"] or {})
+    conn.execute(
+        """UPDATE workhub.interfaces
+              SET status = 'active', review_stage = 'department',
+                  reviewed_by = %s, reviewed_at = now(),
+                  review_note = %s, visibility = COALESCE(%s, visibility),
+                  updated_at = now()
+            WHERE interface_id = %s""",
+        (principal["member_id"], note.strip() or None,
+         requested_visibility if requested_visibility in ("department", "public") else None,
+         page["interface_id"]))
+    # The approval records what was actually reviewed, so "why did the number move
+    # on the 12th" can be answered from the audit log alone.
+    bundle = _review_bundle(conn, page)
+    summary = bundle["summary"]["headline"] if bundle else ""
+    api.audit(conn, principal["member_id"], "interface.approved", "interface", page["interface_id"],
+              (note.strip() or "review approved") + (f"｜{summary}" if summary else ""),
+              {"to": "active", "version_no": page["version_no"], "acting": acting,
+               "changes": bundle["summary"]["total"] if bundle else 0})
+
+
 @router.get("/reviews", response_class=HTMLResponse)
 def review_queue(request: Request, saved: str | None = None, error: str | None = None):
-    """The company side: pages a department finished and wants approved."""
-    try:
-        principal = _require(request, "workforce.interfaces", "review")
-    except _NotSignedIn:
+    """Two queues, because two people sign: the department first, the platform last.
+
+    A reviewer sees what they can decide -- a department lead the first-level
+    pages of their own departments, the platform what the departments passed up --
+    plus, for the platform, a read-only list of everything still pending, so
+    "why is this page not live yet" has an answer without anyone guessing.
+    """
+    principal = _member(request)
+    if principal is None:
         return RedirectResponse(url="/login?next=/reviews", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "审核部门页面需要 workforce.interfaces/review 权限。")
     with connection() as conn:
-        pending = conn.execute(
+        powers = _review_powers(conn, principal)
+        if not (powers["department"] or powers["company"]):
+            return _denied(request, "审核部门页面需要 workforce.interfaces/review 或 review_company 权限。")
+        awaiting = conn.execute(
             """SELECT i.interface_id, i.name, i.slug, i.version_no, i.visibility, i.schema_version,
-                      i.descriptor, i.based_on,
+                      i.descriptor, i.based_on, i.status, i.review_stage, i.updated_by,
                       o.name AS org_name, o.org_unit_id, p.title AS position_title,
                       m.display_name AS author, i.updated_at
                FROM workhub.interfaces i
@@ -1124,7 +1296,7 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
                LEFT JOIN workhub.positions p ON p.position_id = i.position_id
                LEFT JOIN workhub.workforce_members m ON m.member_id = i.updated_by
                WHERE i.status = 'pending'
-               ORDER BY i.updated_at""").fetchall()
+               ORDER BY (i.review_stage = 'company') DESC, i.updated_at""").fetchall()
         decided = conn.execute(
             """SELECT i.interface_id, i.name, i.status, i.review_note, i.review_code, o.name AS org_name,
                       m.display_name AS reviewer, i.reviewed_at
@@ -1133,82 +1305,81 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
                LEFT JOIN workhub.workforce_members m ON m.member_id = i.reviewed_by
                WHERE i.reviewed_at IS NOT NULL
                ORDER BY i.reviewed_at DESC LIMIT 10""").fetchall()
+    mine = [row for row in awaiting if _review_refusal(powers, row) is None]
+    others = [row for row in awaiting if powers["company"] and _review_refusal(powers, row) is not None]
     # Every pending page is read as a diff against the version it was written
     # against, not as a whole page: that is the only part a human still has to
     # think about, and the part where a quiet re-mapping would otherwise slip by.
     with connection() as conn:
-        review_cards = [dict(row, bundle=_review_bundle(conn, row)) for row in pending]
+        review_cards = [dict(row, bundle=_review_bundle(conn, row), acting=_acting_stage(powers, row))
+                        for row in mine]
     # The decision list reads a code, not prose: "what do departments keep getting
     # wrong" has to be answerable by counting, not by re-reading old notes.
     decided_cards = [dict(row, code_label=review_rules.rejection_label(row["review_code"]))
                      for row in decided]
     return TEMPLATES.TemplateResponse(request, "reviews.html", {
-        "pending": review_cards, "decided": decided_cards, "member": _member(request),
-        "saved": saved, "error": error, "reasons": review_rules.REJECTION_CHOICES,
+        "pending": review_cards, "others": others, "decided": decided_cards, "member": principal,
+        "powers": powers, "saved": saved, "error": error, "reasons": review_rules.REJECTION_CHOICES,
         "csrf": _form_token(request, "workhub:review-form:v1")})
 
 
 @router.post("/reviews/{interface_id}/approve")
 def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
                    note: str = Form(default="")):
-    """Approve a page: it becomes the live screen for that department slug."""
-    try:
-        principal = _require(request, "workforce.interfaces", "review")
-    except _NotSignedIn:
+    """Sign a page off -- at the department, or at the company, as the page asks.
+
+    A department's yes on a page that only it uses is the whole decision and the
+    page goes live. A page that leaves the department -- public, claiming a
+    company figure, or written on another department's page -- keeps waiting
+    after that yes, now at the company stage: the department passed it, the
+    platform still has to agree.
+
+    The first-level pass records no `reviewed_by`/`reviewed_at`: those two mean "a
+    decision was given and the department has to act on it", and nothing was
+    refused, so the page stays withdrawable and its note stays empty.
+    """
+    principal = _member(request)
+    if principal is None:
         return RedirectResponse(url="/login?next=/reviews", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "审核部门页面需要 workforce.interfaces/review 权限。")
     _check_form_token(request, csrf, "workhub:review-form:v1")
     with connection() as conn:
+        powers = _review_powers(conn, principal)
         page = conn.execute(
-            """SELECT interface_id, org_unit_id, slug, status, version_no, descriptor, based_on
-               FROM workhub.interfaces WHERE interface_id = %s FOR UPDATE""",
+            """SELECT i.interface_id, i.org_unit_id, i.slug, i.status, i.version_no, i.descriptor,
+                      i.based_on, i.review_stage, i.updated_by
+               FROM workhub.interfaces i WHERE i.interface_id = %s FOR UPDATE""",
             (interface_id,)).fetchone()
         if page is None:
             return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("找不到这个页面"), status_code=303)
-        if page["status"] != "pending":
-            return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("这个页面不在待审核状态"),
-                                    status_code=303)
-        # Approving replaces whatever was live for this slug: a department must
-        # never end up with two pages claiming to be the current one.
+        refusal = _review_refusal(powers, page)
+        if refusal is not None:
+            return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(refusal), status_code=303)
+        acting = _acting_stage(powers, page)
+        if page["review_stage"] == "company":
+            _activate_page(conn, principal, page, note, acting=acting)
+            return RedirectResponse(url="/reviews?saved=approved", status_code=303)
+        escalate = review_rules.needs_company_review(
+            page["descriptor"] or {}, cross_department=_cross_department(conn, page))
+        if not escalate:
+            _activate_page(conn, principal, page, note, acting=acting)
+            return RedirectResponse(url="/reviews?saved=approved", status_code=303)
         conn.execute(
-            """UPDATE workhub.interfaces SET status = 'archived', updated_at = now()
-               WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
-            (page["org_unit_id"], page["slug"]))
-        # The audience the department asked for only takes effect now: a public
-        # template has to be signed off, so the row keeps 'department' while the
-        # page waits and the approval is what promotes it.
-        requested_visibility = review_rules.visibility_of(page["descriptor"] or {})
-        conn.execute(
-            """UPDATE workhub.interfaces
-                  SET status = 'active', reviewed_by = %s, reviewed_at = now(),
-                      review_note = %s, visibility = COALESCE(%s, visibility),
-                      updated_at = now()
-                WHERE interface_id = %s""",
-            (principal["member_id"], note.strip() or None,
-             requested_visibility if requested_visibility in ("department", "public") else None,
-             interface_id))
-        # The approval records what was actually reviewed, so "why did the number
-        # move on the 12th" can be answered from the audit log alone.
-        bundle = _review_bundle(conn, dict(page))
-        summary = bundle["summary"]["headline"] if bundle else ""
-        api.audit(conn, principal["member_id"], "interface.approved", "interface", interface_id,
-                  (note.strip() or "review approved") + (f"｜{summary}" if summary else ""),
-                  {"to": "active", "version_no": page["version_no"],
-                   "changes": bundle["summary"]["total"] if bundle else 0})
-    return RedirectResponse(url="/reviews?saved=approved", status_code=303)
+            """UPDATE workhub.interfaces SET review_stage = 'company', updated_at = now()
+               WHERE interface_id = %s""", (interface_id,))
+        api.audit(conn, principal["member_id"], "interface.review_stage_passed", "interface", interface_id,
+                  note.strip() or "department passed the page to the company stage",
+                  {"from": "department", "to": "company", "version_no": page["version_no"],
+                   "acting": acting})
+    return RedirectResponse(url="/reviews?saved=passed", status_code=303)
 
 
 @router.post("/reviews/{interface_id}/reject")
 def review_reject(request: Request, interface_id: UUID, csrf: str = Form(...),
                   note: str = Form(...), reason_code: str = Form(default="")):
     """Send a page back with a reason; the department keeps its trial entries."""
-    try:
-        principal = _require(request, "workforce.interfaces", "review")
-    except _NotSignedIn:
+    principal = _member(request)
+    if principal is None:
         return RedirectResponse(url="/login?next=/reviews", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "审核部门页面需要 workforce.interfaces/review 权限。")
     _check_form_token(request, csrf, "workhub:review-form:v1")
     if not note.strip():
         return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("退回必须写明原因"), status_code=303)
@@ -1220,20 +1391,29 @@ def review_reject(request: Request, interface_id: UUID, csrf: str = Form(...),
         return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("未知的退回原因类型"),
                                 status_code=303)
     with connection() as conn:
+        powers = _review_powers(conn, principal)
         page = conn.execute(
-            "SELECT interface_id, status FROM workhub.interfaces WHERE interface_id = %s FOR UPDATE",
+            """SELECT interface_id, org_unit_id, status, review_stage, updated_by
+               FROM workhub.interfaces WHERE interface_id = %s FOR UPDATE""",
             (interface_id,)).fetchone()
-        if page is None or page["status"] != "pending":
-            return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("这个页面不在待审核状态"),
-                                    status_code=303)
+        if page is None:
+            return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("找不到这个页面"), status_code=303)
+        refusal = _review_refusal(powers, page)
+        if refusal is not None:
+            return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(refusal), status_code=303)
+        # A returned page starts over at the first level: whatever the company said
+        # about it, the department's own lead reviews the fix first.
         conn.execute(
             """UPDATE workhub.interfaces
-                  SET status = 'draft', reviewed_by = %s, reviewed_at = now(),
+                  SET status = 'draft', review_stage = 'department',
+                      reviewed_by = %s, reviewed_at = now(),
                       review_note = %s, review_code = %s, updated_at = now()
                 WHERE interface_id = %s""",
             (principal["member_id"], note.strip(), code, interface_id))
         api.audit(conn, principal["member_id"], "interface.rejected", "interface", interface_id,
-                  note.strip(), {"to": "draft", "review_code": code})
+                  note.strip(), {"to": "draft", "review_code": code,
+                                 "from_stage": page["review_stage"],
+                                 "acting": _acting_stage(powers, page)})
     return RedirectResponse(url="/reviews?saved=rejected", status_code=303)
 
 

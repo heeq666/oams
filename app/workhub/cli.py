@@ -72,6 +72,7 @@ def bootstrap_admin(args):
             ("workforce.work_items", "read"), ("workforce.work_items", "manage"),
             ("workforce.reports", "read"), ("workforce.reports", "submit"),
             ("workforce.interfaces", "read"), ("workforce.interfaces", "review"),
+            ("workforce.interfaces", "review_company"),
             ("workforce.audit", "read"),
         ]
         for resource, action in resources:

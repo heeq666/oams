@@ -69,6 +69,22 @@ def _script() -> None:
     with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
         design = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code='DESIGN001'").fetchone()["member_id"]
         org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code='DESIGN'").fetchone()["org_unit_id"]
+        # The page has to be written by somebody other than its reviewer: a page
+        # nobody else looked at is not a reviewed page, and the queue will not
+        # offer a reviewer their own submission.  A second person takes a DESIGN
+        # seat for the length of this script, and gives it back in the cleanup.
+        writer = conn.execute(
+            "SELECT member_id FROM workhub.workforce_members WHERE employee_code='MVP1001'").fetchone()["member_id"]
+        design_position = conn.execute(
+            "SELECT position_id FROM workhub.positions WHERE position_code='DESIGN_LEAD'").fetchone()["position_id"]
+        conn.execute("DELETE FROM workhub.position_assignments WHERE member_id=%s AND position_id=%s",
+                     (writer, design_position))
+        conn.execute(
+            """INSERT INTO workhub.position_assignments
+                   (member_id, position_id, assignment_type, status, starts_at, reason, created_by)
+               VALUES (%s, %s, 'concurrent', 'active', now() - interval '1 day',
+                       '权限拆分用例：临时给第二个设计部席位', %s)""",
+            (writer, design_position, design))
         # This member must NOT be a security administrator: that is the whole point.
         grants_admin = conn.execute(
             """SELECT count(*) AS n FROM workhub.permission_grants
@@ -124,9 +140,12 @@ def _script() -> None:
     check("reviewer is steered away from the audit log",
           status == 303 and "没有权限" not in body, f"{status} {location(headers)}")
 
-    # Full review cycle driven by this non-administrator reviewer.
-    status, form, _ = lead(f"/departments/{org}/new")
-    status, _, headers = lead(f"/departments/{org}/new", "POST", {
+    # Full review cycle: the department writes and sends, this non-administrator
+    # reviewer signs. The writer is a second person because a reviewer cannot
+    # approve the version they wrote themselves.
+    draft = session(writer)
+    status, form, _ = draft(f"/departments/{org}/new")
+    status, _, headers = draft(f"/departments/{org}/new", "POST", {
         "csrf": token_of(form), "slug": "design-permission-split", "name": "设计部权限拆分测试页",
         "position_id": "", "descriptor_text": json.dumps(descriptor)})
     check("page created", status == 303 and "saved=1" in headers.get("location", ""), headers.get("location"))
@@ -134,9 +153,9 @@ def _script() -> None:
     with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
         iid = conn.execute("SELECT interface_id FROM workhub.interfaces WHERE slug='design-permission-split'").fetchone()["interface_id"]
 
-    status, html, _ = lead(f"/departments/{org}/{iid}")
-    status, _, headers = lead(f"/departments/{org}/{iid}/submit-review", "POST",
-                              {"review_csrf": token_of(html, "review_csrf")})
+    status, html, _ = draft(f"/departments/{org}/{iid}")
+    status, _, headers = draft(f"/departments/{org}/{iid}/submit-review", "POST",
+                               {"review_csrf": token_of(html, "review_csrf")})
     check("submitted for review", status == 303 and "saved=review" in headers.get("location", ""),
           headers.get("location"))
 
@@ -150,6 +169,8 @@ def _script() -> None:
     with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
         row = conn.execute("SELECT status, reviewed_by FROM workhub.interfaces WHERE interface_id=%s", (iid,)).fetchone()
         conn.execute("DELETE FROM workhub.interfaces WHERE slug='design-permission-split'")
+        conn.execute("DELETE FROM workhub.position_assignments WHERE member_id=%s AND position_id=%s",
+                     (writer, design_position))
     check("approval recorded the reviewer", row["status"] == "active" and row["reviewed_by"] == design, row)
 
     if failures:
