@@ -72,10 +72,13 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   th { background: var(--subtle); color: var(--muted); font-weight: 500; font-size: 12px; }
   tr:last-child td { border-bottom: none; }
   form.inline { display: inline; }
+  /* 内距不在这里定：控件基准线那条（height 30 + padding 0 16）在后面统一覆盖，
+     写在这里是死声明，只会让下一个人以为控件内距是 6。 */
   button, .btn { background: var(--accent); color: var(--on-accent); border: 0; border-radius: var(--r-pill);
-                 padding: 6px 16px; font-size: 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+                 font-size: 14px; cursor: pointer; text-decoration: none; display: inline-block; }
   button.link { background: none; color: var(--muted); padding: 0; }
-  input, select, textarea { padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r-control);
+  /* 内距归「控件基准线」那条：input/select 走 0 12（height 30），textarea 走 12 12。 */
+  input, select, textarea { border: 1px solid var(--line); border-radius: var(--r-control);
                             font-size: 14px; background: var(--card); color: var(--ink); }
   label { font-size: 13px; color: var(--muted); }
   .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
@@ -88,7 +91,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      while the chip row below it filters the list. Same page, two silhouettes. */
   .orgnav { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-control);
             background: var(--card); overflow: hidden; }
-  .orgnav a { padding: 6px 16px; font-size: 14px; color: var(--muted); text-decoration: none; }
+  .orgnav a { font-size: 14px; color: var(--muted); text-decoration: none; }
   .orgnav a + a { border-left: 1px solid var(--line); }
   .orgnav a.on { background: var(--accent); color: var(--on-accent); }
   .orgnav a:hover:not(.on) { background: var(--subtle); color: var(--ink); }
@@ -105,7 +108,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .channel-scorecard .legend { display: flex; gap: 16px; color: var(--muted); font-size: 12px; }
   .channel-scorecard .legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: var(--r-micro); margin-right: 4px; }
   .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tabs a { padding: 6px 16px; border-radius: var(--r-control); border: 1px solid var(--line);
+  .tabs a { border-radius: var(--r-control); border: 1px solid var(--line);
             background: var(--card); color: var(--ink); text-decoration: none; font-size: 14px; }
   .tabs a.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   .tabs a .cnt { margin-left: 8px; font-size: 12px; opacity: .65; }
@@ -126,7 +129,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .flowstrip .arrow, .flowstrip .fork { color: var(--muted); font-size: 13px; }
   .flowstrip .fork { margin-left: 12px; }
   /* Label↔Count 8（Figma 的 Stage 内 itemSpacing 就是 8）。 */
-  .flowstrip .stage { display: inline-flex; align-items: baseline; gap: 8px; padding: 6px 16px;
+  /* 内距与高归下面那条 `.flowstrip .stage { height: 36px; padding: 0 16px }`。 */
+  .flowstrip .stage { display: inline-flex; align-items: baseline; gap: 8px;
                       border: 1px solid var(--line); border-radius: var(--r-control); background: var(--card);
                       color: var(--ink); font-size: 14px; text-decoration: none; }
   .flowstrip a.stage:hover { border-color: var(--accent); }
@@ -165,13 +169,11 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .diff-block { margin-top: 12px; padding: 12px 12px; border: 0;
                 border-radius: var(--r-small); background: var(--subtle); }
   .diff-head { margin: 0 0 8px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-  .diff-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex;
-               flex-direction: column; gap: 8px; }
-  .diff-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 14px; }
-  .diff-area { font-size: 12px; color: var(--muted); border: 1px solid var(--line);
-               border-radius: var(--r-micro); padding: 0 6px; }
-  .diff-value { color: var(--ink); }
-  .diff-why { font-size: 13px; color: var(--muted); flex-basis: 100%; padding-left: 4px; }
+  /* 改动行真正的类在下面「review queue」那组（.diff-row / .diff-sev / .diff-area /
+     .diff-body / .diff-title / .diff-change / .diff-why2）。旧的 .diff-list /
+     .diff-list li / .diff-value / .diff-why 全仓没有一个模板输出，2026-10-31 删掉：
+     那次间距收口改的正是这里的 .diff-list gap，渲染上零效果。 */
+  .diff-area { font-size: 12px; color: var(--muted); }
   /* The bar is a floating capsule of three grid cells now: the old flex rules
      here (wrapping the nav onto its own row, order: 3) moved the account into
      the middle cell and overflowed the page, so only the page padding is kept. */
@@ -431,7 +433,6 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .btn-ghost:hover, button.ghost:hover { background: var(--subtle); opacity: 1; }
   .btn-danger, button.danger { background: var(--card); color: var(--blocked); border: 1px solid var(--line); }
   .btn-danger:hover, button.danger:hover { background: var(--danger-soft); opacity: 1; }
-  .btn-sm, button.sm { padding: 6px 12px; font-size: 13px; }
   /* 控件基准线 30（见 docs/design/design-system-v1.md §3）：与 Figma Input / Select / Button
      同高。内距上下 0、左右 12，靠 height 撑高，不要再靠 padding 凑高度——那会算出 35.5 / 36
      这种非整数档，跟按钮排在一行就错位。textarea 例外：高度由 min-height 决定。
@@ -642,7 +643,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   /* The box is 16px and its label sits 8px away -- the same 8px step that
      separates a card from the block inside it, so tick + text never touch. */
   input[type="checkbox"], input[type="radio"] {
-    width: 16px; height: 16px; margin: 0; flex: 0 0 auto;
+    width: 16px; height: 16px; margin: 0; padding: 0; flex: 0 0 auto;
     accent-color: var(--accent); vertical-align: -2px;
   }
   thead tr:first-child th { border-radius: 0; }
