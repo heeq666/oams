@@ -94,3 +94,31 @@
     <div class="collab-main" id="collab-main">{% include "collab/empty.html" %}</div>
   </div>
 </section>
+<script>
+/* 面板收起来再打开，左栏要拿新的。
+   base.html 的 open() 第一次之后只是把面板滑上来（host.dataset.loaded 已经置过位），
+   联网不动，于是左栏的行、每行未读、入口角标全是关之前的旧值——别人在这段时间
+   发了什么，人看不到。这里在「收着的面板被点开」的那一刻补一次 /collab/side：
+   当前那一栏重画，角标跟着同一次渲染回来（badges.html 那一段 OOB）。
+   挂在 document 的捕获阶段，并且这个脚本本身只随面板首包存在一次，所以
+   第一次打开那一次请求不会重复；点开着的面板是收起，直接跳过。 */
+(function () {
+  if (window.__whCollabReopen) return;
+  window.__whCollabReopen = true;
+  document.addEventListener("click", function (evt) {
+    var node = evt.target;
+    if (!node || !node.closest) return;
+    if (!node.closest("#collab-entry")) return;
+    if (document.body.classList.contains("collab-open")) return;
+    var viewInput = document.getElementById("collab-view");
+    var view = viewInput && viewInput.value === "directory" ? "directory" : "threads";
+    var search = document.querySelector("#collab-host .collab-search input[name='q']");
+    var q = search ? search.value.trim() : "";
+    var target = view === "directory" ? "#collab-directory" : "#collab-thread-list";
+    var url = "/collab/side?view=" + view + (q ? "&q=" + encodeURIComponent(q) : "");
+    if (window.htmx && document.querySelector(target)) {
+      htmx.ajax("GET", url, { target: target, swap: "innerHTML" });
+    }
+  }, true);
+})();
+</script>

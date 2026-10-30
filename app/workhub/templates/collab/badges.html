@@ -1,0 +1,8 @@
+{# 未读角标跟着左栏一起回来。
+   面板重开、搜一个字、切视图、发完一条——都是同一次渲染里算出来的那一个数，
+   所以入口那个角标和面板底部那句「共 N 条未读」不会各说各的。
+   只在 /collab/side 的分片里带（side.html 置 collab_oob_badges），首包渲染
+   时那两处角标本来就在同一份 HTML 里，不必再换一次。 #}
+<span class="collab-entry-count" id="collab-entry-count" hx-swap-oob="outerHTML"
+      aria-label="{% if unread_total %}未读 {{ unread_total }} 条{% endif %}">{{ unread_total | badge }}</span>
+<span hx-swap-oob="innerHTML:#collab-panel-unread">{% if unread_total %}共 {{ unread_total }} 条未读{% endif %}</span>

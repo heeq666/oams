@@ -2,6 +2,9 @@
 <form class="collab-composer" hx-post="/collab/threads/{{ thread.thread_id }}/messages"
       hx-target="#collab-main" hx-swap="innerHTML" hx-disabled-elt="find button">
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  {# 断网重发的幂等键。发之前由下面的脚本填一个 uuid，同一条消息重发时复用同一个：
+     后端按它去重，所以「点两次重发」只落一条。空着表示还没填，服务端当没带。 #}
+  <input type="hidden" name="client_msg_id" value="">
   <div class="collab-composer-box">
     <textarea name="body" rows="1" maxlength="4000" required
               placeholder="{{ placeholder }}" aria-label="发言">{{ draft }}</textarea>
@@ -14,3 +17,140 @@
   </div>
   <p class="collab-composer-hint">以「{{ member.display_name }}」的身份发言</p>
 </form>
+{# 发送失败的气泡：脚本克隆它、填上正文，挂在消息区末尾。 #}
+<template id="collab-failed-tpl">{% include "collab/failed.html" %}</template>
+<script>
+/* 发送失败要看得见。
+   htmx 默认把失败吞掉：断网（htmx:sendError）或 5xx（htmx:responseError）时既
+   不换目标、也不提示，输入框被下一条消息顶掉后，那一句就没了。这里做三件事：
+   1) 发之前补一个 client_msg_id（同一条消息重发时复用同一个，后端幂等去重）；
+   2) 失败时把正文搬进消息区，挂红色感叹号与「重发」；
+   3) 「重发」把正文与 id 塞回输入框再原生提交，成功那一屏会整块换掉，气泡随之消失。
+   监听挂在 document 上并且只绑一次：面板开合、切会话都会换掉整块右栏，但 document 不变。 */
+(function () {
+  if (window.__whCollabSendHook) return;
+  window.__whCollabSendHook = true;
+
+  function newId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    var bytes = new Uint8Array(16);
+    if (window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(bytes);
+    } else {
+      for (var i = 0; i < 16; i += 1) { bytes[i] = Math.floor(Math.random() * 256); }
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    var hex = "";
+    for (var j = 0; j < 16; j += 1) { hex += ("0" + bytes[j].toString(16)).slice(-2); }
+    return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-" + hex.slice(12, 16) + "-" +
+           hex.slice(16, 20) + "-" + hex.slice(20);
+  }
+
+  function formOf(elt) {
+    if (!elt || !elt.closest) return null;
+    return elt.closest(".collab-composer");
+  }
+
+  function idInput(form) {
+    return form ? form.querySelector('input[name="client_msg_id"]') : null;
+  }
+
+  function bubbleFor(host, id) {
+    if (!host || !id) return null;
+    return host.querySelector('.collab-msg-failed[data-client-msg-id="' + id + '"]');
+  }
+
+  function describe(evt) {
+    if (evt.type === "htmx:sendError") return "网络没连上";
+    var status = (evt.detail && evt.detail.xhr && evt.detail.xhr.status) || 0;
+    if (status === 403) return "被拒了，刷新页面再发";
+    if (status >= 500) return "服务器出错了（" + status + "）";
+    return status ? "没发出去（" + status + "）" : "没发出去";
+  }
+
+  document.addEventListener("htmx:configRequest", function (evt) {
+    var form = formOf(evt.detail.elt);
+    if (!form) return;
+    var input = idInput(form);
+    if (!input) return;
+    if (!input.value) input.value = newId();
+    evt.detail.parameters.client_msg_id = input.value;
+  });
+
+  function onFailure(evt) {
+    var detail = evt.detail || {};
+    var elt = detail.elt || (detail.requestConfig && detail.requestConfig.elt);
+    var form = formOf(elt);
+    if (!form) return;
+    // htmx 在请求期间禁掉按钮；失败路径上它不一定放开，这里兜一下，
+    // 否则下一个动作点不动。
+    var buttons = form.querySelectorAll("button[disabled]");
+    for (var i = 0; i < buttons.length; i += 1) { buttons[i].disabled = false; }
+
+    var host = document.getElementById("collab-msgs");
+    var tpl = document.getElementById("collab-failed-tpl");
+    var box = form.querySelector('textarea[name="body"]');
+    if (!host || !tpl || !box) return;
+    var text = box.value.trim();
+    if (!text) return;
+    var input = idInput(form);
+    var id = input ? input.value : "";
+    var node = bubbleFor(host, id);
+    if (!node) {
+      node = tpl.content.firstElementChild.cloneNode(true);
+      node.setAttribute("data-client-msg-id", id);
+      host.appendChild(node);
+      node.querySelector("[data-resend]").addEventListener("click", function () {
+        resend(node);
+      });
+    }
+    node.querySelector("[data-failed-body]").textContent = text;
+    var because = describe(evt);
+    node.querySelector("[data-failed-because]").textContent = because;
+    // 403 是「这个令牌不认了」或者「这个会话不开放给你」：原样再发一次不会变好，
+    // 刷新页面才可能好，所以这一条不给「重发」按钮。
+    node.querySelector("[data-resend]").hidden = because.indexOf("被拒") === 0;
+    host.scrollTop = host.scrollHeight;
+    // 正文已经搬进气泡，输入框清空，免得同一条话被手滑发两遍。
+    box.value = "";
+    box.style.height = "";
+  }
+
+  document.addEventListener("htmx:sendError", onFailure);
+  document.addEventListener("htmx:responseError", onFailure);
+
+  function resend(node) {
+    var form = document.querySelector("#collab-main .collab-composer");
+    var box = form && form.querySelector('textarea[name="body"]');
+    if (!box) return;
+    box.value = node.querySelector("[data-failed-body]").textContent;
+    var input = idInput(form);
+    if (input) input.value = node.getAttribute("data-client-msg-id") || "";
+    // 让 autosize 把高度重新算一遍（base.html 挂在 input 事件上）。
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    var btn = node.querySelector("[data-resend]");
+    if (btn) { btn.disabled = true; btn.textContent = "重发中…"; }
+    window.setTimeout(function () {
+      if (btn) { btn.disabled = false; btn.textContent = "重发"; }
+    }, 4000);
+    if (typeof form.requestSubmit === "function") form.requestSubmit();
+    else form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  }
+
+  // 失败之后又改了正文：那已经是另一句话，换一个 id，别把上一句的 id 占过来。
+  document.addEventListener("input", function (evt) {
+    var box = evt.target;
+    if (!box || !box.matches || !box.matches('.collab-composer textarea[name="body"]')) return;
+    var input = idInput(formOf(box));
+    if (!input || !input.value) return;
+    var node = bubbleFor(document.getElementById("collab-msgs"), input.value);
+    if (!node) return;
+    if (node.querySelector("[data-failed-body]").textContent !== box.value.trim()) {
+      input.value = "";
+    }
+  });
+})();
+</script>

@@ -1,6 +1,6 @@
 /* 协作室 -- 右下角按钮呼出的全局讨论层。
  *
- * 形态：底部两栏弹层。从窗口底边升起，上两角 28、下两角 0（贴底边才不露缝），
+ * 形态：底部两栏弹层。从窗口底边升起，上两角 26（--r-card）、下两角 0（贴底边才不露缝），
  * 左栏会话列表 264 定宽，右栏对话自适应、最窄 520。窄到 900 以下只剩一栏，
  * 左栏换成可返回的整屏。
  *
@@ -320,6 +320,40 @@ body.collab-open .collab-panel { transform: translateY(0); }
 .collab-msg-name { font-size: 13px; font-weight: 500; color: var(--ink); }
 .collab-msg-time { margin-left: auto; font-size: 11px; color: var(--muted); }
 .collab-msg-text { margin: 4px 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; }
+
+/* 没发出去的一条：正文压到 --muted（这句还没进服务器），下面一行红字 + 感叹号 +「重发」。
+   不换气泡底色——消息本来就没有底色，加了底会跟日期分隔、加载行抢层次。 */
+.collab-msg-failed .collab-msg-text { color: var(--muted); }
+.collab-msg-fail { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; }
+.collab-msg-fail-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: var(--blocked);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+.collab-msg-fail [data-failed-because] { font-size: 12px; color: var(--blocked-strong); }
+.collab-msg-resend {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-small);
+  background: var(--subtle);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.collab-msg-resend:hover { background: var(--hover); }
+.collab-msg-resend:disabled { color: var(--muted); cursor: default; background: var(--subtle); }
 
 /* AI 代发的模型名。浅紫底紫字：它标的是「谁说的」，视觉重量不该盖过正文。 */
 .collab-model {
