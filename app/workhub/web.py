@@ -499,6 +499,22 @@ def _interface_values(fields, entry):
     return values
 
 
+def _fill_values_from_form(fields, form) -> dict[str, Any]:
+    """What the person just typed, keyed by descriptor field, for redisplay.
+
+    A refused submission has to come back filled in: the server cannot rely on the
+    browser's ``required`` (a hand-made POST skips it), and sending the person back
+    to an empty form loses the text they may have spent minutes on.
+    """
+    values: dict[str, Any] = {}
+    for field in fields:
+        key = field.get("key")
+        if not key or key not in form:
+            continue
+        values[key] = form.get(key)
+    return values
+
+
 def _read_entry_form(fields, status_map, form):
     """Turn posted keys into standard columns plus the department's own extras."""
     standard = {}
@@ -738,6 +754,19 @@ def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
         return RedirectResponse(url="/login?next=/departments", status_code=302)
     except _NotPermitted:
         return _denied(request, "填写部门页面需要 workforce.reports/read 与 submit 权限。")
+    return _workbench_page(request, principal, org_unit_id, interface_id,
+                           saved=saved, error=error)
+
+
+def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UUID,
+                    interface_id: UUID, *, saved: str | None = None, error: str | None = None,
+                    values: dict[str, Any] | None = None, status_code: int = 200):
+    """Draw the department workbench for one page.
+
+    ``values`` overrides what the fields show. A submission the server refused comes
+    back through here with what the person typed -- re-rendering the last *saved*
+    entry instead would quietly throw their words away.
+    """
     with connection() as conn:
         unit = _resolve_department(conn, principal, org_unit_id)
         if unit is None:
@@ -783,8 +812,10 @@ def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
                 (org_unit_id, page["slug"])).fetchone()
     descriptor = page["descriptor"]
     fields = [f for f in descriptor.get("fields", []) if isinstance(f, dict) and f.get("key")]
+    if values is None:
+        values = _interface_values(fields, latest)
     try:
-        rendered = render_interface(descriptor, values=_interface_values(fields, latest))
+        rendered = render_interface(descriptor, values=values)
     except RenderError as exc:
         return _denied(request, "这个页面的描述未通过校验，暂不能填写：" + str(exc))
     departments = [dict(unit=row, pages=counts.get(row["org_unit_id"], [])) for row in found]
@@ -814,7 +845,7 @@ def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
         # The page holds two different forms (fill it in, submit it for review),
         # so it carries a token for each; a token minted for one must not pass the other.
         "csrf": _form_token(request, "workhub:interface-form:v1"),
-        "review_csrf": _form_token(request, "workhub:page-form:v1")})
+        "review_csrf": _form_token(request, "workhub:page-form:v1")}, status_code=status_code)
 
 
 @router.post("/departments/{org_unit_id}/{interface_id}")
@@ -844,7 +875,8 @@ async def department_page_submit(request: Request, org_unit_id: UUID, interface_
         form = await request.form()
         standard, extra, problem = _read_entry_form(fields, descriptor.get("status_map", {}), form)
         if problem is not None:
-            return RedirectResponse(url=base + "?error=" + urllib.parse.quote(problem), status_code=303)
+            return _workbench_page(request, principal, org_unit_id, interface_id, error=problem,
+                                   values=_fill_values_from_form(fields, form), status_code=400)
         mode = _entry_mode_for(page["status"])
         columns = dict(standard)
         columns["extra"] = Jsonb(extra)
@@ -1275,9 +1307,21 @@ def interface_fill(request: Request, interface_id: UUID, saved: str | None = Non
             """SELECT * FROM workhub.interface_entries
                WHERE interface_id = %s AND status_entry = 'active' AND entry_mode = %s
                ORDER BY reported_at DESC, entry_id DESC LIMIT 1""", (interface_id, mode)).fetchone()
+    return _interface_fill_page(request, row, latest=latest, saved=saved, error=error)
+
+
+def _interface_fill_page(request: Request, row: dict[str, Any], *, latest: dict[str, Any] | None = None,
+                         saved: str | None = None, error: str | None = None,
+                         values: dict[str, Any] | None = None, status_code: int = 200):
+    """Draw a department interface for filling.
+
+    ``values`` overrides what the fields show, so a refused POST can come back with
+    the text the person typed instead of the last saved entry or an empty form.
+    """
     descriptor = row["descriptor"]
     fields = [f for f in descriptor.get("fields", []) if isinstance(f, dict) and f.get("key")]
-    values = _interface_values(fields, latest)
+    if values is None:
+        values = _interface_values(fields, latest)
     try:
         rendered = render_interface(descriptor, values=values)
     except RenderError as exc:
@@ -1285,7 +1329,7 @@ def interface_fill(request: Request, interface_id: UUID, saved: str | None = Non
     return TEMPLATES.TemplateResponse(request, "interface_fill.html", {
         "interface": row, "rendered": rendered, "latest": latest,
         "member": _member(request), "saved": saved, "error": error,
-        "csrf": _form_token(request, "workhub:interface-form:v1")})
+        "csrf": _form_token(request, "workhub:interface-form:v1")}, status_code=status_code)
 
 
 @router.post("/interfaces/{interface_id}")
@@ -1302,8 +1346,10 @@ async def interface_submit(request: Request, interface_id: UUID, csrf: str = For
         company_scope = has_company_scope(conn, principal["member_id"])
         scoped = list(active_org_unit_ids(conn, principal["member_id"]))
         row = conn.execute(
-            """SELECT * FROM workhub.interfaces WHERE interface_id = %s AND status = 'active'
-                 AND (%s OR org_unit_id = ANY(%s))""", (interface_id, company_scope, scoped)).fetchone()
+            """SELECT i.*, o.name AS org_name FROM workhub.interfaces i
+               JOIN workhub.org_units o USING (org_unit_id)
+               WHERE i.interface_id = %s AND i.status = 'active'
+                 AND (%s OR i.org_unit_id = ANY(%s))""", (interface_id, company_scope, scoped)).fetchone()
         if row is None:
             return _denied(request, "找不到这个部门界面，或你不在该部门范围内。")
         descriptor = row["descriptor"]
@@ -1311,8 +1357,17 @@ async def interface_submit(request: Request, interface_id: UUID, csrf: str = For
         form = await request.form()
         standard, extra, problem = _read_entry_form(fields, descriptor.get("status_map", {}), form)
         if problem is not None:
-            return RedirectResponse(url="/interfaces/" + str(interface_id) + "?error=" + urllib.parse.quote(problem),
-                                    status_code=303)
+            # Say what is missing *on the filled-in form*: the browser's required
+            # check is not there to help a hand-made POST, and a redirect would have
+            # thrown away everything the person typed before we told them.
+            mode = _entry_mode_for(row["status"])
+            latest = conn.execute(
+                """SELECT * FROM workhub.interface_entries
+                   WHERE interface_id = %s AND status_entry = 'active' AND entry_mode = %s
+                   ORDER BY reported_at DESC, entry_id DESC LIMIT 1""", (interface_id, mode)).fetchone()
+            return _interface_fill_page(request, row, latest=latest, error=problem,
+                                        values=_fill_values_from_form(fields, form),
+                                        status_code=400)
         columns = dict(standard)
         columns["extra"] = Jsonb(extra)
         columns["reported_by"] = principal["member_id"]

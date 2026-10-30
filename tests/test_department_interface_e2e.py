@@ -145,12 +145,16 @@ def _script() -> None:
     status, page, _ = request(admin_client, f"/interfaces/{interface_id}")
     check("fill page renders descriptor", status == 200 and "款号" in page and "打样单号" in page, status)
 
-    status, _, headers = request(admin_client, f"/interfaces/{interface_id}", "POST", {
+    status, body, _ = request(admin_client, f"/interfaces/{interface_id}", "POST", {
         "csrf": tokens(page)[0], "title": "AW24-001", "state_word": "等面料",
         "blocked_reason": "", "evidence_ref": "SY-2410", "fabric_note": "待补货",
     })
-    check("blocked without reason rejected", "error=" in headers.get("location", ""),
-          headers.get("location", "")[:160])
+    # R3: a refused submission comes back on the page that refused it, with what
+    # was typed still in the controls. A 303 used to throw the whole form away.
+    check("blocked without reason refused with the typing kept",
+          status == 400 and "必须写明卡在哪" in body
+          and "AW24-001" in body and "SY-2410" in body,
+          (status, body.count("AW24-001")))
 
     status, page, _ = request(admin_client, f"/interfaces/{interface_id}")
     status, _, headers = request(admin_client, f"/interfaces/{interface_id}", "POST", {
