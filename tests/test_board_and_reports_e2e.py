@@ -24,14 +24,20 @@ import uuid
 import pytest
 
 sys.path.insert(0, "app")
-os.environ.setdefault("WORKHUB_DATABASE_URL", "postgresql://postgres:change-me@localhost:55433/workhub_test")
 
 import psycopg  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
 from workhub.security import issue_session  # noqa: E402
 
-DATABASE_URL = os.environ["WORKHUB_DATABASE_URL"]
+# Never write to ``os.environ`` here.  pytest imports every test module during
+# collection, so a module-level ``setdefault`` used to plant this script's docker
+# URL in the environment before any test ran -- and every db-marked test in the
+# rest of the suite then probed *that* URL and skipped, even on a machine with a
+# perfectly good database.  ``_script()`` rebinds DATABASE_URL from the fixture;
+# importing the module must stay side-effect free.
+DATABASE_URL = os.environ.get("WORKHUB_DATABASE_URL", "")
+
 PORT = 8124
 BASE = f"http://127.0.0.1:{PORT}"
 
