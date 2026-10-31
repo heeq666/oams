@@ -18,6 +18,15 @@
       "order": 1,
       "children": [
         {
+          "key": "headline_metric",
+          "type": "metric_card",
+          "order": 0,
+          "params": {
+            "metric_key": "dept.FIN.expense_total",
+            "span": 1
+          }
+        },
+        {
           "key": "expense_table",
           "type": "table",
           "order": 1,

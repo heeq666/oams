@@ -18,6 +18,15 @@
       "order": 1,
       "children": [
         {
+          "key": "headline_metric",
+          "type": "metric_card",
+          "order": 0,
+          "params": {
+            "metric_key": "dept.GA.parcel_pending",
+            "span": 1
+          }
+        },
+        {
           "key": "parcel_table",
           "type": "table",
           "order": 1,

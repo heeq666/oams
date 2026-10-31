@@ -146,17 +146,27 @@ STATUS_LABELS = {"planned": "未开始", "in_progress": "进行中", "blocked": 
 KIND_LABELS = {"project": "项目", "routine": "常规", "adhoc": "临时"}
 CHANNEL_LABELS = {"human": "人工", "agent": "AI 代笔"}
 
-# The three states the concept doc requires to be visible on every entry (ch.6):
-# 已进汇总 / 未关联 / 草稿. The SQL that decides them lives in api.ROLLUP_STATE_SQL,
-# so the badge, the board panel and the JSON endpoint cannot disagree.
+# The states the concept doc requires to be visible on every entry (ch.6). The SQL
+# that decides them lives in api.DEPARTMENT_ROLLUP_STATE_SQL (department page) and
+# api.ROLLUP_STATE_SQL (company number), so the badge, the board panel and the JSON
+# endpoint cannot disagree about which entries counted.
+#
+# Two of these say almost the same thing on purpose. `counted` counts on this page
+# and would also reach the company; `counted_unlinked` counts on this page but has
+# no work item yet, so it is not in the company number. Saying "未关联，不算数" for
+# the second one was the old wording and it was wrong: the department's own number
+# did count it.
 ROLLUP_STATE_LABELS = {
+    "counted": "已计入本部门，也进公司汇总",
+    "counted_unlinked": "已计入本部门，未进公司汇总",
     "rolled": "已进汇总",
     "unlinked": "未关联，不进汇总",
     "draft": "草稿，不进汇总",
     "retracted": "已撤回",
 }
 # Badge classes that already exist in base.html; no new stylesheet rule needed.
-ROLLUP_STATE_BADGES = {"rolled": "human", "unlinked": "vacant", "draft": "decision",
+ROLLUP_STATE_BADGES = {"counted": "human", "counted_unlinked": "vacant",
+                       "rolled": "human", "unlinked": "vacant", "draft": "decision",
                        "retracted": ""}
 ENTRY_LINK_PURPOSE = "oams:entry-link:v1"
 
@@ -167,7 +177,7 @@ def _with_rollup_labels(rows):
     marked = []
     for row in rows:
         item = dict(row)
-        state = item.get("rollup_state") or "unlinked"
+        state = item.get("rollup_state") or "counted_unlinked"
         item["rollup_state"] = state
         item["rollup_label"] = ROLLUP_STATE_LABELS.get(state, state)
         item["rollup_badge"] = ROLLUP_STATE_BADGES.get(state, "")
@@ -180,11 +190,13 @@ def _rollup_gap(state):
     """"Why is this one not in the company number", in the department's words.
 
     The concept doc asks the UI to name the missing condition instead of only
-    marking the entry, so an unlinked entry says what would change its mind.
+    marking the entry, so a counted-but-unlinked entry says what would change its
+    mind without pretending the department does not count it.
     """
     return {
+        "counted_unlinked": "本部门算数；关联工作项后才会进公司汇总",
         "unlinked": "还没关联工作项：关联后这条才会进公司汇总",
-        "draft": "这条是试填数据：页面通过审核后才进公司汇总",
+        "draft": "这条是试填数据：页面通过审核后才进汇总",
         "retracted": "这条已撤回，不再参与汇总",
     }.get(state)
 
@@ -505,6 +517,12 @@ def _read_entry_form(fields, status_map, form):
             continue
         if map_to in ("title", "blocked_reason", "note", "evidence"):
             standard[map_to] = raw
+            continue
+        # 剩下的都是「有标准含义、但表里没有对应列」的字段（金额、完成日期、计划
+        # 日期、款号…）。它们曾经在这里被悄悄丢掉——填了也不存，页面上看得见填
+        # 过、库里查不到，指标自然永远算不出来。落进 extra 就不会丢；能不能参与
+        # 汇总由 api.ROLLUP_COLUMNS / EXTRA_AGGREGATE_COLUMNS 决定，不在这里判。
+        extra[key] = raw
     if standard.get("status") == "blocked" and not (standard.get("blocked_reason") or "").strip():
         return {}, {}, "标记为阻塞时必须写明卡在哪、在等谁"
     return standard, extra, None
