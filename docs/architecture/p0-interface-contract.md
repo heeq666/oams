@@ -319,23 +319,18 @@ def render_preview(descriptor: dict, sample: bool = True) -> str
 
 ---
 
-## 7. 指标计算契约（D 实现）
+## 7. 指标计算契约
+
+**商品数据中心（`datacenter.py`）与平台漏斗推导（`funnel.py`）已于 2026-11-02 整体下线**
+（`96d6a6f`）：`DataCenter` Protocol、`FixtureDataCenter`、`DataCenterHTTP`、
+`build_datacenter`、`derive_style_sample_state`、`compute_funnel` 全部删除，11 个
+`funnel.*` 平台指标随之从目录里消失。现在指标只有两种来路：
+
+- **部门 emit 指标**（`dept.<CODE>.<slug>`）：由本页字段在渲染时算出来，见 §2；
+- **四态分布**（`status.*`）：由条目的标准状态聚合。
 
 ```python
-# app/oams/datacenter.py
-class DataCenter(Protocol):
-    def list_waves(self) -> list[str]: ...
-    def list_products(self, *, wave: str | None) -> list[dict]: ...
-    def list_development(self, *, wave: str | None) -> dict: ...
-    def list_marketing(self, *, wave: str | None) -> dict: ...
-
-# app/oams/funnel.py
-SAMPLE_DONE_WORDS: tuple[str, ...]
-SAMPLE_WIP_WORDS: tuple[str, ...]
-
-def derive_style_sample_state(color_states: list[str]) -> str   # "done" | "wip" | "pending"
-def compute_funnel(dc: DataCenter, *, wave: str | None) -> dict[str, float | int]
-    # 返回 11 个 platform metric_key 的值，键名必须与 §2 完全一致
+# app/oams/metric_format.py —— 这是唯一剩下的指标格式化入口
 def format_metric(metric_key: str, value: float | int | None, unit: str = "") -> str
     # 63,289 件 / ¥1,745.87 万 / 5.18 / 59 款（unit 为空时只写数字）
 ```
@@ -346,8 +341,9 @@ def format_metric(metric_key: str, value: float | int | None, unit: str = "") ->
 `where_status`），所以部门数字现在按「无单位」渲染，空串是合法的显示结果。要给部门指标
 配单位，先在本契约里给 binding 加 `unit`，再实现，不要在渲染层硬编码。
 
-`list_products` 返回的每条**必须**含：`style_code, wave, category, has_design_image, is_ordered, quantity, paid_amount`。
-`list_development` 返回 `{"styles": {style_code: {"sample_states": [颜色级状态...], "pricing_status": "核价完成"|...}}}`。
+展示类模块（`metric_card`/`metric_grid`/`rank_list`/`flow_strip`）能引哪些键、为什么
+不许引别部门的，见 §2「display 能引什么」——一句话：**platform 指标，或本页自己 emit 的
+指标；跨部门的一律拒**。
 
 ---
 
