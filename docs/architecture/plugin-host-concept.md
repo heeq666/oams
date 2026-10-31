@@ -384,10 +384,9 @@ draft ──提交──▶ pending ──通过──▶ active ──新版本
 |---|---|
 | `list_modules` | 列出可用模块、版本、参数 schema |
 | `list_canonical_fields` | 标准字段词汇表（源自商品数据中心，见契约一） |
-| `list_metric_catalog` | 可引用的 `metric_key` 及其口径 |
+| `list_metric_catalog` | 能绑什么指标：`can_bind` 给绑定规则（键形如 `dept.<本单位CODE>.<slug>`、须在本页 `metrics[]` 以 `mode=emit` 声明、聚合限 `count/sum/avg/count_distinct`、展示模块只引本页自己 emit 的键），`metrics` 给目录现状（平台指标已下线，当前为空） |
 | `get_plugin` / `list_plugins` | 读现有插件（包括别的部门已上架的，作参考） |
 | `preview_descriptor` | **无副作用**：传 descriptor 进去，返回渲染结构 + 校验错误 + 汇总试算 |
-| `query_data_center` | 只读查商品数据中心（款号/波次/打样状态/订单），用于对齐口径 |
 
 **草稿写入通道（AI 改东西用，全部只落到 draft）**
 
