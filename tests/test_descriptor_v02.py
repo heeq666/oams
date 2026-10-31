@@ -358,6 +358,26 @@ def test_display_module_param_follows_the_same_rule():
     assert "mode=emit 声明" in problems[0]
 
 
+def test_display_module_param_may_not_borrow_another_department_s_emit():
+    """模块参数引别部门的键，要说清是命名空间不对，不能混进「凭空编的键」。
+
+    模块参数那条路是 `_check_modules_v02` 自己实现的（与 metrics.py 的
+    `validate_metric_binding` 是同一套规则的两处代码），所以两边各钉一条：
+    只钉 metrics[] 会漏掉这里，文案退化成「既不是目录里的平台指标」也照样
+    通过——拒绝的**理由**变了，读者就不知道该改成 dept.PRODUCTION. 还是
+    干脆换一个键。
+    """
+    broken = base()
+    broken["modules"][0]["children"][0]["children"].append(
+        {"key": "cards", "type": "metric_card", "params": {"metric_key": "dept.FIN.total"}}
+    )
+    problems = validate_descriptor(broken)
+    assert codes(problems) == ["METRIC_UNDEFINED"]
+    assert "dept.FIN.total" in problems[0]
+    assert "属于别的部门的指标命名空间" in problems[0]
+    assert "dept.PRODUCTION." in problems[0]
+
+
 def test_display_binding_may_not_carry_its_own_aggregation():
     """display 只引用，不聚合；带 agg/from_field 会被判数据规则违规。"""
     broken = base(metrics=[
