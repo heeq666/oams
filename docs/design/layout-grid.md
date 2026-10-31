@@ -10,15 +10,15 @@
 
 | 落地前用的 | 位置 | 怎么算列数 | 出过的事 |
 |---|---|---|---|
-| auto-fit 自适应 | `app/workhub/templates/base.html:37` `.grid` | `repeat(auto-fit, minmax(140px, 1fr))` | 1024 宽指标行排成 5+1 孤儿行 |
-| 等分 N 列 | `app/workhub/static/workhub-modules.css:103-118` `.wh-columns-1..6` | `repeat(N, 1fr)` | 只能等分，表达不了 2 : 1 |
-| 手写比例 | `app/workhub/templates/base.html:543` `.settings-cols` `1.45fr`、`:508` `88px 1fr 72px` | 任意 fr / 任意 px | 设置页两卡顶边差 16、底边参差 |
+| auto-fit 自适应 | `app/oams/templates/base.html:37` `.grid` | `repeat(auto-fit, minmax(140px, 1fr))` | 1024 宽指标行排成 5+1 孤儿行 |
+| 等分 N 列 | `app/oams/static/oams-modules.css:103-118` `.wh-columns-1..6` | `repeat(N, 1fr)` | 只能等分，表达不了 2 : 1 |
+| 手写比例 | `app/oams/templates/base.html:543` `.settings-cols` `1.45fr`、`:508` `88px 1fr 72px` | 任意 fr / 任意 px | 设置页两卡顶边差 16、底边参差 |
 
 结论：**规则收敛到一套**，且必须能表达"主栏 + 侧栏"。现在页面级多列只有 `.grid-12` 一套。
 
 ## 2. 12 栅格
 
-写在 `app/workhub/templates/base.html:541-567`：
+写在 `app/oams/templates/base.html:541-567`：
 
 ```css
 .grid-12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
@@ -101,12 +101,12 @@
 
 模块的 `span` 参数（`templates/modules/metric_card.html:4` 的 `wh-span-{{1..4}}`，父级是 `metric_grid.html` 的 `wh-columns-{{columns}}`）语义是"跨父级列数的几列"。父级列数 N 由 descriptor 决定，若父级变成 12 栏，`span-1` 就从"占满 1/N"变成"占 1/12"，同一份 descriptor 在 `columns: 3` 和 `columns: 4` 下会得到完全不同的视觉。要修就得写 N×k 组上下文选择器（`3 列时的 span-1 = 4`、`2 列时的 span-1 = 6`……），16 条以上的规则去维护一个本可以没有的问题。
 
-所以模块层保留 `repeat(N)`，只是把 N 收进 CSS 变量（`workhub-modules.css:97-124`）：
+所以模块层保留 `repeat(N)`，只是把 N 收进 CSS 变量（`oams-modules.css:97-124`）：
 
 ```css
-.wh-columns, .wh-grid { grid-template-columns: repeat(var(--wh-cols, 1), minmax(0, 1fr)); }
-.wh-columns-1 { --wh-cols: 1; } … .wh-columns-6 { --wh-cols: 6; }
-.wh-columns-5 { --wh-cols: 1; } /* 5 列弃用：显式退回单列，不靠默认值兜底 */
+.wh-columns, .wh-grid { grid-template-columns: repeat(var(--oams-cols, 1), minmax(0, 1fr)); }
+.wh-columns-1 { --oams-cols: 1; } … .wh-columns-6 { --oams-cols: 6; }
+.wh-columns-5 { --oams-cols: 1; } /* 5 列弃用：显式退回单列，不靠默认值兜底 */
 ```
 
 对外语义**零变化**：descriptor 的 `columns: 1..6` 照旧。唯一变化是 `columns: 5` 不再有五列布局（全库 0 处使用，只有定义），显式退回单列；真要写 5 会看得见，不会"看起来生效了"。
@@ -177,7 +177,7 @@ document.documentElement.scrollWidth > document.documentElement.clientWidth && c
 | # | 项 | 状态 | 位置 |
 |---|---|---|---|
 | 1 | 外壳栅格 + 两档折叠 + 两种表面对齐 | ✅ | `templates/base.html:541-567` |
-| 2 | 模块层收进 `--wh-cols`、`wh-columns-5` 弃用 | ✅ | `static/workhub-modules.css:97-124` |
+| 2 | 模块层收进 `--oams-cols`、`wh-columns-5` 弃用 | ✅ | `static/oams-modules.css:97-124` |
 | 3 | 设置页迁到 8 + 4 + 12 | ✅ | `templates/settings.html:11-60` |
 | 4 | 间距 `.stack-20` → `.stack-16` | ✅ | `templates/base.html:487`、`templates/reviews.html:17` |
 | 5 | `AGENTS.md` 硬规则 | ✅ | 见「做界面之前必读」第三条 |

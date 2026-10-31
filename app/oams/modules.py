@@ -50,7 +50,7 @@ STANDARD_FIELD_VOCAB: tuple[str, ...] = (
     # two itself (style-level status is derived from colour-level development
     # records). A department descriptor may NOT use them as map_to -- the
     # validator rejects that with DATA_RULE_VIOLATION (see
-    # workhub.descriptor.PLATFORM_DERIVED_FIELDS). Read this line as "the platform
+    # oams.descriptor.PLATFORM_DERIVED_FIELDS). Read this line as "the platform
     # can say sample_status", not "a department can map a field to sample_status".
     "status", "sample_status", "approval_status",
     # E. text and evidence
@@ -83,7 +83,7 @@ MODULES_V02_KEYS: tuple[str, ...] = ("children", "module_version")
 #:
 #: `aggregatable` is here on purpose: a v0.1 node carried it as a flag, and the
 #: upgrader keeps `aggregatable: false` on the v0.2 node because it means "this
-#: department only, never in the company rollup" (see workhub.upgrade). It is not a
+#: department only, never in the company rollup" (see oams.upgrade). It is not a
 #: param -- no module declares it -- so it is tolerated by name, nothing more.
 MODULE_NODE_KEYS: frozenset[str] = frozenset(
     {

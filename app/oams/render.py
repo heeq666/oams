@@ -9,7 +9,7 @@ through html.escape / markupsafe.Markup explicitly.
 What changed with interface v0.2: a page is no longer a flat list of bespoke
 modules. It is a tree -- containers arrange a fixed registry of preset modules,
 and only preset modules carry data. So the renderer looks a module up in
-workhub.modules, loads templates/modules/<key>.html, and renders it with the
+oams.modules, loads templates/modules/<key>.html, and renders it with the
 contract's fixed context {module, spec, values, aggregates, mode}. Container
 templates recurse into module.children themselves.
 
@@ -21,7 +21,7 @@ Three viewpoints share the same templates; 'mode' is the only difference:
 * 'preview'  -- MCP preview_descriptor / review screen: sample data rendered
                 with disabled widgets -- the reviewer inspects the page's definition.
 
-The registry lives in workhub.modules (unit A). While that file is still being
+The registry lives in oams.modules (unit A). While that file is still being
 written, the import below falls back to a mirror of the frozen contract table
 (docs/architecture/p0-interface-contract.md section 1) so this unit can be built
 and tested on its own; the moment workhub/modules.py lands, the real registry
@@ -69,12 +69,12 @@ class RenderError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Registry access: workhub.modules (unit A) wins, contract mirror is the fallback
+# Registry access: oams.modules (unit A) wins, contract mirror is the fallback
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class _MirrorSpec:
-    """Same field names as workhub.modules.ModuleSpec, so templates cannot tell."""
+    """Same field names as oams.modules.ModuleSpec, so templates cannot tell."""
 
     key: str
     name: str
@@ -129,17 +129,17 @@ MIRROR_REGISTRY: dict[str, _MirrorSpec] = {
 }
 
 try:  # pragma: no cover - exercised by whichever branch the checkout is in
-    from workhub.modules import MODULE_REGISTRY as _MODULE_REGISTRY  # noqa: F401
-    from workhub.modules import get_module as _real_get_module
+    from oams.modules import MODULE_REGISTRY as _MODULE_REGISTRY  # noqa: F401
+    from oams.modules import get_module as _real_get_module
 except Exception:  # unit A has not landed yet (or is mid-write)
     _MODULE_REGISTRY = {}
     _real_get_module = None
 
-_REGISTRY_SOURCE = "workhub.modules" if _real_get_module is not None else "contract-mirror"
+_REGISTRY_SOURCE = "oams.modules" if _real_get_module is not None else "contract-mirror"
 
 
 def registry_source() -> str:
-    """Where module specs came from -- 'workhub.modules' once unit A has landed."""
+    """Where module specs came from -- 'oams.modules' once unit A has landed."""
     return _REGISTRY_SOURCE
 
 
@@ -170,7 +170,7 @@ def known_module_keys() -> tuple[str, ...]:
 
 
 # ---------------------------------------------------------------------------
-# Metric catalogue access: workhub.metrics (unit A) wins, mirror is the fallback
+# Metric catalogue access: oams.metrics (unit A) wins, mirror is the fallback
 # ---------------------------------------------------------------------------
 
 # key -> (name, unit); contract section 2, platform metrics only.
@@ -189,12 +189,12 @@ _METRIC_MIRROR: dict[str, tuple[str, str]] = {
 }
 
 try:  # pragma: no cover - branch depends on whether unit A has landed
-    from workhub.metrics import get_metric as _real_get_metric
+    from oams.metrics import get_metric as _real_get_metric
 except Exception:
     _real_get_metric = None
 
 try:  # pragma: no cover - unit D owns funnel.format_metric
-    from workhub.funnel import format_metric as _real_format_metric
+    from oams.funnel import format_metric as _real_format_metric
 except Exception:
     _real_format_metric = None
 
@@ -307,7 +307,7 @@ def params_of(module: Any) -> dict:
     given = override if isinstance(override, dict) else {}
     merged.update(given)
     # A declared param may also be written flat on the node (`rows: 3` beside
-    # params.columns). Precedence matches workhub.modules.module_params: the nested
+    # params.columns). Precedence matches oams.modules.module_params: the nested
     # shape wins. Without this the validator would accept a value the page ignores.
     for name in declared:
         if name in module and name not in given:

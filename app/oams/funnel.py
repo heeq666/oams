@@ -2,7 +2,7 @@
 
 This module owns exactly one question: "given the product data centre, what are
 the numbers?" It never talks to the network itself (that is
-workhub.datacenter) and never touches the database, so every function here is a
+oams.datacenter) and never touches the database, so every function here is a
 pure function of its inputs and can be tested without either.
 
 The one rule that is easy to get wrong and expensive to get wrong
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
 
-from workhub.datacenter import DataCenter, as_bool
+from oams.datacenter import DataCenter, as_bool
 
 #: Colour-level words that mean "this colour has been sampled".
 SAMPLE_DONE_WORDS: tuple[str, ...] = ("已出样",)

@@ -11,14 +11,14 @@ Public surface (what other code may import):
 The split exists so the rules can be tested, and audited, without a transport:
 `server.py` is the only file that knows the `mcp` package exists.
 """
-from workhub.mcp.audit import (
+from oams.mcp.audit import (
     ACTOR_AGENT,
     ACTOR_HUMAN,
     AuditEntry,
     AuditStore,
     MemoryAuditStore,
 )
-from workhub.mcp.capabilities import (
+from oams.mcp.capabilities import (
     AGENT_CAPABILITIES,
     CAP_PLUGIN_APPROVE,
     CAP_PLUGIN_READ,
@@ -33,7 +33,7 @@ from workhub.mcp.capabilities import (
     issue_agent_capability,
     issue_human_capability,
 )
-from workhub.mcp.store import (
+from oams.mcp.store import (
     ALL_STATUSES,
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
@@ -43,7 +43,7 @@ from workhub.mcp.store import (
     StoreError,
     VersionFrozen,
 )
-from workhub.mcp.tools import (
+from oams.mcp.tools import (
     TOOL_SPECS,
     TOOLS_BY_NAME,
     ToolContext,

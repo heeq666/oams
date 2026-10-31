@@ -221,7 +221,7 @@ def needs_company_review(descriptor: Mapping | None, *, cross_department: bool =
     Everything else a department can approve itself: its own screen, its own
     fields, its own status words.
     """
-    from workhub.descriptor import REVIEWED_CAPABILITIES
+    from oams.descriptor import REVIEWED_CAPABILITIES
 
     if not isinstance(descriptor, Mapping):
         return False

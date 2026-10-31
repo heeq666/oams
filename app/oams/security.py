@@ -9,8 +9,8 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.types.json import Jsonb
 
-from workhub.config import settings
-from workhub.db import connection
+from oams.config import settings
+from oams.db import connection
 
 bearer = HTTPBearer(auto_error=False)
 
