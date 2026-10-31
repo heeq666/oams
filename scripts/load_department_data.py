@@ -10,7 +10,7 @@ which matters because data arrives in fits: names get corrected, work items get
 added later, a second department follows the first.
 
     # 1. print exactly what would be written, change nothing
-    OAMS_MIGRATOR_URL=... OAMS_ADMIN_MEMBER_ID=... \\
+    OAMS_DATABASE_URL=... OAMS_ADMIN_MEMBER_ID=... \\
         python scripts/load_department_data.py data/example-department.json
 
     # 2. write it
@@ -323,16 +323,11 @@ def main() -> None:
     args = parser.parse_args()
 
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
-    migrator_url = os.environ.get("OAMS_MIGRATOR_URL")
     admin_id = os.environ.get("OAMS_ADMIN_MEMBER_ID")
-    if not migrator_url or not admin_id:
-        raise SystemExit("OAMS_MIGRATOR_URL and OAMS_ADMIN_MEMBER_ID are required to mint a session token")
+    if not admin_id:
+        raise SystemExit("OAMS_ADMIN_MEMBER_ID is required to mint a session token")
 
     sys.path.insert(0, str(ROOT / "app"))
-    # Sessions are minted as the migration operator; the service itself must keep
-    # whatever runtime connection the environment already points at.
-    service_url = os.environ.get("OAMS_DATABASE_URL")
-    os.environ["OAMS_DATABASE_URL"] = migrator_url
     from oams.security import issue_session
 
     token, expires_at = issue_session(admin_id)

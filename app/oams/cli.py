@@ -9,57 +9,47 @@ import uvicorn
 from psycopg.types.json import Jsonb
 
 from oams.config import settings
-from oams.db import connection, migration_connection
+from oams.db import connection
 from oams.security import issue_session
 
-MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"
 
 
-def migrate():
-    migrations = sorted(MIGRATIONS_DIR.glob("*.sql"))
-    if not migrations:
-        raise SystemExit(f"No migration files found under {MIGRATIONS_DIR}")
-    for migration in migrations:
-        sql = migration.read_text(encoding="utf-8")
-        version = migration.name
-        try:
-            with migration_connection() as conn:
-                # The table does not exist until the first migration creates it.
-                has_table = conn.execute("SELECT to_regclass('workhub.schema_migrations') AS table_name").fetchone()["table_name"]
-                if has_table and conn.execute("SELECT 1 FROM workhub.schema_migrations WHERE version = %s", (version,)).fetchone():
-                    print(f"Already applied {version}")
-                    continue
-                conn.execute(sql)
-                conn.execute("INSERT INTO workhub.schema_migrations (version) VALUES (%s)", (version,))
-        except psycopg.errors.InsufficientPrivilege:
-            raise SystemExit(
-                "Migrations ran as a role that cannot change the schema (it is "
-                + ("WORKHUB_MIGRATOR_URL" if settings.migrator_url else "the runtime role in WORKHUB_DATABASE_URL, which is deliberately not allowed to")
-                + "). Set WORKHUB_MIGRATOR_URL in .env to a role that owns the database "
-                "and run migrate again."
-            )
-        print(f"Applied {version}")
+def db_init():
+    """按 schema.sql 建出整套对象；重复执行只输出「已存在」，不报错。"""
+    if not SCHEMA_FILE.exists():
+        raise SystemExit(f"找不到建库脚本：{SCHEMA_FILE}")
+    sql = SCHEMA_FILE.read_text(encoding="utf-8")
+    try:
+        with connection() as conn:
+            conn.execute(sql)
+    except psycopg.errors.InsufficientPrivilege:
+        raise SystemExit(
+            "当前角色没有建表权限：建库要用拥有该库的角色（或 DBA）执行，"
+            "见 db/deploy/ 的三步；运行时角色故意不给 DDL 权限。"
+        )
+    print(f"建表完成：{SCHEMA_FILE.name}（幂等，可重复执行）")
 
 
 def bootstrap_admin(args):
     with connection() as conn:
-        row = conn.execute("SELECT count(*) AS n FROM workhub.permission_grants WHERE resource = 'workforce.grants' AND action = 'manage' AND scope_type = 'all' AND revoked_at IS NULL").fetchone()
+        row = conn.execute("SELECT count(*) AS n FROM oams.permission_grants WHERE resource = 'workforce.grants' AND action = 'manage' AND scope_type = 'all' AND revoked_at IS NULL").fetchone()
         if row["n"]:
             raise SystemExit("An all-scope administrator grant already exists; refusing to bootstrap another administrator.")
         org = conn.execute(
-            "INSERT INTO workhub.org_units (org_code, name, unit_type) VALUES (%s, %s, 'company') RETURNING org_unit_id",
+            "INSERT INTO oams.org_units (org_code, name, unit_type) VALUES (%s, %s, 'company') RETURNING org_unit_id",
             (args.org_code, args.org_name),
         ).fetchone()
         member = conn.execute(
-            "INSERT INTO workhub.workforce_members (employee_code, display_name, employment_status) VALUES (%s, %s, 'active') RETURNING member_id",
+            "INSERT INTO oams.workforce_members (employee_code, display_name, employment_status) VALUES (%s, %s, 'active') RETURNING member_id",
             (args.employee_code, args.name),
         ).fetchone()
         position = conn.execute(
-            "INSERT INTO workhub.positions (position_code, title, org_unit_id) VALUES (%s, 'System Administrator', %s) RETURNING position_id",
+            "INSERT INTO oams.positions (position_code, title, org_unit_id) VALUES (%s, 'System Administrator', %s) RETURNING position_id",
             (args.position_code, org["org_unit_id"]),
         ).fetchone()
         conn.execute(
-            """INSERT INTO workhub.position_assignments
+            """INSERT INTO oams.position_assignments
                (member_id, position_id, assignment_type, status, starts_at, reason)
                VALUES (%s, %s, 'primary', 'active', now(), 'initial system bootstrap')""",
             (member["member_id"], position["position_id"]),
@@ -78,13 +68,13 @@ def bootstrap_admin(args):
         ]
         for resource, action in resources:
             conn.execute(
-                """INSERT INTO workhub.permission_grants
+                """INSERT INTO oams.permission_grants
                    (subject_type, position_id, resource, action, scope_type, effect, valid_from, reason)
                    VALUES ('position', %s, %s, %s, 'all', 'allow', now(), 'initial system bootstrap')""",
                 (position["position_id"], resource, action),
             )
         conn.execute(
-            """INSERT INTO workhub.workforce_audit_events
+            """INSERT INTO oams.workforce_audit_events
                (actor_member_id, event_type, subject_type, subject_id, reason, after_state)
                VALUES (%s, 'system.bootstrapped', 'member', %s, 'initial administrator bootstrap', %s)""",
             (member["member_id"], member["member_id"], Jsonb({"position_id": str(position["position_id"]), "org_unit_id": str(org["org_unit_id"])})),
@@ -121,7 +111,11 @@ def _prog_name():
 def main():
     parser = argparse.ArgumentParser(prog=_prog_name())
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("migrate", help="apply the initial migration to the configured database").set_defaults(func=lambda _: migrate())
+    db = commands.add_parser("db", help="数据库结构与初始化")
+    db_commands = db.add_subparsers(dest="db_command", required=True)
+    db_commands.add_parser(
+        "init", help="建表：按 app/oams/schema.sql 建出全套对象（首次建库与重复执行都安全）"
+    ).set_defaults(func=lambda _: db_init())
     bootstrap = commands.add_parser("bootstrap-admin", help="create the first administrator; run once from a trusted operator shell")
     bootstrap.add_argument("--name", required=True)
     bootstrap.add_argument("--employee-code", required=True)
