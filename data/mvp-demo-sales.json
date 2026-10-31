@@ -1,9 +1,0 @@
-{
- "_note":"fictional second department for MVP",
- "org_units":[{"code":"SALES","name":"业务部","unit_type":"department","parent_code":"COMPANY"}],
- "positions":[{"code":"SALES_LEAD","title":"业务负责人","org_unit_code":"SALES"}],
- "members":[{"name":"林溪","employee_code":"MVP2001","position_code":"SALES_LEAD"}],
- "grants":[{"subject_code":"SALES_LEAD","resource":"workforce.work_items","action":"read"},{"subject_code":"SALES_LEAD","resource":"workforce.reports","action":"read"},{"subject_code":"SALES_LEAD","resource":"workforce.reports","action":"submit"}],
- "work_items":[{"position_code":"SALES_LEAD","title":"MVP演示：客户需求确认","kind":"project","status":"blocked","blocked_reason":"等待客户反馈需求清单","needs_decision":true}],
- "reports":[{"employee_code":"MVP2001","position_code":"SALES_LEAD","work_item_title":"MVP演示：客户需求确认","submitted_via":"agent","progress_value":30,"note":"已发出需求确认清单","evidence":"虚构演示：需求邮件摘要"}]
-}
