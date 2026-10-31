@@ -680,8 +680,10 @@ def test_archived_page_still_does_not_count_even_beside_a_live_one(world):
                   status="done", progress=30, work_item_id=world["item_a"])
 
     total = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.progress_sum")
-    assert total["value"] == 297 + 30, "归档页那条 30 不进部门数"
-    assert {page["interface_id"] for page in total["pages"]} == {world["page"], second}
+    # 新加的这条是 active 页，它的 30 要计入；夹具里那个 archived 页不在这份名单里。
+    assert total["value"] == 297 + 30
+    assert {page["interface_id"] for page in total["pages"]} == {world["page"], second}, (
+        "归档页不在聚合名单里——它声明的 dept.ROLLUPD.hidden 也不该被算进这个键")
 
 
 # ---------------------------------------------------------------------------
