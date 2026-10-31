@@ -17,7 +17,7 @@ added later, a second department follows the first.
     ... python scripts/load_department_data.py data/example-department.json --apply
 
 The admin token is minted for this run only; the API service itself is started as
-workhub_runtime, exactly as it runs in production.
+oams_runtime，和线上跑的是同一个角色。
 
 Spec format:
 
@@ -335,12 +335,15 @@ def main() -> None:
     print("DRY RUN -- nothing will be written" if not args.apply else "APPLYING CHANGES", flush=True)
 
     child_env = dict(os.environ)
+    # 起子进程用的库地址就是本次运行用的那一个；显式取出再回填，避免把
+    # 「父进程里别的变量」当成子进程的数据源。
+    service_url = os.environ.get("OAMS_DATABASE_URL")
     if service_url is None:
         child_env.pop("OAMS_DATABASE_URL", None)
     else:
         child_env["OAMS_DATABASE_URL"] = service_url
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "workhub.api:app", "--host", "127.0.0.1", "--port", str(PORT)],
+        [sys.executable, "-m", "uvicorn", "oams.api:app", "--host", "127.0.0.1", "--port", str(PORT)],
         cwd=str(ROOT), env=child_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         if not wait_for_service(proc):
