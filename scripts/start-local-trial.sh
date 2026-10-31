@@ -11,7 +11,16 @@ if ! docker ps --format '{{.Names}}' | grep -q '^workhub-live$'; then
   sleep 3
 fi
 
-export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
+# 演示库连接串不写进仓库：优先环境变量，其次本机 tmp/demo-db-url（tmp/ 已被 git 忽略）。
+# 换机器就把那一行连接串写进 tmp/demo-db-url，或者 export WORKHUB_DATABASE_URL 后再跑。
+if [[ -z "${WORKHUB_DATABASE_URL:-}" && -f tmp/demo-db-url ]]; then
+  WORKHUB_DATABASE_URL="$(tr -d '\n' < tmp/demo-db-url)"
+fi
+if [[ -z "${WORKHUB_DATABASE_URL:-}" ]]; then
+  echo "缺少演示库连接串：export WORKHUB_DATABASE_URL=... 或写进 tmp/demo-db-url。" >&2
+  exit 2
+fi
+export WORKHUB_DATABASE_URL
 # 设计开发阶段免登录：这个脚本启动的是本机演示站，登录只会挡自己。它只决定「我是谁」，
 # 权限、部门范围、审计一条不少，页面右下角会一直显示「开发模式 · 免登录」角标。
 # 恢复登录：WORKHUB_DEV_AUTOLOGIN=0 ./scripts/start-local-trial.sh

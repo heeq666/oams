@@ -38,7 +38,25 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = REPO_ROOT / "app"
 
+# 口令不写进仓库：这里只留形状，真口令来自环境变量或本机 .env（.env 已被 git 忽略）。
+# 优先级：WORKHUB_DATABASE_URL → .env 里的同名项 → 下面这条占位串（连不上就按无库处理）。
 DEFAULT_DATABASE_URL = "postgresql://workhub:change-me@127.0.0.1:55433/workhub"
+
+
+def _url_from_dotenv() -> str | None:
+    """本机 .env 里的 WORKHUB_DATABASE_URL（.env 不进仓库，见 .gitignore）。"""
+
+    env_file = REPO_ROOT / ".env"
+    if not env_file.is_file():
+        return None
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        if key.strip() == "WORKHUB_DATABASE_URL":
+            return value.strip().strip('"').strip("'") or None
+    return None
 
 BASE_ENV_VARS = (
     "WORKHUB_BASE",
@@ -51,7 +69,7 @@ BASE_ENV_VARS = (
 def database_url() -> str:
     """Service connection string used by the DB-backed tests."""
 
-    return os.environ.get("WORKHUB_DATABASE_URL") or DEFAULT_DATABASE_URL
+    return os.environ.get("WORKHUB_DATABASE_URL") or _url_from_dotenv() or DEFAULT_DATABASE_URL
 
 
 def free_port() -> int:
