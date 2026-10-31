@@ -1,11 +1,15 @@
-"""The demo pages in `data/` must be openable: they validate and they render.
+"""The department descriptors we hand out as samples must be openable.
 
-Two of them ("设计部款式开发打样进度", "设计部周测试页") shipped as schema 0.1 and sat in
-the demo database as pages nobody could open: the renderer refused `item_card`,
+Two of them ("款式开发打样进度", "周测试页") shipped as schema 0.1 and sat in the demo
+database as pages nobody could open: the renderer refused `item_card`,
 `list_block`, `progress_bar` and `evidence_input`, and the refusal surfaced as
 "you have no permission" because it went through `_denied`. That cost a day of
-looking in the wrong place, so the descriptors that seed the trial environment are
-checked here instead of only by hand in a browser.
+looking in the wrong place, so the descriptors we hand out are checked here
+instead of only by hand in a browser.
+
+The samples used to live in `data/` next to the demo seed. They are test input,
+not shipped data, so they now live in `tests/fixtures/` — `data/` keeps only what
+a fresh clone actually seeds.
 
 Everything is pure: no database, no HTTP, no clock.
 """
@@ -24,10 +28,9 @@ from oams.render import RenderError, render_interface, render_read_only  # noqa:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEMO_PAGES = [
-    # 只有这一份是本机数据（`data/live-design-*.json` 在 .gitignore 里），用仓内快照。
     REPO_ROOT / "tests" / "fixtures" / "live-design-interface.json",
-    REPO_ROOT / "data" / "design-style-development.json",
-    REPO_ROOT / "data" / "design-weekly-test.json",
+    REPO_ROOT / "tests" / "fixtures" / "department-style-development.json",
+    REPO_ROOT / "tests" / "fixtures" / "department-weekly-test.json",
 ]
 
 
@@ -52,10 +55,12 @@ def test_a_demo_page_renders_in_both_viewpoints(path: Path) -> None:
     assert "wh-m" in read
 
 
+#: 文件名可以改（它是测试输入），`interface_id` 不能跟着改——那是页面的身份，
+#: 种子与已发出的链接都按它找页。
 SLUGS = {
     "live-design-interface.json": "design-sampling",
-    "design-style-development.json": "design-style-development",
-    "design-weekly-test.json": "design-weekly-test",
+    "department-style-development.json": "design-style-development",
+    "department-weekly-test.json": "design-weekly-test",
 }
 
 
