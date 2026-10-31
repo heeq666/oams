@@ -1,4 +1,4 @@
-# Workhub 设计规范 v1（界面口径 / 供人 + AI 共用）
+# OAMS 设计规范 v1（界面口径 / 供人 + AI 共用）
 
 > 这份文档是**唯一口径**。Figma 文件是**唯一真源**，本文与 `docs/design/tokens.json` 是它的镜像，代码 `app/workhub/static/workhub-modules.css` 是它的下游实现。三者冲突时：以 Figma 变量为准，然后回来改本文和执照代码。
 
@@ -438,7 +438,7 @@ GROUP · 浮层（`251:15202`，在 B2）：`140:3759` Tooltip、`140:3953` Menu
 三种载体，按复用范围选：
 
 1. **本仓库的会话**：根目录 `AGENTS.md` 已写好入口，任何新会话会自动带上硬规则和本文路径 —— 什么都不用说。
-2. **别的仓库 / 别人的机器**：把 `skills/workhub-design-system/SKILL.md` 装进 `~/.dsh/skills/workhub-design-system/`，之后说「按 workhub 设计规范做这个页面」即可。
+2. **别的仓库 / 别人的机器**：把 `skills/workhub-design-system/SKILL.md` 装进 `~/.dsh/skills/workhub-design-system/`，之后说「按 OAMS 设计规范做这个页面」即可。
 3. **只想让 AI 读一次**：直接说「读 `docs/design/design-system-v1.md` 和 `docs/design/tokens.json`，按里面的令牌和八条硬规则实现」。
 
 Figma 侧同理：新会话里说「按 `0:1` 页的组件库补一个 xxx 组件」，它会自己读令牌、复用既有组件、写回本页。
