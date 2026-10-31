@@ -59,7 +59,7 @@ cp /path/to/你的-logo-login.png app/oams/static/brand/logo-login.png
 # 1) 回归图 9 张在位、且在仓库里（本页不再写逐条路径，所以只点目录）
 ls docs/assets/brand/*.png | wc -l            # → 9
 git ls-files docs/assets/brand | wc -l        # → 9
-grep -c 'screenshots' docs/design/brand-assets.md   # → 0：本页不逐张引用任何截图路径
+git ls-files docs/assets/brand | grep -c '\.png'  # → 9：九个都在版本库里
 
 # 2) 两个标志文件在位
 ls -l app/oams/static/brand/logo.png app/oams/static/brand/logo-login.png
