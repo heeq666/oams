@@ -16,21 +16,13 @@
 
 **一句话**：图标是占位物，不是品牌资产。要换成你自己的标，走第三节；原来那套品牌素材的去处见第四节。
 
-## 二、图在哪：`assets/screenshots/brand-neutral/`
+## 二、图在哪
 
-这 9 张是「换上中性标之后」的三档回归截图，**自检证据，不是产物**——用来证明换标没把布局搞坏（顶栏没被撑高、登录卡片没被顶开、窄屏不横滚）。它们**已随仓库发布**（`git ls-files assets/screenshots/brand-neutral` 能看到 9 个），所以下表路径是相对仓库根目录的、在公开仓里也点得开；自检用的其余截图不在本仓，别按同样的路去找。
+换上中性标之后拍了 9 张三档回归图，**自检证据，不是产物**——用来证明换标没把布局搞坏（顶栏没被撑高、登录卡片没被顶开、窄屏不横滚）：登录页 `/login`、新建部门页面 `/departments/{HQ}/new`、设置页 `/settings`，各自 1440 / 1024 / 768 一档。
 
-| 文件 | 页面 | 宽度档 | 体积 |
-|---|---|---|---|
-| `assets/screenshots/brand-neutral/1440-login.png` | 登录页 `/login` | 1440 | 36677 B |
-| `assets/screenshots/brand-neutral/1024-login.png` | 登录页 `/login` | 1024 | 34303 B |
-| `assets/screenshots/brand-neutral/768-login.png` | 登录页 `/login` | 768 | 32623 B |
-| `assets/screenshots/brand-neutral/1440-newpage.png` | 新建部门页面 `/departments/{HQ}/new` | 1440 | 77752 B |
-| `assets/screenshots/brand-neutral/1024-newpage.png` | 新建部门页面 `/departments/{HQ}/new` | 1024 | 73353 B |
-| `assets/screenshots/brand-neutral/768-newpage.png` | 新建部门页面 `/departments/{HQ}/new` | 768 | 69861 B |
-| `assets/screenshots/brand-neutral/1440-settings.png` | 设置页 `/settings` | 1440 | 101237 B |
-| `assets/screenshots/brand-neutral/1024-settings.png` | 设置页 `/settings` | 1024 | 96543 B |
-| `assets/screenshots/brand-neutral/768-settings.png` | 设置页 `/settings` | 768 | 89342 B |
+它们**已随仓库发布**，在 `docs/assets/brand/`，文件名是「宽度档-页面.png」（`1440-login.png`、`1024-newpage.png`、`768-settings.png` …），共 9 个。**本页不再逐张引用**：这些是自检证据，逐张贴一遍只是把路径抄一遍，读者要看的其实是下面那句结论。
+
+放在 `docs/assets/` 而不是那个自检截图目录，是因为后者被仓库的 `.gitignore` 整目录忽略——图挪进去之前虽然已被跟踪，但将来重拍同样这 9 张不会自动进提交，换个人接手就会漏。自检用的其余截图（看板、进度、审核页的间距与栅格那批）不在本仓，别按同样的路去找。
 
 当时的实测结论（三档 × 三页 = 9 页次）：`documentElement.scrollWidth - clientWidth = 0`、越界元素 `offenders: []`、顶栏标志 38×30、登录页标志 77×60 三档都不变。
 
@@ -64,10 +56,10 @@ cp /path/to/你的-logo-login.png app/oams/static/brand/logo-login.png
 ## 五、本页的自检命令
 
 ```sh
-# 1) 本页提到的 9 张图，路径全部真实存在，且与入库文件数一致
-grep -o 'assets/screenshots/brand-neutral/[0-9a-z-]*\.png' docs/design/brand-assets.md | sort -u | wc -l   # → 9
-git ls-files assets/screenshots/brand-neutral | wc -l                                                        # → 9
-grep -o 'assets/screenshots/brand-neutral/[0-9a-z-]*\.png' docs/design/brand-assets.md | sort -u | xargs ls -l | wc -l  # → 9（有任何一个不存在会报错）
+# 1) 回归图 9 张在位、且在仓库里（本页不再写逐条路径，所以只点目录）
+ls docs/assets/brand/*.png | wc -l            # → 9
+git ls-files docs/assets/brand | wc -l        # → 9
+grep -c 'screenshots' docs/design/brand-assets.md   # → 0：本页不逐张引用任何截图路径
 
 # 2) 两个标志文件在位
 ls -l app/oams/static/brand/logo.png app/oams/static/brand/logo-login.png
