@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Workhub{% endblock %}</title>
+<title>{% block title %}OAMS{% endblock %}</title>
 <script src="{{ static_url('vendor/htmx.min.js') }}" defer></script>
 {# 浮层载体必须先加载：下拉框与菜单都挂在它上面。 #}
 <script src="{{ static_url('wh-popover.js') }}" defer></script>
@@ -818,9 +818,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   <span class="bar-glass" aria-hidden="true"></span>
   {# The logo goes to the first screen this person can actually use: a link that
      answers 403 is worse than no link at all. #}
-  <a class="brand" href="{% if caps.progress %}/progress{% elif caps.review %}/reviews{% elif caps.admin %}/settings{% else %}/departments{% endif %}" aria-label="Workhub 首页">
+  <a class="brand" href="{% if caps.progress %}/progress{% elif caps.review %}/reviews{% elif caps.admin %}/settings{% else %}/departments{% endif %}" aria-label="OAMS 首页">
     <img src="{{ static_url('brand/logo.png') }}" alt="" height="30">
-    <span class="wordmark">Workhub</span>
+    <span class="wordmark">OAMS</span>
   </a>
   {# Links come from what this person can actually do, so the bar never shows a
      door that answers 403. Nothing here is a security check; the server still

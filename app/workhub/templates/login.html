@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}登录 · Workhub{% endblock %}
+{% block title %}登录 · OAMS{% endblock %}
 {% block bodyclass %}auth{% endblock %}
 {# No navigation on this screen: there is nothing to navigate to before the
    token is accepted, and a rail full of departments the visitor cannot open
@@ -7,8 +7,8 @@
 {% block shell %}
 <div class="auth-wrap">
   <div class="auth-col">
-    <a class="auth-brand" href="/login" aria-label="Workhub">
-      <img src="{{ static_url('brand/logo-login.png') }}" alt="Workhub" width="77" height="60">
+    <a class="auth-brand" href="/login" aria-label="OAMS">
+      <img src="{{ static_url('brand/logo-login.png') }}" alt="OAMS" width="77" height="60">
     </a>
     <form method="post" action="/login" class="auth-card">
       <h1>登录</h1>
@@ -23,7 +23,7 @@
       <button type="submit">登录</button>
       <p class="auth-help">没有令牌？找你所在部门的负责人或系统管理员，让他把登录链接直接发给你。</p>
     </form>
-    <p class="auth-foot">Workhub · 内部系统，仅限公司网络访问</p>
+    <p class="auth-foot">OAMS · 内部系统，仅限公司网络访问</p>
   </div>
 </div>
 {% endblock %}
