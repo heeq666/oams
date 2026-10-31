@@ -1,0 +1,159 @@
+{
+  "schema_version": "0.2",
+  "interface_id": "ga-parcel-lookup",
+  "name": "快递代收台账",
+  "org_unit_code": "GA",
+  "position_codes": [
+    "GA_LEAD"
+  ],
+  "capabilities": [
+    "entries:write",
+    "entries:read:dept",
+    "aggregate:read:dept"
+  ],
+  "modules": [
+    {
+      "key": "layout",
+      "type": "rows",
+      "order": 1,
+      "children": [
+        {
+          "key": "parcel_table",
+          "type": "table",
+          "order": 1,
+          "params": {
+            "columns": [
+              {
+                "key": "title",
+                "label": "收件人"
+              },
+              {
+                "key": "parcel_no",
+                "label": "单号"
+              },
+              {
+                "key": "state_word",
+                "label": "状态"
+              },
+              {
+                "key": "arrived",
+                "label": "到件日"
+              },
+              {
+                "key": "note_text",
+                "label": "备注"
+              }
+            ],
+            "rows": 5
+          }
+        },
+        {
+          "key": "two_up",
+          "type": "columns",
+          "order": 2,
+          "params": {
+            "columns": 2
+          },
+          "children": [
+            {
+              "key": "state_split",
+              "type": "status_chart",
+              "order": 1,
+              "source_fields": [
+                "state_word"
+              ],
+              "params": {
+                "dimension": "status"
+              }
+            },
+            {
+              "key": "pickup_note",
+              "type": "note_block",
+              "order": 2,
+              "params": {
+                "text": "前台取件 09:00–18:30（午休 12:00–13:30 不办）；超过 7 天未取退回寄件人。"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "title",
+      "label": "收件人",
+      "type": "text",
+      "required": true,
+      "map_to": "title",
+      "aggregatable": true,
+      "example": "3F-12 工位"
+    },
+    {
+      "key": "parcel_no",
+      "label": "单号",
+      "type": "text",
+      "required": true,
+      "map_to": "evidence",
+      "aggregatable": true,
+      "example": "SF1234567890"
+    },
+    {
+      "key": "state_word",
+      "label": "状态",
+      "type": "enum",
+      "required": true,
+      "map_to": "status",
+      "aggregatable": true,
+      "example": "待取",
+      "options": [
+        "待取",
+        "已取",
+        "退回"
+      ]
+    },
+    {
+      "key": "arrived",
+      "label": "到件日",
+      "type": "text",
+      "required": true,
+      "map_to": "completed_at",
+      "aggregatable": true,
+      "example": "11-02"
+    },
+    {
+      "key": "note_text",
+      "label": "备注",
+      "type": "text",
+      "required": false,
+      "map_to": "note",
+      "aggregatable": true,
+      "example": "前台 A 柜"
+    }
+  ],
+  "status_map": {
+    "待取": "planned",
+    "已取": "done",
+    "退回": "blocked"
+  },
+  "metrics": [
+    {
+      "metric_key": "dept.GA.parcel_pending",
+      "mode": "emit",
+      "agg": "count",
+      "from_field": "state_word",
+      "where_status": "planned"
+    }
+  ],
+  "rules": {
+    "evidence_required": false
+  },
+  "meta": {
+    "author_position_code": "GA_LEAD",
+    "version": 1,
+    "visibility": "department",
+    "review": {
+      "status": "draft"
+    }
+  }
+}
