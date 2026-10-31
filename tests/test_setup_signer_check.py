@@ -31,7 +31,7 @@ SIGNER = "DESIGN001"        # 设计部负责人：这一页的签字人，不�
 
 
 def _token(cookie: str) -> str:
-    return hmac.new(cookie.encode(), b"workhub:interface-setup-form:v1",
+    return hmac.new(cookie.encode(), b"oams:interface-setup-form:v1",
                     hashlib.sha256).hexdigest()
 
 

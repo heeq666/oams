@@ -315,7 +315,7 @@ def test_a_page_you_may_not_open_sends_you_to_one_you_can(shortcut, site):
     assert status == 303
     assert headers["location"].endswith("/progress")
     # Silent detour: no reason banner, no cookie to carry one.
-    assert "workhub_notice" not in (headers.get("set-cookie") or "")
+    assert "oams_notice" not in (headers.get("set-cookie") or "")
     assert "没有权限" not in body
 
 
@@ -332,7 +332,7 @@ def test_the_detour_lands_without_a_note_attached(shortcut, site):
     # would be a cookie the next render would print, so there must not be one.
     _, headers, _ = _open_head(site + "/settings", "MVP1002")
     assert not [line for line in (headers.get_all("set-cookie") or [])
-                if "workhub_notice" in line]
+                if "oams_notice" in line]
 
     status, landed_headers, body = _open_head(
         site + "/progress", cookie=f"{DEV_WORKER_COOKIE}=MVP1002")

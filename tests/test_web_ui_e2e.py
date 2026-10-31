@@ -6,7 +6,7 @@ the seeded administrator and as the seeded specialist:
     docker run -d --name oams-web-test \
         -e POSTGRES_PASSWORD=oams_test_pw -e POSTGRES_DB=oams_test \
         -p 55433:5432 postgres:16-alpine
-    export OAMS_DATABASE_URL=postgresql://postgres:oams_test_pw@localhost:55433/workhub_test
+    export OAMS_DATABASE_URL=postgresql://postgres:oams_test_pw@localhost:55433/oams_test
     python -m oams.cli migrate
     ADMIN=$(python -m oams.cli bootstrap-admin --name Admin --employee-code 9999 \
         --org-code acme --org-name ACME | python -c "import json,sys;print(json.load(sys.stdin)['member_id'])")
@@ -112,7 +112,7 @@ def page_token(path, field="csrf"):
     assert found, f"no {field} on {path}"
     return found.group(1)
 
-def session_form_token(purpose="workhub:form:v1"):
+def session_form_token(purpose="oams:form:v1"):
     """The form token for whatever account the opener is signed in as.
 
     An account without the manage grant never sees the form, so the token cannot
@@ -121,7 +121,7 @@ def session_form_token(purpose="workhub:form:v1"):
     """
 
     jar = next(h.cookiejar for h in opener.handlers if hasattr(h, "cookiejar"))
-    cookie = next((c for c in jar if c.name == "workhub_session"), None)
+    cookie = next((c for c in jar if c.name == "oams_session"), None)
     assert cookie is not None and cookie.value, (
         "the opener is not signed in, so no form token can be derived; "
         f"cookies={[c.name for c in jar]}"
@@ -157,7 +157,7 @@ def _script(base: str) -> None:
     code, body, headers = call(f"/login?token={admin_token}")
     cookie = hdr(headers, "Set-Cookie") or ""
     check("login link sets cookie and redirects to a clean URL",
-          code == 302 and "workhub_session=" in cookie and hdr(headers, "Location") == "/board",
+          code == 302 and "oams_session=" in cookie and hdr(headers, "Location") == "/board",
           f"{code} {headers.get('Location')}")
     check("cookie is HttpOnly and SameSite=Lax without Secure",
           "httponly" in cookie.lower() and "samesite=lax" in cookie.lower() and "secure" not in cookie.lower(), cookie[:160])
@@ -304,7 +304,7 @@ def _script(base: str) -> None:
     opener = opener2
     spec_token, _ = issue_session(people["1002"])
     code, body, headers = call(f"/login?token={spec_token}")
-    check("specialist can sign in", code == 302 and "workhub_session=" in hdr(headers, "Set-Cookie") or "", str(code))
+    check("specialist can sign in", code == 302 and "oams_session=" in hdr(headers, "Set-Cookie") or "", str(code))
     code, body, _ = call("/board")
     check("specialist sees the board", code == 200 and "进度看板" in body, str(code))
     # A page they may not read is not an error screen: it is a detour to one they
@@ -317,7 +317,7 @@ def _script(base: str) -> None:
     # A well-formed form with the specialist's own token: the refusal has to come
     # from the missing grant, not from a validation error about a missing field.
     code, body, _ = call("/admin/positions", method="POST", form={
-        "csrf": session_form_token("workhub:position-form:v1"),
+        "csrf": session_form_token("oams:position-form:v1"),
         "position_code": "HACK", "title": "hack", "org_unit_id": real_org})
     check("specialist cannot create a position", code == 403 and "没有权限" in body, str(code))
     code, body, headers = call("/logout", method="POST", form={})
