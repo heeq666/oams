@@ -1,0 +1,286 @@
+{
+  "org_units": [
+    {
+      "code": "OPS",
+      "name": "运维部",
+      "unit_type": "department",
+      "parent_code": "HQ"
+    },
+    {
+      "code": "FIN",
+      "name": "财务部",
+      "unit_type": "department",
+      "parent_code": "HQ"
+    },
+    {
+      "code": "GA",
+      "name": "行政部",
+      "unit_type": "department",
+      "parent_code": "HQ"
+    }
+  ],
+  "positions": [
+    {
+      "code": "OPS_LEAD",
+      "title": "运维负责人",
+      "org_unit_code": "OPS"
+    },
+    {
+      "code": "FIN_LEAD",
+      "title": "财务负责人",
+      "org_unit_code": "FIN"
+    },
+    {
+      "code": "GA_LEAD",
+      "title": "行政负责人",
+      "org_unit_code": "GA"
+    }
+  ],
+  "members": [
+    {
+      "name": "王运维",
+      "employee_code": "OPS001",
+      "position_code": "OPS_LEAD"
+    },
+    {
+      "name": "李财务",
+      "employee_code": "FIN001",
+      "position_code": "FIN_LEAD"
+    },
+    {
+      "name": "张行政",
+      "employee_code": "GA001",
+      "position_code": "GA_LEAD"
+    }
+  ],
+  "grants": [
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.org_units",
+      "action": "read"
+    },
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.positions",
+      "action": "read"
+    },
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.members",
+      "action": "read"
+    },
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.work_items",
+      "action": "read"
+    },
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.work_items",
+      "action": "manage"
+    },
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.reports",
+      "action": "read"
+    },
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.reports",
+      "action": "submit"
+    },
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "read"
+    },
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "review"
+    },
+    {
+      "subject_code": "OPS_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "manage"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.org_units",
+      "action": "read"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.positions",
+      "action": "read"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.members",
+      "action": "read"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.work_items",
+      "action": "read"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.work_items",
+      "action": "manage"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.reports",
+      "action": "read"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.reports",
+      "action": "submit"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "read"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "review"
+    },
+    {
+      "subject_code": "FIN_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "manage"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.org_units",
+      "action": "read"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.positions",
+      "action": "read"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.members",
+      "action": "read"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.work_items",
+      "action": "read"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.work_items",
+      "action": "manage"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.reports",
+      "action": "read"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.reports",
+      "action": "submit"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "read"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "review"
+    },
+    {
+      "subject_code": "GA_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "manage"
+    }
+  ],
+  "work_items": [
+    {
+      "position_code": "OPS_LEAD",
+      "title": "机房机柜巡检",
+      "kind": "routine",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "OPS_LEAD",
+      "title": "交换机固件升级",
+      "kind": "routine",
+      "status": "done"
+    },
+    {
+      "position_code": "OPS_LEAD",
+      "title": "告警值守排班",
+      "kind": "routine",
+      "status": "done"
+    },
+    {
+      "position_code": "OPS_LEAD",
+      "title": "备份恢复演练",
+      "kind": "routine",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "OPS_LEAD",
+      "title": "机房扩容审批",
+      "kind": "project",
+      "status": "blocked",
+      "blocked_reason": "等机房审批，IT 承诺周三",
+      "needs_decision": true
+    },
+    {
+      "position_code": "FIN_LEAD",
+      "title": "本月报销归集",
+      "kind": "routine",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "FIN_LEAD",
+      "title": "月度凭证归档",
+      "kind": "routine",
+      "status": "planned"
+    },
+    {
+      "position_code": "GA_LEAD",
+      "title": "前台快递代收登记",
+      "kind": "routine",
+      "status": "in_progress"
+    },
+    {
+      "position_code": "GA_LEAD",
+      "title": "办公用品补货",
+      "kind": "routine",
+      "status": "planned"
+    }
+  ],
+  "reports": [
+    {
+      "employee_code": "OPS001",
+      "position_code": "OPS_LEAD",
+      "work_item_title": "备份恢复演练",
+      "submitted_via": "human",
+      "progress_value": 30,
+      "note": "演练脚本联调完成，等周末窗口做全量恢复",
+      "evidence": "演练工单 BAK-0925"
+    },
+    {
+      "employee_code": "OPS001",
+      "position_code": "OPS_LEAD",
+      "work_item_title": "备份恢复演练",
+      "submitted_via": "agent",
+      "progress_value": 60,
+      "note": "已完成脚本联调，等窗口做全量演练",
+      "evidence": "演练工单 BAK-0925"
+    }
+  ]
+}

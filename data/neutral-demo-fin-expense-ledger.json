@@ -1,0 +1,179 @@
+{
+  "schema_version": "0.2",
+  "interface_id": "fin-expense-ledger",
+  "name": "报销明细台账",
+  "org_unit_code": "FIN",
+  "position_codes": [
+    "FIN_LEAD"
+  ],
+  "capabilities": [
+    "entries:write",
+    "entries:read:dept",
+    "aggregate:read:dept"
+  ],
+  "modules": [
+    {
+      "key": "layout",
+      "type": "rows",
+      "order": 1,
+      "children": [
+        {
+          "key": "expense_table",
+          "type": "table",
+          "order": 1,
+          "params": {
+            "columns": [
+              {
+                "key": "date",
+                "label": "发生日期"
+              },
+              {
+                "key": "title",
+                "label": "科目"
+              },
+              {
+                "key": "amount",
+                "label": "金额"
+              },
+              {
+                "key": "voucher",
+                "label": "凭证号"
+              },
+              {
+                "key": "state_word",
+                "label": "状态"
+              }
+            ],
+            "rows": 5
+          }
+        },
+        {
+          "key": "month_total",
+          "type": "metric_input",
+          "order": 2,
+          "source_fields": [
+            "title",
+            "amount"
+          ],
+          "params": {
+            "unit": "元"
+          }
+        },
+        {
+          "key": "two_up",
+          "type": "columns",
+          "order": 3,
+          "params": {
+            "columns": 2
+          },
+          "children": [
+            {
+              "key": "state_split",
+              "type": "status_chart",
+              "order": 1,
+              "source_fields": [
+                "state_word"
+              ],
+              "params": {
+                "dimension": "status"
+              }
+            },
+            {
+              "key": "ledger_note",
+              "type": "note_block",
+              "order": 2,
+              "params": {
+                "text": "单笔 ≥ 5000 元要附部门负责人签批；原件月底寄回，扫描件先传凭证号。"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "date",
+      "label": "发生日期",
+      "type": "text",
+      "required": true,
+      "map_to": "completed_at",
+      "aggregatable": true,
+      "example": "2026-11-02"
+    },
+    {
+      "key": "title",
+      "label": "科目",
+      "type": "text",
+      "required": true,
+      "map_to": "title",
+      "aggregatable": true,
+      "example": "差旅 · 高铁票"
+    },
+    {
+      "key": "amount",
+      "label": "金额（元）",
+      "type": "number",
+      "required": true,
+      "map_to": "amount",
+      "aggregatable": true,
+      "example": "553.00"
+    },
+    {
+      "key": "voucher",
+      "label": "凭证号",
+      "type": "text",
+      "required": true,
+      "map_to": "evidence",
+      "aggregatable": true,
+      "example": "FP-20261102-014"
+    },
+    {
+      "key": "state_word",
+      "label": "状态",
+      "type": "enum",
+      "required": true,
+      "map_to": "status",
+      "aggregatable": true,
+      "example": "待打款",
+      "options": [
+        "待审",
+        "待打款",
+        "已打款"
+      ]
+    },
+    {
+      "key": "note_text",
+      "label": "备注",
+      "type": "text",
+      "required": false,
+      "map_to": "note",
+      "aggregatable": true,
+      "example": "月底统一寄回原件"
+    }
+  ],
+  "status_map": {
+    "待审": "planned",
+    "待打款": "in_progress",
+    "已打款": "done"
+  },
+  "metrics": [
+    {
+      "metric_key": "dept.FIN.expense_total",
+      "mode": "emit",
+      "agg": "sum",
+      "from_field": "amount"
+    }
+  ],
+  "rules": {
+    "evidence_required": true
+  },
+  "meta": {
+    "author_position_code": "FIN_LEAD",
+    "version": 1,
+    "visibility": "department",
+    "review": {
+      "status": "draft"
+    }
+  }
+}

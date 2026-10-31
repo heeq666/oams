@@ -1,0 +1,148 @@
+{
+  "schema_version": "0.2",
+  "interface_id": "ops-campaign-schedule",
+  "name": "本周排期 / 值班表",
+  "org_unit_code": "OPS",
+  "position_codes": [
+    "OPS_LEAD"
+  ],
+  "capabilities": [
+    "entries:write",
+    "entries:read:dept",
+    "aggregate:read:dept"
+  ],
+  "modules": [
+    {
+      "key": "layout",
+      "type": "rows",
+      "order": 1,
+      "children": [
+        {
+          "key": "shift_card",
+          "type": "card",
+          "order": 1,
+          "params": {
+            "title": "本周排期"
+          },
+          "children": [
+            {
+              "key": "shift_table",
+              "type": "table",
+              "order": 1,
+              "params": {
+                "columns": [
+                  {
+                    "key": "day",
+                    "label": "日期"
+                  },
+                  {
+                    "key": "owner",
+                    "label": "值班人"
+                  },
+                  {
+                    "key": "title",
+                    "label": "事项"
+                  },
+                  {
+                    "key": "state_word",
+                    "label": "状态"
+                  },
+                  {
+                    "key": "handover_ref",
+                    "label": "交接单号"
+                  }
+                ],
+                "rows": 5
+              }
+            }
+          ]
+        },
+        {
+          "key": "tail",
+          "type": "divider",
+          "order": 2,
+          "params": {
+            "label": "交接与顶班"
+          }
+        },
+        {
+          "key": "handover_note",
+          "type": "note_block",
+          "order": 3,
+          "params": {
+            "text": "交接在 18:00 前完成；顶班请提前在群里换，并把交接单号补到上一行。"
+          }
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "day",
+      "label": "日期",
+      "type": "text",
+      "required": true,
+      "map_to": "planned_at",
+      "aggregatable": true,
+      "example": "周一 11-03"
+    },
+    {
+      "key": "owner",
+      "label": "值班人",
+      "type": "text",
+      "required": true,
+      "map_to": "display_only",
+      "aggregatable": false,
+      "example": "王运维"
+    },
+    {
+      "key": "title",
+      "label": "事项",
+      "type": "text",
+      "required": true,
+      "map_to": "title",
+      "aggregatable": true,
+      "example": "早班巡检 + 告警值守"
+    },
+    {
+      "key": "state_word",
+      "label": "状态",
+      "type": "enum",
+      "required": true,
+      "map_to": "status",
+      "aggregatable": true,
+      "example": "已交接",
+      "options": [
+        "待值班",
+        "值班中",
+        "已交接"
+      ]
+    },
+    {
+      "key": "handover_ref",
+      "label": "交接单号",
+      "type": "text",
+      "required": false,
+      "map_to": "evidence",
+      "aggregatable": true,
+      "example": "HO-1103-A"
+    }
+  ],
+  "status_map": {
+    "待值班": "planned",
+    "值班中": "in_progress",
+    "已交接": "done"
+  },
+  "metrics": [],
+  "rules": {
+    "evidence_required": false
+  },
+  "meta": {
+    "author_position_code": "OPS_LEAD",
+    "version": 1,
+    "visibility": "public",
+    "review": {
+      "status": "draft"
+    }
+  }
+}

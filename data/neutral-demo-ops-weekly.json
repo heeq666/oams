@@ -1,0 +1,184 @@
+{
+  "schema_version": "0.2",
+  "interface_id": "ops-weekly",
+  "name": "运维周报",
+  "org_unit_code": "OPS",
+  "position_codes": [
+    "OPS_LEAD"
+  ],
+  "capabilities": [
+    "entries:write",
+    "entries:read:dept",
+    "aggregate:read:dept"
+  ],
+  "modules": [
+    {
+      "key": "layout",
+      "type": "rows",
+      "order": 1,
+      "children": [
+        {
+          "key": "head",
+          "type": "divider",
+          "order": 1,
+          "params": {
+            "label": "本周在推的事"
+          }
+        },
+        {
+          "key": "weekly_items",
+          "type": "progress_row",
+          "order": 2,
+          "source_fields": [
+            "title",
+            "state_word",
+            "progress",
+            "note_text",
+            "evidence_ref"
+          ]
+        },
+        {
+          "key": "two_up",
+          "type": "columns",
+          "order": 3,
+          "params": {
+            "columns": 2
+          },
+          "children": [
+            {
+              "key": "state_split",
+              "type": "status_chart",
+              "order": 1,
+              "source_fields": [
+                "state_word"
+              ],
+              "params": {
+                "dimension": "status"
+              }
+            },
+            {
+              "key": "stuck",
+              "type": "blocker_list",
+              "order": 2,
+              "source_fields": [
+                "title",
+                "blocked_reason"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "proof_head",
+          "type": "divider",
+          "order": 4,
+          "params": {
+            "label": "依据"
+          }
+        },
+        {
+          "key": "proof",
+          "type": "evidence_gallery",
+          "order": 5,
+          "source_fields": [
+            "title",
+            "evidence_ref",
+            "note_text"
+          ]
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "title",
+      "label": "本周事项",
+      "type": "text",
+      "required": true,
+      "map_to": "title",
+      "aggregatable": true,
+      "example": "机房机柜巡检"
+    },
+    {
+      "key": "state_word",
+      "label": "状态",
+      "type": "enum",
+      "required": true,
+      "map_to": "status",
+      "aggregatable": true,
+      "example": "进行中",
+      "options": [
+        "计划中",
+        "进行中",
+        "被卡住",
+        "已完成"
+      ]
+    },
+    {
+      "key": "progress",
+      "label": "完成度",
+      "type": "number",
+      "required": false,
+      "map_to": "progress_value",
+      "aggregatable": true,
+      "example": "60"
+    },
+    {
+      "key": "note_text",
+      "label": "这次做了什么",
+      "type": "text",
+      "required": true,
+      "map_to": "note",
+      "aggregatable": true,
+      "example": "完成 3 台交换机固件升级"
+    },
+    {
+      "key": "evidence_ref",
+      "label": "依据（单号/文件名）",
+      "type": "text",
+      "required": true,
+      "map_to": "evidence",
+      "aggregatable": true,
+      "example": "巡检记录 OPS-2411"
+    },
+    {
+      "key": "blocked_reason",
+      "label": "卡在哪、在等谁",
+      "type": "text",
+      "required": false,
+      "map_to": "blocked_reason",
+      "aggregatable": true,
+      "example": "等机房审批，IT 承诺周三"
+    }
+  ],
+  "status_map": {
+    "计划中": "planned",
+    "进行中": "in_progress",
+    "被卡住": "blocked",
+    "已完成": "done"
+  },
+  "metrics": [
+    {
+      "metric_key": "dept.OPS.weekly_done",
+      "mode": "emit",
+      "agg": "count",
+      "from_field": "state_word",
+      "where_status": "done"
+    }
+  ],
+  "rules": {
+    "evidence_required": true,
+    "blocked_reason_required_when_blocked": true,
+    "progress_range": [
+      0,
+      100
+    ]
+  },
+  "meta": {
+    "author_position_code": "OPS_LEAD",
+    "version": 1,
+    "visibility": "department",
+    "review": {
+      "status": "draft"
+    }
+  }
+}
