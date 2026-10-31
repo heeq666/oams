@@ -11,10 +11,10 @@ added later, a second department follows the first.
 
     # 1. print exactly what would be written, change nothing
     OAMS_DATABASE_URL=... OAMS_ADMIN_MEMBER_ID=... \\
-        python scripts/load_department_data.py data/example-department.json
+        python scripts/load_department_data.py data/seed-hr-department.json
 
     # 2. write it
-    ... python scripts/load_department_data.py data/example-department.json --apply
+    ... python scripts/load_department_data.py data/seed-hr-department.json --apply
 
 The admin token is minted for this run only; the API service itself is started as
 oams_runtime，和线上跑的是同一个角色。
