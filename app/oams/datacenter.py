@@ -7,7 +7,7 @@ Two things matter, and both are enforced by this module:
   module can reach is a search_* / list_* / get_* tool; nothing here can write.
 * The shapes are normalised once. The HTTP client speaks MCP (Streamable HTTP)
   and its payloads are paginated, nested and versioned. Downstream code
-  (workhub.funnel) only ever sees the three shapes frozen in the P0 contract,
+  (oams.funnel) only ever sees the three shapes frozen in the P0 contract,
   so a change in a tool's envelope cannot quietly change a headline number.
 
 Three implementations of the same DataCenter protocol exist:
@@ -198,7 +198,7 @@ def normalize_development(payload: Any) -> dict:
     sample_status is a *colour* level status: one style has one record per
     colour. The style-level state is never read from the data centre (deriving
     it is the whole point), so this only collects the colour words for
-    workhub.funnel.derive_style_sample_state to decide.
+    oams.funnel.derive_style_sample_state to decide.
     """
     styles: dict[str, dict] = {}
     for row in _first_list(payload):

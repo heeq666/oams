@@ -8,9 +8,9 @@ import psycopg
 import uvicorn
 from psycopg.types.json import Jsonb
 
-from workhub.config import settings
-from workhub.db import connection, migration_connection
-from workhub.security import issue_session
+from oams.config import settings
+from oams.db import connection, migration_connection
+from oams.security import issue_session
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
@@ -98,12 +98,12 @@ def issue(args):
 
 
 def serve():
-    uvicorn.run("workhub.api:app", host=settings.bind_host, port=settings.bind_port)
+    uvicorn.run("oams.api:app", host=settings.bind_host, port=settings.bind_port)
 
 
 def _run_plugin(args):
-    """Delegate to workhub.plugin_cli so the offline tool has no database import."""
-    from workhub.plugin_cli import main as plugin_main
+    """Delegate to oams.plugin_cli so the offline tool has no database import."""
+    from oams.plugin_cli import main as plugin_main
 
     return plugin_main(args.plugin_args)
 

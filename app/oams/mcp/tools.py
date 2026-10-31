@@ -6,8 +6,8 @@ Design notes (why it looks like this):
   `server.py` is a thin adapter that wraps these into `mcp.types.Tool`. That
   keeps the whole rule surface -- capability checks, version discipline, audit --
   testable without a transport, a subprocess or a live event loop.
-* **Contract modules are imported lazily.** `workhub.modules`, `workhub.metrics`,
-  `workhub.render` and `workhub.descriptor` are written in parallel by other
+* **Contract modules are imported lazily.** `oams.modules`, `oams.metrics`,
+  `oams.render` and `oams.descriptor` are written in parallel by other
   members of the team. If one of them is missing or still on an older signature,
   the affected tool returns a diagnosable error instead of taking the server down
   at import time (an MCP server that fails to boot is useless to the reviewer too).
@@ -23,14 +23,14 @@ import inspect
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from workhub.mcp.audit import (
+from oams.mcp.audit import (
     ACTOR_AGENT,
     ACTOR_HUMAN,
     AuditEntry,
     AuditStore,
     MemoryAuditStore,
 )
-from workhub.mcp.capabilities import (
+from oams.mcp.capabilities import (
     ACTOR_AGENT as _CAP_ACTOR_AGENT,
     CAP_PLUGIN_APPROVE,
     CAP_PLUGIN_READ,
@@ -40,7 +40,7 @@ from workhub.mcp.capabilities import (
     ensure_human,
     issue_agent_capability,
 )
-from workhub.mcp.store import (
+from oams.mcp.store import (
     STATUS_DRAFT,
     STATUS_PENDING,
     MemoryDraftStore,
@@ -80,7 +80,7 @@ CAPABILITY_VOCABULARY: tuple[str, ...] = (
 )
 
 #: Frozen standard-field vocabulary (contract §5), used by list_canonical_fields
-#: as a fallback when `workhub.descriptor` is still on the 0.1 field list.
+#: as a fallback when `oams.descriptor` is still on the 0.1 field list.
 FALLBACK_STANDARD_FIELDS: dict[str, tuple[str, ...]] = {
     "object_ref": ("style_code", "skc_code", "color", "sku_code", "wave", "category",
                    "brand", "designer", "style_position", "supplier_code",
@@ -209,8 +209,8 @@ def _render_preview(descriptor: dict, sample: bool = True) -> str:
 def _standard_fields() -> dict[str, Any]:
     """Vocabulary for list_canonical_fields, grouped like contract section 5.
 
-    The authoritative source is workhub.modules.STANDARD_FIELD_VOCAB (the 0.2
-    freeze); workhub.descriptor.STANDARD_FIELDS still carries the shorter 0.1 list,
+    The authoritative source is oams.modules.STANDARD_FIELD_VOCAB (the 0.2
+    freeze); oams.descriptor.STANDARD_FIELDS still carries the shorter 0.1 list,
     so it is never used as the canonical answer. The contract's own table is the
     fallback when neither import resolves -- a caller always gets a usable
     vocabulary, plus `source` saying which one it got.
@@ -384,7 +384,7 @@ def _aggregates_preview(descriptor: dict[str, Any]) -> dict[str, Any]:
     """What the company aggregate would show for this descriptor, from the catalog.
 
     Read-only and side-effect free: it resolves the declared bindings against
-    `workhub.metrics` and reports which ones are unresolvable. It never computes
+    `oams.metrics` and reports which ones are unresolvable. It never computes
     a real number -- preview is about shape, not data.
     """
     resolved: list[dict[str, Any]] = []

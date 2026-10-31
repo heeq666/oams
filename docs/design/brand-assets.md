@@ -9,8 +9,8 @@
 
 | 文件 | 画布 | 渲染尺寸 | 用在哪 |
 |---|---|---|---|
-| `app/workhub/static/brand/logo.png` | 730×570（RGBA） | **38×30**（模板只写 `height="30"`，宽度按比例） | 顶栏，`app/workhub/templates/base.html:822` 的品牌位 |
-| `app/workhub/static/brand/logo-login.png` | 369×288（RGBA） | **77×60**（模板写 `width="77" height="60"`） | 登录页，`app/workhub/templates/login.html:11` 的卡片顶部 |
+| `app/oams/static/brand/logo.png` | 730×570（RGBA） | **38×30**（模板只写 `height="30"`，宽度按比例） | 顶栏，`app/oams/templates/base.html:822` 的品牌位 |
+| `app/oams/static/brand/logo-login.png` | 369×288（RGBA） | **77×60**（模板写 `width="77" height="60"`） | 登录页，`app/oams/templates/login.html:11` 的卡片顶部 |
 
 两个文件都只有几 KB（15545 B / 7480 B），8× 超采样后降采样，没有阴影、没有描边。
 
@@ -42,15 +42,15 @@
 
 ```sh
 # 把内部版的两个文件按同名同路径放回去（示例，路径按你的实际来）
-cp /path/to/你的-logo.png       app/workhub/static/brand/logo.png
-cp /path/to/你的-logo-login.png app/workhub/static/brand/logo-login.png
+cp /path/to/你的-logo.png       app/oams/static/brand/logo.png
+cp /path/to/你的-logo-login.png app/oams/static/brand/logo-login.png
 ```
 
 要点：
 
-1. **模板不依赖画布尺寸**。模板里只写显示尺寸——顶栏 `app/workhub/templates/base.html:822` 只写 `height="30"`（宽度按原图比例自动算出 38），登录页 `login.html:11` 写 `width="77" height="60"`——都不写图片本身的像素数；换上去的图只要**宽高比与原图接近**（顶栏 730×570 ≈ 1.28:1，登录页 369×288 ≈ 1.28:1），就不会把布局撑开。比例差得多也不会破版——`<img>` 按 `width`/`height` 属性缩放，只会略微变形或留白。
+1. **模板不依赖画布尺寸**。模板里只写显示尺寸——顶栏 `app/oams/templates/base.html:822` 只写 `height="30"`（宽度按原图比例自动算出 38），登录页 `login.html:11` 写 `width="77" height="60"`——都不写图片本身的像素数；换上去的图只要**宽高比与原图接近**（顶栏 730×570 ≈ 1.28:1，登录页 369×288 ≈ 1.28:1），就不会把布局撑开。比例差得多也不会破版——`<img>` 按 `width`/`height` 属性缩放，只会略微变形或留白。
 2. **缓存不用手动清**。模板引用走 `static_url('brand/logo.png')`，链接上带内容哈希（形如 `?v=10409f3f`）——**换图后哈希自动变**，浏览器会当成新地址重新取，不会吃到旧图。这也是上一轮把静态引用全部改成 `static_url()` 的收益之一。
-3. **不需要改 `_VersionedStaticFiles` 或任何后端配置**：哈希由 `app/workhub/web.py` 的 `static_url()` 现算，版本串对不上时服务端回 `no-cache`，对得上才回 `immutable`。
+3. **不需要改 `_VersionedStaticFiles` 或任何后端配置**：哈希由 `app/oams/web.py` 的 `static_url()` 现算，版本串对不上时服务端回 `no-cache`，对得上才回 `immutable`。
 4. 换完起服务看一眼顶栏与登录页即可；要留证据就按第二节的三档重新截图（ego 三档，断言 `scrollWidth === clientWidth`）。
 
 ## 四、回滚：原品牌源存在哪
@@ -78,8 +78,8 @@ git ls-files assets/screenshots/brand-neutral | wc -l                           
 grep -o 'assets/screenshots/brand-neutral/[0-9a-z-]*\.png' docs/design/brand-assets.md | sort -u | xargs ls -l | wc -l  # → 9（有任何一个不存在会报错）
 
 # 2) 两个标志文件在位
-ls -l app/workhub/static/brand/logo.png app/workhub/static/brand/logo-login.png
+ls -l app/oams/static/brand/logo.png app/oams/static/brand/logo-login.png
 
 # 3) 模板里没有一行按画布尺寸算布局（只有显示尺寸属性）
-grep -rn "brand/logo" app/workhub/templates/base.html app/workhub/templates/login.html
+grep -rn "brand/logo" app/oams/templates/base.html app/oams/templates/login.html
 ```

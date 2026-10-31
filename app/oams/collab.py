@@ -24,7 +24,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from workhub.security import (
+from oams.security import (
     ADMIN_RESOURCES,
     active_org_unit_ids,
     administered_org_unit_ids,

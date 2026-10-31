@@ -10,11 +10,11 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, RaiseException, 
 from psycopg.types.json import Jsonb
 import json
 
-from workhub.db import connection
-from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
+from oams.db import connection
+from oams.schemas import (AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
                              WorkItemCreate, WorkItemUpdate)
-from workhub.security import (active_org_unit_ids, current_principal, has_company_scope,
+from oams.security import (active_org_unit_ids, current_principal, has_company_scope,
                               has_permission, require_org_unit_access, require_permission, revoke_session)
 
 app = FastAPI(title="Company Workhub API", version="0.1.0")
@@ -1133,7 +1133,7 @@ def _combine_pages(agg, page_rows):
 def _format_metric(metric_key, value):
     """The company formatter, so a department number reads like a company one."""
     try:
-        from workhub import funnel as funnel_module
+        from oams import funnel as funnel_module
         return funnel_module.format_metric(metric_key, value)
     except Exception:  # noqa: BLE001 - formatting is never worth a 500
         return "—" if value is None else str(value)
@@ -1393,19 +1393,19 @@ def list_open_work_items(conn, org_unit_id=None, company_scope=False, limit=100)
 # security.principal_for_token and checked by security.has_permission -- the same
 # functions the bearer scheme uses. Nothing here grants anything by itself.
 # ---------------------------------------------------------------------------
-from workhub.web import router as web_router  # noqa: E402
-from workhub import web as web_ui  # noqa: E402
-from workhub.security import (active_org_unit_ids, has_company_scope,  # noqa: E402
+from oams.web import router as web_router  # noqa: E402
+from oams import web as web_ui  # noqa: E402
+from oams.security import (active_org_unit_ids, has_company_scope,  # noqa: E402
                               has_permission, principal_from_request)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
-from workhub import collab  # noqa: E402
+from oams import collab  # noqa: E402
 
 
 
 class _VersionedStaticFiles(StaticFiles):
     """带版本串的静态资源可以长缓存，不带的不许浏览器自己猜。
 
-    URL 上的 `v=` 是文件内容的哈希（`workhub.web.static_url` 生成）。只认「跟当前
+    URL 上的 `v=` 是文件内容的哈希（`oams.web.static_url` 生成）。只认「跟当前
     文件对得上」的版本串：对得上，说明这个 URL 指向的内容永远不变，可以 immutable；
     对不上或者根本没带（旧缓存里的残页、有人手打的地址），就 `no-cache`——让浏览器
     每次回源问一句。改版之后第一跳看到的就是新样式，不必等缓存过期，也不必让人按

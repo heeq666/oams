@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from workhub.modules import STANDARD_STATUSES
+from oams.modules import STANDARD_STATUSES
 
 #: Metric provenance.
 ORIGINS: tuple[str, ...] = ("platform", "interface")

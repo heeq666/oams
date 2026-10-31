@@ -1,7 +1,7 @@
 # 模块层细化清单（20 个模块 × 缺什么）
 
 > 状态：**待拍板**。拍完才动 Figma，Figma 改完才动代码（顺序见 §4）。
-> 取证范围：`app/workhub/templates/modules/*.html`（20 个 / 315 行）、`app/workhub/static/workhub-modules.css`（682 行）、`app/workhub/render.py`、`tests/test_render_modules.py`、Figma 页面 `02 · 组件 Components` 模块层（`251:15175`）。
+> 取证范围：`app/oams/templates/modules/*.html`（20 个 / 315 行）、`app/oams/static/oams-modules.css`（682 行）、`app/oams/render.py`、`tests/test_render_modules.py`、Figma 页面 `02 · 组件 Components` 模块层（`251:15175`）。
 > 取证时间 2026-10-30。所有行号是取证时的行号。
 
 ## 0. 一句话结论
@@ -19,13 +19,13 @@
 | G3 | **空态只有 5 个模块有**，文案三套句式各写各的 | `activity_feed`「暂无动态。」`flow_strip`「还没有绑定流程指标。」`metric_grid`「还没有绑定指标。」`rank_list`「暂无排行数据。」`table`「这个明细表还没有配置列。」 | 5/20 有，15/20 无 |
 | G4 | **空值与 0 不分**：未填的进度被算成 0% | `render.py` `progress_percent()` 对 None/"" 返回 0，模板 `progress_row.html:16` 直接拼 `%` | 录入层 6 件 |
 | G5 | 空值符号不统一：`--`（两个连字符）与 `&mdash;` 混用 | `aggregate()` / `format_number()` 返回 `"--"`，`static_for()` / `status_badge()` 返回 `&mdash;` | 展示层 7 件 |
-| G6 | **排版容器也带灰底 + 1px 边框 + 内距 16**：columns / rows / grid 会长出一个多余的框 | `workhub-modules.css:64-77`（`.wh-container` 命中三者），`columns.html:3`、`rows.html:2`、`grid.html:3` 都带 `wh-container` | 3 个容器 + 所有用到它们的页面 |
-| G7 | 模块块底色是 `bg-muted` 灰，Figma 定的是 `bg/surface` 白 | `workhub-modules.css:73-77` vs `148:5953` 的 description | 全部有底块面 |
+| G6 | **排版容器也带灰底 + 1px 边框 + 内距 16**：columns / rows / grid 会长出一个多余的框 | `oams-modules.css:64-77`（`.wh-container` 命中三者），`columns.html:3`、`rows.html:2`、`grid.html:3` 都带 `wh-container` | 3 个容器 + 所有用到它们的页面 |
+| G7 | 模块块底色是 `bg-muted` 灰，Figma 定的是 `bg/surface` 白 | `oams-modules.css:73-77` vs `148:5953` 的 description | 全部有底块面 |
 | G8 | **模块层零图标**，且有两处拿字符当图形 | 全目录 grep 无 `svg` / `wh-icon`；`flow_strip.html:8` 用 `&rarr;`（→）当箭头 | 20/20 |
 | G9 | `tabs` 是两套 UI 叠着：不可点的 tab 条（`<span role="tab">`）+ `<details>` 手风琴（每个面板的 `<summary>` 又把标签重复一遍） | `tabs.html:6-18` | 1 件，但它包住的子模块都受影响 |
-| G10 | 表格编辑态：30 高的真控件塞进 30 行高的行盒 → 行高变 42，「表格只有一种密度 30」在编辑态破功 | `table.html:19` + `workhub-modules.css:400-406` | 1 件 |
+| G10 | 表格编辑态：30 高的真控件塞进 30 行高的行盒 → 行高变 42，「表格只有一种密度 30」在编辑态破功 | `table.html:19` + `oams-modules.css:400-406` | 1 件 |
 | G11 | 配置错误文案直接给了终端用户 | `table.html:27`「这个明细表还没有配置列。」 | 1 件 |
-| G12 | 多列断点 900 一刀切；5 列直接退 1 列 | `workhub-modules.css:117-126`、`:115` | 4 个多列模块 |
+| G12 | 多列断点 900 一刀切；5 列直接退 1 列 | `oams-modules.css:117-126`、`:115` | 4 个多列模块 |
 | G13 | 间距越档 3 处（模块层口径只有 4/8/12/16） | `.wh-gap-lg{gap:20px}` `:96`、`.wh-bar{margin-top:10px}` `:364`、`.wh-timeline-list{margin:0 0 10px}` `:425` | 9 件 |
 | G14 | Figma 侧：14 件全 `FIXED` 700 宽 + 零变体，与各自 description 里的「语义 FILL」自相矛盾；三视图与空态**一张图都没有** | `148:5953` … `148:6322` 全为单帧 COMPONENT，`variantProps: null` | 14/14 |
 | G15 | Lucide 图标库只有 11 枚，模块层要用的 4 枚一枚都没有（`plus` / `trash-2` / `external-link` / `arrow-right`） | `224:14183` 子节点清点 | 图标收口时 |
@@ -120,7 +120,7 @@
 - **三视图**：同形（不装数据）。
 - **空 / 不全**：❌ 缺：子件全空时整块隐藏，别留 `.wh-cell` 空 div 占位（现在 `columns.html:7` 无条件渲染）。readonly 已有「子件全丢则整块丢」的逻辑，edit / preview 也要。
 - **图标**：不要。
-- **边界**：⚠️ 5 列退 1 列太狠（`workhub-modules.css:115`）→ 改退 2 列；⚠️ 900px 一刀切（G12）→ 见拍板第 7 条。
+- **边界**：⚠️ 5 列退 1 列太狠（`oams-modules.css:115`）→ 改退 2 列；⚠️ 900px 一刀切（G12）→ 见拍板第 7 条。
 - **Figma**：无组件；以 `219:13444`（12 栅格三档模板）为口径参照。
 
 #### 6. `rows` 行 — 无组件
@@ -132,7 +132,7 @@
 #### 7. `grid` 网格 — 无组件
 
 - 三视图同形；子件全空 → 整块隐藏。
-- ⚠️ **同行不等高**：`workhub-modules.css:105` `align-items: start`，与 `layout-grid.md` 的「有底的面板同行等高」打架 → 有底子件改 `stretch`。
+- ⚠️ **同行不等高**：`oams-modules.css:105` `align-items: start`，与 `layout-grid.md` 的「有底的面板同行等高」打架 → 有底子件改 `stretch`。
 - 图标不要；`columns-3` 在 700 宽栏里每列约 217，够放一行指标卡。
 
 ### 录入层（6）
@@ -201,7 +201,7 @@
 - **空 / 不全**：空态有「还没有绑定指标。」（✅，句式与 §2.2 一致）；单个 key 缺聚合 → 该格 `—`（✅ 逻辑有，符号要改）。
 - **图标**：不要。
 - **边界**：`columns` 默认 3；6 个 key + 3 列 = 两行（与 Figma 变体对齐）；> 8 建议改用外壳的 Metrics 区。
-- **Figma**：`148:9583` 三变体齐备，代码靠 `--wh-cols` + 断点对，✅ 无需新建。
+- **Figma**：`148:9583` 三变体齐备，代码靠 `--oams-cols` + 断点对，✅ 无需新建。
 
 #### 16. `flow_strip` 流程条 — Figma `3:330`（单帧 384×38）
 
@@ -233,7 +233,7 @@
 - **空 / 不全**：空态有「暂无动态。」（✅）；`who` 缺 → 该列留空（✅）。❌ 没有标题参数——一块动态流不知道是「谁在看什么」。
 - **图标**：不要。
 - **边界**：⚠️ 时间列固定 96px 且没有截断规则（`.wh-feed-when` 无 `overflow`），`2026-10-30 21:22` 这类长串会换行把行撑高 → `nowrap` + 省略，或列宽改 `max-content`（上限 120）；`limit` 默认 10，> 8 行折叠；`what` 超长 `anywhere`（✅）。
-- **Figma**：`148:6301`；建 2 变体（`变体=有数据` / `变体=空`）；行内 gap Figma 写 10、代码是 12（`workhub-modules.css:607`）→ 统一 12（模块层口径没有 10）。
+- **Figma**：`148:6301`；建 2 变体（`变体=有数据` / `变体=空`）；行内 gap Figma 写 10、代码是 12（`oams-modules.css:607`）→ 统一 12（模块层口径没有 10）。
 
 #### 20. `note_block` 说明块 — Figma `148:6322`（h120）
 

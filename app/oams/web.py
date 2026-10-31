@@ -41,15 +41,15 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from workhub import admin_labels, api, collab, funnel, metrics, review as review_rules
-from workhub.config import settings
-from workhub.datacenter import DataCenter, DataCenterNotConfigured, build_datacenter
-from workhub.db import connection
-from workhub.descriptor import recorded_approval_gaps, validate_descriptor
-from workhub.render import RenderError, render_interface, render_read_only
-from workhub.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
+from oams import admin_labels, api, collab, funnel, metrics, review as review_rules
+from oams.config import settings
+from oams.datacenter import DataCenter, DataCenterNotConfigured, build_datacenter
+from oams.db import connection
+from oams.descriptor import recorded_approval_gaps, validate_descriptor
+from oams.render import RenderError, render_interface, render_read_only
+from oams.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, WorkItemCreate)
-from workhub.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
+from oams.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
                               active_org_unit_ids, admin_level, administered_org_unit_ids,
                               dev_autologin_target, dev_identities, dev_principal, has_company_scope,
                               has_permission, issue_session, principal_from_request,
@@ -265,7 +265,7 @@ def _denied(request: Request, message: str):
                                       {"message": message, "member": _member(request)}, status_code=403)
 
 
-_RENDER_LOG = logging.getLogger("workhub.render")
+_RENDER_LOG = logging.getLogger("oams.render")
 
 
 def _render_failed(request: Request, *, page: dict[str, Any], exc: RenderError,
@@ -351,7 +351,7 @@ class _NotPermitted(Exception):
 # --------------------------------------------------------------------------- #
 # Company metrics (platform funnel, contract section 2 and 7)
 #
-# The numbers do not live here: workhub.funnel computes them from the product data
+# The numbers do not live here: oams.funnel computes them from the product data
 # centre, which is a machine on the office LAN and is routinely unreachable from
 # wherever this process happens to run. That makes "the data centre is down" an
 # ordinary state rather than an incident, so every function below is total: it

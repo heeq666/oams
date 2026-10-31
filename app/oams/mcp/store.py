@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
-from workhub.mcp.audit import utc_now
+from oams.mcp.audit import utc_now
 
 STATUS_DRAFT = "draft"
 STATUS_PENDING = "pending"

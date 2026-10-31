@@ -4,7 +4,7 @@ from typing import Iterator
 import psycopg
 from psycopg.rows import dict_row
 
-from workhub.config import settings
+from oams.config import settings
 
 
 @contextmanager

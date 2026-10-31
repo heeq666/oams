@@ -25,11 +25,11 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import Any
 
-from workhub.metrics import (
+from oams.metrics import (
     METRIC_CATALOG,
     validate_metric_binding,
 )
-from workhub.modules import (
+from oams.modules import (
     CONTAINER_DEPTH_LIMIT,
     MODULE_NODE_KEYS,
     MODULE_REGISTRY,

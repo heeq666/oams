@@ -27,7 +27,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from workhub import descriptor as rules
+from oams import descriptor as rules
 
 
 class PluginFileError(Exception):
@@ -75,7 +75,7 @@ def active_employee_codes() -> set[str]:
     connection module lazily keeps the default run of `check` free of any
     database dependency (and of a DATABASE_URL requirement).
     """
-    from workhub.db import connection
+    from oams.db import connection
 
     with connection() as conn:
         rows = conn.execute(
@@ -131,7 +131,7 @@ def render_report(path: str | Path, problems: list[str], *,
 
 def preview_html(descriptor: dict[str, Any]) -> str:
     """Render the descriptor with sample data, offline."""
-    from workhub.render import render_preview
+    from oams.render import render_preview
 
     return render_preview(descriptor, sample=True)
 
@@ -142,7 +142,7 @@ def preview_file(path: str | Path) -> str:
 
 def upgrade_file(path: str | Path) -> tuple[dict[str, Any], list[str]]:
     """Read a descriptor and move it onto schema 0.2. Returns (upgraded, hint lines)."""
-    from workhub.upgrade import upgrade_descriptor
+    from oams.upgrade import upgrade_descriptor
 
     return upgrade_descriptor(load_descriptor(path))
 

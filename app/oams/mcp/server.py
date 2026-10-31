@@ -25,7 +25,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from workhub.mcp.tools import (
+from oams.mcp.tools import (
     ToolContext,
     ToolRegistry,
     ToolResult,
@@ -135,7 +135,7 @@ async def serve_stdio(registry: ToolRegistry | None = None) -> None:
 
 
 def main() -> int:
-    """Console entry point used by `python -m workhub.mcp.server`."""
+    """Console entry point used by `python -m oams.mcp.server`."""
     import asyncio
     import sys
 

@@ -6,7 +6,7 @@
 都会直接抛 RenderError(MODULE_NOT_WHITELISTED)，而 validate_descriptor 对 0.1 文档
 走旧分支、照旧返回 []，两套口径不一致。这个模块负责把存量文档搬到新词汇表上。
 
-    from workhub.upgrade import upgrade_descriptor
+    from oams.upgrade import upgrade_descriptor
     upgraded, hints = upgrade_descriptor(old_descriptor)
 
 行为约定：
@@ -55,9 +55,9 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from workhub.descriptor import CAPABILITIES, validate_descriptor
-from workhub.metrics import get_metric
-from workhub.modules import get_module
+from oams.descriptor import CAPABILITIES, validate_descriptor
+from oams.metrics import get_metric
+from oams.modules import get_module
 
 CURRENT_SCHEMA_VERSION = "0.2"
 LEGACY_SCHEMA_VERSION = "0.1"
