@@ -193,8 +193,8 @@ try:  # pragma: no cover - branch depends on whether unit A has landed
 except Exception:
     _real_get_metric = None
 
-try:  # pragma: no cover - unit D owns funnel.format_metric
-    from oams.funnel import format_metric as _real_format_metric
+try:  # pragma: no cover - 格式化实现在 metric_format，页面与看板共用同一份
+    from oams.metric_format import format_metric as _real_format_metric
 except Exception:
     _real_format_metric = None
 
@@ -530,8 +530,7 @@ def aggregate_raw(metric_key: Any) -> Any:
 def aggregate(metric_key: Any, with_unit: bool = True) -> str:
     """Formatted aggregate value for display modules.
 
-    Unit D owns the canonical formatting (funnel.format_metric); it is used when
-    importable so the page and the home dashboard never disagree on '63,289 件'.
+    格式化统一走 metric_format.format_metric，页面与看板不会对同一个数给出两种写法。
     """
     raw = aggregate_raw(metric_key)
     if raw is None or raw == "":
