@@ -176,12 +176,27 @@ def _script(base: str, url: str) -> None:
 
     # ``oams db init`` 是唯一建表入口（``app/oams/schema.sql``，全部 IF NOT EXISTS）。
     # 增量迁移 0001-0012 已随 f9fae3d 删除，「模拟老部署再跑 0003 回填」那个场景随方案
-    # 一起消失；改成钉住它现在的两条契约：重复执行成功、不把基线授权再插一遍。
-    def _grant_count() -> int:
+    # 一起消失；改成钉住它现在的契约：**重复执行成功，且已经写进去的数据一行不动**。
+    #
+    # 断言不能是「0 == 0」那种空跑：上一步 bootstrap-admin 已经造成员与基线授权，
+    # 先断言它们真的存在（否则这条测试等于什么都没验），再连跑两遍 db init 比三样。
+    def _snapshot() -> dict:
         with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
-            return conn.execute("SELECT count(*) AS n FROM oams.permission_grants").fetchone()["n"]
+            return {
+                "members": conn.execute(
+                    "SELECT member_id FROM oams.workforce_members ORDER BY member_id").fetchall(),
+                "grants": conn.execute(
+                    "SELECT grant_id FROM oams.permission_grants ORDER BY grant_id").fetchall(),
+                "tables": conn.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'oams' AND table_type = 'BASE TABLE' "
+                    "ORDER BY table_name").fetchall(),
+            }
 
-    grants_before = _grant_count()
+    before = _snapshot()
+    check("db init has data worth protecting", bool(before["members"]) and bool(before["grants"]),
+          f"成员 {len(before['members'])} 行 / 授权 {len(before['grants'])} 行 / 表 {len(before['tables'])} 张")
+
     reinit = [
         subprocess.run(
             [sys.executable, "-m", "oams.cli", "db", "init"],
@@ -189,11 +204,13 @@ def _script(base: str, url: str) -> None:
         )
         for _ in range(2)
     ]
-    grants_after = _grant_count()
+    after = _snapshot()
     check("db init is idempotent", all(r.returncode == 0 for r in reinit),
           " | ".join((r.stdout or r.stderr).strip().replace("\n", " ")[:80] for r in reinit))
-    check("db init does not duplicate baseline grants", grants_before == grants_after,
-          f"before={grants_before} after={grants_after}")
+    check("db init leaves members, grants and tables untouched", before == after,
+          f"成员 {len(before['members'])}→{len(after['members'])} / "
+          f"授权 {len(before['grants'])}→{len(after['grants'])} / "
+          f"表 {len(before['tables'])}→{len(after['tables'])}")
 
     token, _ = issue_session(admin_id)
 
