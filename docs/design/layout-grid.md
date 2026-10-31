@@ -158,7 +158,7 @@
 用 ego 浏览器跑：按给定宽度逐页量「同一行子元素 top 是否相等 / 跨度宽度 / 横向溢出」，同时可选落盘截图（命令、视口写法与断言见 `AGENTS.md`「浏览器自动化」）。
 
 ```sh
-# 量测脚本写到 /tmp/grid-check.mjs，内部按 1440 / 1024 / 768 循环，截图落 assets/screenshots/
+# 量测脚本写到 /tmp/grid-check.mjs，内部按 1440 / 1024 / 768 循环，截图落 /tmp（自检图不进库）
 ego-browser nodejs < /tmp/grid-check.mjs
 ```
 

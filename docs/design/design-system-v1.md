@@ -103,7 +103,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 
 **2026-10-31 撤销「6」这一档。** 按组件实测，`Field 表单行` 两个变体的 `itemSpacing` 都是 **8**，变体内部 `Label Row` 高 20、`Input` 顶 28、`Input` 底 58、`Hint` 顶 66——标签↔控件、控件↔提示都是 8。代码（`base.html` 的 `.field { gap: 8px }`）本来就是 8，是文档多写了 6；按「以本文为准」改的是文档，不是代码。
 
-**2026-10-31「全站间距对齐」把代码里 21 处 6px 收进 8**（12 处是元素 / 行内之间的 `gap` 与 `margin`，9 处是同类 `margin` / `padding`；报告 `docs/reports/2026-10-31-spacing-sweep.md`）。 逐处按下面这张表判，没有一处该留 4：`.wh-link`（链接文字↔图标）、`.collab-search`（放大镜↔输入）、`.collab-empty`（标题↔说明）、`.flowstrip` 外层（阶段胶囊↔箭头）与 `.stage` 内（文字↔计数）、`.diff-head`（抬头↔改动行）、`.page-tabs`（tab 之间）、`.page-tab`（文字↔计数）、`.wh-opt`（对勾↔文字）、`.dev-badge`（角标内）、`.tabs a .cnt`（导航项↔计数）。`static/` 与 `templates/` 里已无 `gap: 6px`。
+**2026-10-31「全站间距对齐」把代码里 21 处 6px 收进 8**（12 处是元素 / 行内之间的 `gap` 与 `margin`，9 处是同类 `margin` / `padding`；当轮记录在内部，不在本仓）。 逐处按下面这张表判，没有一处该留 4：`.wh-link`（链接文字↔图标）、`.collab-search`（放大镜↔输入）、`.collab-empty`（标题↔说明）、`.flowstrip` 外层（阶段胶囊↔箭头）与 `.stage` 内（文字↔计数）、`.diff-head`（抬头↔改动行）、`.page-tabs`（tab 之间）、`.page-tab`（文字↔计数）、`.wh-opt`（对勾↔文字）、`.dev-badge`（角标内）、`.tabs a .cnt`（导航项↔计数）。`static/` 与 `templates/` 里已无 `gap: 6px`。
 
 **同一轮的两处更正（2026-10-31，测试复核后发现）**：① `.diff-list` 是**死选择器**——全仓没有一个模板输出它，审核卡用的是 `.diff-row` / `.diff-head`（`reviews.html:44` / `:58`），改 `.diff-list` 的 gap 在页面上零效果；现已把它连同同样没人用的 `.diff-list li` / `.diff-value` / `.diff-why` 一起删掉，真类保留（`.diff-row` gap 12 是三列之间、`.diff-head` 下 8）。② `base.html` 里四条 `padding: 6px`（`button/.btn`、`input/select/textarea`、`.orgnav a`、`.tabs a`）与 `.btn-sm` 整条、`.flowstrip .stage` 的内距都是**死声明**——后面「控件基准线」那条（`height: 30` + `padding: 0 16/12`）同特异性覆盖了它们，留着只会让人以为控件内距是 6；已删，复选框/单选框补 `padding: 0` 保持 16px 盒子不变。模块层 `.wh-input` 的内距也从 6/8 收到 **12**，与外壳 textarea 同档（input/select 不受影响，外壳那条特异性更高）。
 
