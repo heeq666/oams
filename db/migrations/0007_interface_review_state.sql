@@ -1,1 +1,0 @@
-../../app/workhub/migrations/0007_interface_review_state.sql

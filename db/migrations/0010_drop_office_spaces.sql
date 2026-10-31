@@ -1,1 +1,0 @@
-../../app/workhub/migrations/0010_drop_office_spaces.sql

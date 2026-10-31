@@ -1,1 +1,0 @@
-../../app/workhub/migrations/0002_work_items_reports_and_policy_gaps.sql
