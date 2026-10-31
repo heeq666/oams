@@ -798,7 +798,11 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
     if values is None:
         values = _interface_values(fields, latest)
     try:
-        rendered = render_interface(descriptor, values=values)
+        # `rollup` above already holds the numbers this page declared (`dept.*`);
+        # without handing them to the renderer every display module shows "—",
+        # because a metric_card cannot compute anything by itself.
+        rendered = render_interface(descriptor, values=values,
+                                    aggregates=rollup.get("aggregates") or {})
     except RenderError as exc:
         return _render_failed(request, page=page, exc=exc, org_name=unit["name"],
                               back_href=f"/departments/{org_unit_id}", back_label="返回部门")
@@ -1574,8 +1578,16 @@ def _interface_fill_page(request: Request, row: dict[str, Any], *, latest: dict[
     fields = [f for f in descriptor.get("fields", []) if isinstance(f, dict) and f.get("key")]
     if values is None:
         values = _interface_values(fields, latest)
+    # Same numbers the department workbench shows, computed for this one page: a
+    # display module on the fill page reads the department aggregate, not the entry
+    # the person is typing.
+    with connection() as conn:
+        rollup = api.build_department_aggregates(
+            conn, row["org_unit_id"], descriptor=descriptor,
+            interface_id=row.get("interface_id"))
     try:
-        rendered = render_interface(descriptor, values=values)
+        rendered = render_interface(descriptor, values=values,
+                                    aggregates=rollup.get("aggregates") or {})
     except RenderError as exc:
         return _render_failed(request, page=row, exc=exc, org_name=row.get("org_name"),
                               back_href="/interfaces", back_label="返回界面列表")
