@@ -442,6 +442,55 @@ def _t_list_canonical_fields(ctx: ToolContext, args: dict[str, Any]) -> ToolResu
                display_only=vocabulary["display_only"], source=vocabulary["source"])
 
 
+def _metric_binding_rules(metrics: list[dict[str, Any]]) -> dict[str, Any]:
+    """回答「我能绑什么」——目录为空时这段规则就是唯一的答案。
+
+    调用方（外部 AI）问这个工具，真正要的是「下一个 descriptor 里指标该怎么写」。
+    平台指标下线后 `METRIC_CATALOG` 是空表，只回车「0 条」等于没有答案；而绑定规则
+    本身是稳定的，与目录里有没有东西无关，所以把它作为返回内容的一部分。
+    规则原文见契约 §2/§5.2，这里只做机器可读的镜像，别在这里发明新规矩。
+    """
+    platform_count = sum(1 for m in metrics if m.get("origin") == "platform")
+    contract = _import_contract("metrics", "AGG_MODES", "ORIGINS", "GROUPS")
+    return {
+        "platform": {
+            "available": platform_count > 0,
+            "count": platform_count,
+            "note": (
+                "平台指标原由商品数据中心计算，已随商品中心下线一并移除，目录目前为空。"
+                "规则保留：将来若有平台指标回到目录，display 绑定可直接引用目录里的键。"
+            ),
+        },
+        "department": {
+            "key_pattern": "dept.<ORG_UNIT_CODE>.<slug>",
+            "example": "dept.OPS.weekly_done",
+            "declare": (
+                "在同一个 descriptor 的 metrics[] 里以 mode=emit 声明，metric_key 必须落在"
+                " dept.<本单位ORG_UNIT_CODE>. 前缀下；一位部门只能写自己的命名空间。"
+            ),
+            "aggs": list(contract.AGG_MODES),
+            "from_field": "本页 fields[] 里声明过的字段键（emit 必填）",
+            "where_status": "可选，限定只统计某个标准状态",
+            "display": (
+                "展示模块（metric_card/metric_grid/rank_list/flow_strip）的指标参数只能引"
+                "本页自己 emit 的键；引 dept.<别的CODE>.* 会被 METRIC_UNDEFINED 拒绝——"
+                "跨部门读数是汇总能力的事，不是显示参数能做的事。"
+            ),
+            "display_binding": "mode=display 的绑定只写 metric_key，不带 agg/from_field/where_status",
+        },
+        "filters": {
+            "origin": list(contract.ORIGINS),
+            "group": list(contract.GROUPS),
+            "note": "group 分组随平台指标下线，现在没有任何可选值；传 group 会被判为不认识的组。",
+        },
+        "reject_codes": {
+            "METRIC_UNDEFINED": "键非法、未声明，或引了不存在/不属于本页的指标",
+            "DATA_RULE_VIOLATION": "字段用法违规（如 emit 用了别部门命名空间、display 带了聚合字段）",
+            "FIELD_UNMAPPED": "emit 的 from_field 没有映射到标准字段",
+        },
+    }
+
+
 def _t_list_metric_catalog(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     home_only = bool(args.get("home_only") or False)
     try:
@@ -452,7 +501,14 @@ def _t_list_metric_catalog(ctx: ToolContext, args: dict[str, Any]) -> ToolResult
     except ValueError as error:
         return _fail(ERR_INVALID_ARGUMENTS, str(error))
     home = [m.get("key") for m in metrics if m.get("on_home")]
-    return _ok(metrics=metrics, count=len(metrics), home=home)
+    try:
+        can_bind = _metric_binding_rules(metrics)
+    except ContractError as error:
+        return _fail(ERR_CONTRACT_UNAVAILABLE, str(error))
+    return _ok(metrics=metrics, count=len(metrics), home=home, can_bind=can_bind,
+               message=("指标目录本身现在是空的（平台指标已下线）；下一个 descriptor 能绑什么，"
+                        "看 can_bind：部门指标在 metrics[] 里用 mode=emit 自己声明，"
+                        "展示模块只能引本页自己 emit 的键。"))
 
 
 def _t_get_plugin(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
@@ -733,8 +789,11 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="list_metric_catalog",
         description=(
-            "列出指标目录（platform 指标由数据中心计算、部门只能引用；interface 指标由部门条目计算）。"
-            "可按 group / origin / 是否首页过滤。preview_descriptor 的 aggregates_preview 用的就是这套口径。"
+            "回答「一个 descriptor 能绑什么指标」：返回 can_bind 绑定规则（部门指标的键形如"
+            " dept.<本单位CODE>.<slug>、须在本页 metrics[] 里以 mode=emit 声明、可用的聚合只有"
+            " count/sum/avg/count_distinct、展示模块只能引本页自己 emit 的键），以及目录本身"
+            "当前有没有平台指标（目前为空，平台指标已随商品中心下线）。metrics 是目录现状，"
+            "can_bind 是规则，规则不会因目录为空而失效。"
         ),
         input_schema=_schema({
             "group": {"type": "string", "enum": ["design", "sample", "order", "money"]},
