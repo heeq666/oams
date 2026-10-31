@@ -153,8 +153,8 @@ def _script(base: str, url: str) -> None:
     BASE = base
     DATABASE_URL = url
     boot = subprocess.run(
-        [sys.executable, "-m", "workhub.cli", "bootstrap-admin", "--name", "example-user", "--employee-code", "9999",
-         "--org-code", "example-co", "--org-name", "example-co"],
+        [sys.executable, "-m", "workhub.cli", "bootstrap-admin", "--name", "Admin", "--employee-code", "9999",
+         "--org-code", "acme", "--org-name", "ACME"],
         capture_output=True, text=True, cwd=".", env={**os.environ, "PYTHONPATH": "app"},
     )
     with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:

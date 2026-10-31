@@ -8,8 +8,8 @@ the seeded administrator and as the seeded specialist:
         -p 55433:5432 postgres:16-alpine
     export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@localhost:55433/workhub_test
     python -m workhub.cli migrate
-    ADMIN=$(python -m workhub.cli bootstrap-admin --name example-user --employee-code 9999 \
-        --org-code example-co --org-name example-co | python -c "import json,sys;print(json.load(sys.stdin)['member_id'])")
+    ADMIN=$(python -m workhub.cli bootstrap-admin --name Admin --employee-code 9999 \
+        --org-code acme --org-name ACME | python -c "import json,sys;print(json.load(sys.stdin)['member_id'])")
     WORKHUB_MIGRATOR_URL=$WORKHUB_DATABASE_URL WORKHUB_ADMIN_MEMBER_ID=$ADMIN \
         python scripts/load_department_data.py data/seed-hr-department.json --apply
     python tests/test_web_ui_e2e.py

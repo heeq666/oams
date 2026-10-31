@@ -722,7 +722,7 @@ def migrated_site(db_ready):
 
 @pytest.fixture(scope="session")
 def hr_site(db_ready):
-    """The seed-hr department (example-co + HR + 10 work items) served by the app.
+    """The seed-hr department (acme + HR + 10 work items) served by the app.
 
     Built with scripts/load_department_data.py -- the same loader a real
     deployment uses -- so the loader itself is covered by the suite too.
@@ -734,10 +734,10 @@ def hr_site(db_ready):
         bootstrap = _cli(
             [
                 "bootstrap-admin",
-                "--name", "example-user",
+                "--name", "Admin",
                 "--employee-code", "9999",
-                "--org-code", "example-co",
-                "--org-name", "example-co",
+                "--org-code", "acme",
+                "--org-name", "ACME",
             ],
             url,
         )
