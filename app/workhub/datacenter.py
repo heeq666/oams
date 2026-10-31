@@ -387,7 +387,7 @@ class DataCenterHTTP:
         if not resolved and transport is None:
             raise DataCenterNotConfigured(
                 f"商品数据中心地址未配置：请设置环境变量 {DATACENTER_URL_ENV}"
-                "（例如 http://product-hub.example.com:8791/mcp）。"
+                "（形如 http://product-hub.example.com:8791/mcp，填部署现场的真实地址）。"
                 "需要离线预览时请改用 FixtureDataCenter。"
             )
         self.url = resolved
