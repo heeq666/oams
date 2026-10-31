@@ -1,4 +1,4 @@
-"""Tool layer for the Workhub MCP server.
+"""Tool layer for the OAMS MCP server.
 
 Design notes (why it looks like this):
 

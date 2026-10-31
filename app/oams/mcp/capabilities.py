@@ -1,4 +1,4 @@
-"""Capability checks for the Workhub MCP server.
+"""Capability checks for the OAMS MCP server.
 
 The rule this module exists to enforce: an AI token is bound to
 `plugin:write:draft` and can never hold `plugin:approve`. Approving is a human
