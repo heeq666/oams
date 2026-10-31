@@ -26,32 +26,6 @@
     {% elif saved %}<div class="flash">{{ '已保存到测试区——页面还没正式使用，这条不计入公司汇总。' if draft_mode else '已保存。关联到工作项后，这条才会计入公司汇总。' }}</div>{% endif %}
     {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
-    {# The funnel this department feeds, same five stages as the company page and
-       the same numbers: a department reads its own contribution rather than
-       retyping it. Company-wide for now -- the data centre carries no department
-       dimension on a style, so filtering would be an invention. #}
-    {% if funnel_chain and funnel_chain.available %}
-    <div style="margin-bottom:14px">
-      <div class="sub" style="margin-bottom:8px">
-        公司产品漏斗{% if funnel_chain.wave %} · {{ funnel_chain.wave }}{% endif %}
-        <span>（全公司口径）</span>
-      </div>
-      <div class="flowstrip">
-        {% for stage in funnel_chain.stages %}
-          <span class="stage{{ ' terminal zero' if stage.count == 0 and loop.last else (' terminal' if loop.last else '') }}"
-                title="{{ stage.label }}">
-            {{ stage.label }}<span class="cnt">{{ stage.count }}</span></span>
-          {% if not loop.last %}<span class="arrow" aria-hidden="true">▸</span>{% endif %}
-        {% endfor %}
-      </div>
-    </div>
-    {% elif funnel_chain %}
-    <div class="card" style="margin-bottom:14px">
-      <p class="empty" style="margin:0">公司产品漏斗暂不可用：{{ funnel_chain.reason }}</p>
-      <p class="sub" style="margin:8px 0 0">取数来自外部商品数据中心，与下面这个部门的数据无关。</p>
-    </div>
-    {% endif %}
-
     {% if page %}
       {% if page.status != 'active' %}
       <div class="card" style="margin-bottom:12px">
