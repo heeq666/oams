@@ -21,7 +21,7 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 
 ## 做部门界面（descriptor）之前必读
 
-`skills/workhub-department-interface/SKILL.md` + `docs/architecture/p0-interface-contract.md`。硬约束：容器只排版不做数据；字段必须映射标准字段（至少 `title` / `status` / `evidence`）；状态必须映射到 `planned / in_progress / blocked / done`；模块只能从 `app/oams/modules.py` 的 `MODULE_REGISTRY` 白名单（20 个 key）里选。
+`skills/oams-department-interface/SKILL.md` + `docs/architecture/p0-interface-contract.md`。硬约束：容器只排版不做数据；字段必须映射标准字段（至少 `title` / `status` / `evidence`）；状态必须映射到 `planned / in_progress / blocked / done`；模块只能从 `app/oams/modules.py` 的 `MODULE_REGISTRY` 白名单（20 个 key）里选。
 
 ## 运行
 
@@ -50,7 +50,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 - `docs/architecture/` —— 契约与方案（`plugin-host-concept.md` 是现行主线，`v1-ui-redesign-plan.md` 已作废）；`collab-room-implementation-plan.md` 是协作室的实现清单（设计稿见 `docs/design/design-system-v1.md` §7）
 - `docs/design/` —— 界面规范与令牌
 - `app/oams/schema.sql` —— **唯一一份**建表脚本：**19 张表 + 1 个视图**（`work_item_current_state`），`oams db init` 幂等执行。按 `information_schema.tables` 数会是 **20**（视图也占一行），别当成多建了一张表；老库可能还留着旧的迁移台账 `oams.schema_migrations`（`db init` 既不再建也不删），那样会数出 21。`db/deploy/` —— 双角色时期的建库脚本遗留（已废弃，别照它建角色）
-- `examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill（两个目录名 `workhub-*` 按批次保留、本轮不改；引用时写真实目录名，别指向不存在的路径）
+- `examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill（两个：`oams-department-interface` 做部门界面、`oams-design-system` 做页面与组件；引用时写真实目录名，别指向不存在的路径）
 
 ## 约定
 

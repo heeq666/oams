@@ -1,5 +1,5 @@
 ---
-name: workhub-design-system
+name: oams-design-system
 description: 按 OAMS 设计规范 v1 做页面/组件（shadcn 语义色、hairline、五档圆角、控件 30、令牌化），含 Figma 组件库定位与八条硬规则
 ---
 
