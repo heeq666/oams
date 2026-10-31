@@ -90,7 +90,7 @@ def upgrade_descriptor(descriptor: dict[str, Any]) -> tuple[dict[str, Any], list
     if upgraded.get("schema_version") == CURRENT_SCHEMA_VERSION:
         hints.append(
             f"schema_version 已经是 {CURRENT_SCHEMA_VERSION!r}，没有做任何转换；"
-            "如仍打不开页面，请直接跑 workhub plugin check 看具体问题。"
+            "如仍打不开页面，请直接跑 oams plugin check 看具体问题。"
         )
         return upgraded, hints
 

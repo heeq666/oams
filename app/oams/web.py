@@ -134,7 +134,7 @@ def static_version(relative: str) -> str:
 
 
 def static_url(relative: str) -> str:
-    """模板里用：`{{ static_url('workhub-modules.css') }}`。"""
+    """模板里用：`{{ static_url('oams-modules.css') }}`。"""
     relative = relative.lstrip("/")
     version = static_version(relative)
     return f"/static/{relative}?v={version}" if version else f"/static/{relative}"
@@ -159,7 +159,7 @@ ROLLUP_STATE_LABELS = {
 # Badge classes that already exist in base.html; no new stylesheet rule needed.
 ROLLUP_STATE_BADGES = {"rolled": "human", "unlinked": "vacant", "draft": "decision",
                        "retracted": ""}
-ENTRY_LINK_PURPOSE = "workhub:entry-link:v1"
+ENTRY_LINK_PURPOSE = "oams:entry-link:v1"
 
 
 def _with_rollup_labels(rows):
@@ -210,7 +210,7 @@ def _entry_link_targets(conn, org_unit_id, company_scope, can_manage):
     if can_manage:
         positions = conn.execute(
             """SELECT p.position_id, p.position_code, p.title
-               FROM workhub.positions p
+               FROM oams.positions p
                WHERE p.status = 'active' AND p.org_unit_id = %s
                ORDER BY p.position_code""", (org_unit_id,)).fetchall()
     return items, positions
@@ -321,14 +321,14 @@ def _require(request: Request, resource: str, action: str) -> dict[str, Any]:
     return principal
 
 
-def _form_token(request: Request, purpose: str = "workhub:form:v1") -> str:
+def _form_token(request: Request, purpose: str = "oams:form:v1") -> str:
     """Bind each POST form to the signed-in session, so a stale or forged token fails."""
     token = request.cookies.get(settings.web_session_cookie, "")
     return hmac.new(token.encode(), purpose.encode(), hashlib.sha256).hexdigest()
 
 
 def _report_csrf(request: Request) -> str:
-    return _form_token(request, "workhub:report-form:v1")
+    return _form_token(request, "oams:report-form:v1")
 
 
 def _check_form_token(request: Request, supplied: str, purpose: str) -> None:
@@ -371,7 +371,7 @@ METRICS_HTTP_TIMEOUT = 6.0
 def _metric_reason(exc: Exception) -> str:
     """One short sentence a manager can act on, never a stack trace."""
     if isinstance(exc, DataCenterNotConfigured):
-        return "商品数据中心地址未配置（环境变量 WORKHUB_DATACENTER_URL）"
+        return "商品数据中心地址未配置（环境变量 OAMS_DATACENTER_URL）"
     detail = str(exc).strip()
     return detail or exc.__class__.__name__
 
@@ -491,7 +491,7 @@ def login_page(request: Request, token: str | None = None, next: str = "/board")
         return RedirectResponse(url=next_url, status_code=302)
     target = dev_autologin_target(request)
     if target is not None:
-        return _login(request, error=f"免登录账号「{target}」不存在或已离职，请改 WORKHUB_DEV_AUTOLOGIN 或去掉它。", next_url=next_url)
+        return _login(request, error=f"免登录账号「{target}」不存在或已离职，请改 OAMS_DEV_AUTOLOGIN 或去掉它。", next_url=next_url)
     return _login(request, next_url=next_url)
 
 
@@ -517,7 +517,7 @@ def logout(request: Request):
     if dev_autologin_target(request) is not None:
         # Signing out cannot stick while the shortcut is on, so say so instead of
         # bouncing the browser through /login and back into the same page.
-        return _login(request, error="开发阶段免登录已开启（WORKHUB_DEV_AUTOLOGIN）：退出后会立刻自动登录回来。", next_url="/board")
+        return _login(request, error="开发阶段免登录已开启（OAMS_DEV_AUTOLOGIN）：退出后会立刻自动登录回来。", next_url="/board")
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(settings.web_session_cookie, path="/")
     return response
@@ -527,7 +527,7 @@ def logout(request: Request):
 def dev_switch_identity(request: Request, code: str = Form(default=""), next: str = Form(default="/board")):
     """Design-stage identity switch: the badge writes the chosen person to a cookie.
 
-    Only reachable while WORKHUB_DEV_AUTOLOGIN is on -- otherwise it 404s, so this
+    Only reachable while OAMS_DEV_AUTOLOGIN is on -- otherwise it 404s, so this
     adds nothing to a deployment that forgot to turn the shortcut off. No form
     token on purpose: the shortcut already signs in anybody who can reach the
     port, so a CSRF guard here would only teach people to work around the switch.
@@ -540,12 +540,12 @@ def dev_switch_identity(request: Request, code: str = Form(default=""), next: st
     response = RedirectResponse(url=target, status_code=303)
     wanted = code.strip()
     if not wanted:
-        # Clearing the cookie falls back to whatever WORKHUB_DEV_AUTOLOGIN says.
+        # Clearing the cookie falls back to whatever OAMS_DEV_AUTOLOGIN says.
         response.delete_cookie(DEV_WORKER_COOKIE, path="/")
         return response
     with connection() as conn:
         row = conn.execute(
-            "SELECT employee_code FROM workhub.workforce_members "
+            "SELECT employee_code FROM oams.workforce_members "
             "WHERE employee_code = %s AND employment_status = 'active'",
             (wanted,)).fetchone()
     if row is None:
@@ -636,13 +636,13 @@ def _visible_departments(conn, member_id):
     """Departments this member may work in: their own, or all for company scope."""
     if has_company_scope(conn, member_id):
         return conn.execute(
-            """SELECT org_unit_id, org_code, name FROM workhub.org_units
+            """SELECT org_unit_id, org_code, name FROM oams.org_units
                WHERE status = 'active' AND unit_type <> 'company' ORDER BY name""").fetchall()
     scoped = list(active_org_unit_ids(conn, member_id))
     if not scoped:
         return []
     return conn.execute(
-        """SELECT org_unit_id, org_code, name FROM workhub.org_units
+        """SELECT org_unit_id, org_code, name FROM oams.org_units
            WHERE status = 'active' AND org_unit_id = ANY(%s) ORDER BY name""", (scoped,)).fetchall()
 
 
@@ -650,9 +650,9 @@ def _department_pages(conn, org_unit_id):
     """Every page of a department, drafts included: a department must see what it is building."""
     return conn.execute(
         """SELECT i.interface_id, i.name, i.status, i.version_no, i.visibility,
-                  (SELECT count(*) FROM workhub.interface_entries e
+                  (SELECT count(*) FROM oams.interface_entries e
                     WHERE e.interface_id = i.interface_id AND e.status_entry = 'active') AS entry_count
-           FROM workhub.interfaces i
+           FROM oams.interfaces i
            WHERE i.org_unit_id = %s AND i.status <> 'archived'
            ORDER BY (i.status = 'active') DESC, i.name""", (org_unit_id,)).fetchall()
 
@@ -663,7 +663,7 @@ def _resolve_department(conn, principal, org_unit_id):
         if org_unit_id not in active_org_unit_ids(conn, principal["member_id"]):
             return None
     return conn.execute(
-        """SELECT org_unit_id, org_code, name FROM workhub.org_units
+        """SELECT org_unit_id, org_code, name FROM oams.org_units
            WHERE org_unit_id = %s AND status = 'active'""", (org_unit_id,)).fetchone()
 
 
@@ -712,7 +712,7 @@ def department_workbench(request: Request, org_unit_id: UUID, saved: str | None 
         "current": None, "page": None, "preview": False,
         "funnel_chain": department_funnel_chain(),
         "member": _member(request), "saved": saved, "error": error,
-        "csrf": _form_token(request, "workhub:interface-form:v1")})
+        "csrf": _form_token(request, "oams:interface-form:v1")})
 
 
 @router.get("/departments/{org_unit_id}/new", response_class=HTMLResponse)
@@ -731,7 +731,7 @@ def department_new_page(request: Request, org_unit_id: UUID, saved: str | None =
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
         positions = conn.execute(
-            """SELECT position_id, position_code, title FROM workhub.positions
+            """SELECT position_id, position_code, title FROM oams.positions
                WHERE org_unit_id = %s AND status = 'active' ORDER BY position_code""",
             (org_unit_id,)).fetchall()
         pages = _department_pages(conn, org_unit_id)
@@ -743,7 +743,7 @@ def department_new_page(request: Request, org_unit_id: UUID, saved: str | None =
         "unit": unit, "departments": departments, "pages": pages,
         "current": None, "page": None, "positions": positions, "bases": bases,
         "member": _member(request), "saved": saved, "error": error,
-        "csrf": _form_token(request, "workhub:page-form:v1")})
+        "csrf": _form_token(request, "oams:page-form:v1")})
 
 
 @router.post("/departments/{org_unit_id}/new")
@@ -758,7 +758,7 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
         return RedirectResponse(url="/login?next=/departments", status_code=302)
     except _NotPermitted:
         return _denied(request, "制作部门页面需要 workforce.reports 读写权限。")
-    _check_form_token(request, csrf, "workhub:page-form:v1")
+    _check_form_token(request, csrf, "oams:page-form:v1")
     back = f"/departments/{org_unit_id}/new"
     try:
         descriptor = json.loads(descriptor_text)
@@ -771,9 +771,9 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
         codes = {row["org_code"] for row in conn.execute(
-            "SELECT org_code FROM workhub.org_units WHERE status = 'active'").fetchall()}
+            "SELECT org_code FROM oams.org_units WHERE status = 'active'").fetchall()}
         known_positions = {row["position_code"] for row in conn.execute(
-            "SELECT position_code FROM workhub.positions WHERE status = 'active'").fetchall()}
+            "SELECT position_code FROM oams.positions WHERE status = 'active'").fetchall()}
         problems = validate_descriptor(descriptor, known_org_unit_codes=codes,
                                        known_position_codes=known_positions)
         if problems:
@@ -784,7 +784,7 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
         # the reviewer two diffs against one live version and no way to tell which
         # one the department means to ship.
         open_version = conn.execute(
-            """SELECT interface_id FROM workhub.interfaces
+            """SELECT interface_id FROM oams.interfaces
                WHERE org_unit_id = %s AND slug = %s AND status IN ('draft', 'pending')
                ORDER BY version_no DESC LIMIT 1""", (org_unit_id, slug.strip())).fetchone()
         if open_version is not None:
@@ -796,7 +796,7 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
         # reviewed. Archiving it here would blank the department's page for as
         # long as review takes -- and if the draft were then abandoned, forever.
         live = conn.execute(
-            """SELECT interface_id, version_no FROM workhub.interfaces
+            """SELECT interface_id, version_no FROM oams.interfaces
                WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
             (org_unit_id, slug.strip())).fetchone()
         # A page may also be built on another department's live screen ("roll out
@@ -812,7 +812,7 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
                 return RedirectResponse(url=back + "?error=" + urllib.parse.quote("来源页面编号不对"),
                                         status_code=303)
             source = conn.execute(
-                """SELECT interface_id, org_unit_id, status, visibility FROM workhub.interfaces
+                """SELECT interface_id, org_unit_id, status, visibility FROM oams.interfaces
                     WHERE interface_id = %s""", (source_id,)).fetchone()
             openable = source is not None and source["status"] == "active" and (
                 source["visibility"] == "public"
@@ -830,12 +830,12 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
                     status_code=303)
             basis = source["interface_id"]
         version = conn.execute(
-            """SELECT COALESCE(max(version_no), 0) + 1 FROM workhub.interfaces
+            """SELECT COALESCE(max(version_no), 0) + 1 FROM oams.interfaces
                WHERE org_unit_id = %s AND slug = %s""", (org_unit_id, slug.strip())).fetchone()["?column?"]
         # A page a department just wrote starts unapproved: it must be seen and
         # filled inside the department before it can claim to speak for the company.
         row = conn.execute(
-            """INSERT INTO workhub.interfaces
+            """INSERT INTO oams.interfaces
                    (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                     position_id, version_no, based_on, created_by, updated_by)
                VALUES (%s, %s, %s, 'draft', 'department', %s, %s, %s, %s, %s, %s, %s)
@@ -878,7 +878,7 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
         page = conn.execute(
-            """SELECT * FROM workhub.interfaces
+            """SELECT * FROM oams.interfaces
                WHERE interface_id = %s AND org_unit_id = %s AND status <> 'archived'""",
             (interface_id, org_unit_id)).fetchone()
         if page is None:
@@ -904,7 +904,7 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         found = _visible_departments(conn, principal["member_id"])
         counts = {row["org_unit_id"]: _department_pages(conn, row["org_unit_id"]) for row in found}
         latest = conn.execute(
-            """SELECT * FROM workhub.interface_entries
+            """SELECT * FROM oams.interface_entries
                WHERE interface_id = %s AND status_entry = 'active' AND entry_mode = %s
                ORDER BY reported_at DESC, entry_id DESC LIMIT 1""", (interface_id, mode)).fetchone()
         # A draft, or a page under review, does not replace the live one: name the
@@ -913,7 +913,7 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         live_version = None
         if page["status"] != "active":
             live_version = conn.execute(
-                """SELECT interface_id, version_no, updated_at FROM workhub.interfaces
+                """SELECT interface_id, version_no, updated_at FROM oams.interfaces
                    WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
                 (org_unit_id, page["slug"])).fetchone()
     descriptor = page["descriptor"]
@@ -947,12 +947,12 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         "link_positions": link_positions,
         "link_purpose": ENTRY_LINK_PURPOSE,
         "link_csrf": _form_token(request, ENTRY_LINK_PURPOSE),
-        "work_item_csrf": _form_token(request, "workhub:work-item-form:v1"),
+        "work_item_csrf": _form_token(request, "oams:work-item-form:v1"),
         "can_manage_work_items": can_manage_work_items,
         # The page holds two different forms (fill it in, submit it for review),
         # so it carries a token for each; a token minted for one must not pass the other.
-        "csrf": _form_token(request, "workhub:interface-form:v1"),
-        "review_csrf": _form_token(request, "workhub:page-form:v1")}, status_code=status_code)
+        "csrf": _form_token(request, "oams:interface-form:v1"),
+        "review_csrf": _form_token(request, "oams:page-form:v1")}, status_code=status_code)
 
 
 @router.post("/departments/{org_unit_id}/{interface_id}")
@@ -965,14 +965,14 @@ async def department_page_submit(request: Request, org_unit_id: UUID, interface_
         return RedirectResponse(url="/login?next=/departments", status_code=302)
     except _NotPermitted:
         return _denied(request, "填写部门页面需要 workforce.reports/read 与 submit 权限。")
-    _check_form_token(request, csrf, "workhub:interface-form:v1")
+    _check_form_token(request, csrf, "oams:interface-form:v1")
     base = f"/departments/{org_unit_id}/{interface_id}"
     with connection() as conn:
         unit = _resolve_department(conn, principal, org_unit_id)
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
         page = conn.execute(
-            """SELECT * FROM workhub.interfaces
+            """SELECT * FROM oams.interfaces
                WHERE interface_id = %s AND org_unit_id = %s AND status <> 'archived'""",
             (interface_id, org_unit_id)).fetchone()
         if page is None:
@@ -992,7 +992,7 @@ async def department_page_submit(request: Request, org_unit_id: UUID, interface_
         keys = ", ".join(columns)
         placeholders = ", ".join(["%s"] * len(columns))
         entry = conn.execute(
-            "INSERT INTO workhub.interface_entries (interface_id, " + keys + ") VALUES (%s, " + placeholders + ")"
+            "INSERT INTO oams.interface_entries (interface_id, " + keys + ") VALUES (%s, " + placeholders + ")"
             + " RETURNING entry_id, title, status, note, evidence, reported_at",
             (interface_id, *columns.values())).fetchone()
         api.audit(conn, principal["member_id"], "interface_entry.created", "interface_entry",
@@ -1029,7 +1029,7 @@ def entry_link(request: Request, org_unit_id: UUID, interface_id: UUID, entry_id
             if unit is None:
                 return _denied(request, "你不在这个部门的范围内。")
             entry = conn.execute(
-                """SELECT entry_id, interface_id, title FROM workhub.interface_entries
+                """SELECT entry_id, interface_id, title FROM oams.interface_entries
                    WHERE entry_id = %s AND interface_id = %s""", (entry_id, interface_id)).fetchone()
             if entry is None:
                 return _denied(request, "找不到这条汇报记录。")
@@ -1037,14 +1037,14 @@ def entry_link(request: Request, org_unit_id: UUID, interface_id: UUID, entry_id
                 # The work item must exist and sit inside a department this member
                 # may report on; otherwise the form would link across departments.
                 item = conn.execute(
-                    """SELECT w.work_item_id, w.org_unit_id FROM workhub.work_items w
-                       JOIN workhub.positions p USING (position_id)
+                    """SELECT w.work_item_id, w.org_unit_id FROM oams.work_items w
+                       JOIN oams.positions p USING (position_id)
                        WHERE w.work_item_id = %s AND p.org_unit_id = %s""",
                     (target, org_unit_id)).fetchone()
                 if item is None:
                     return RedirectResponse(url=base + "?error=work-item-invalid", status_code=303)
             conn.execute(
-                "UPDATE workhub.interface_entries SET work_item_id = %s WHERE entry_id = %s",
+                "UPDATE oams.interface_entries SET work_item_id = %s WHERE entry_id = %s",
                 (target, entry_id))
             api.audit(conn, principal["member_id"],
                       "interface_entry.unlinked" if target is None else "interface_entry.linked",
@@ -1090,14 +1090,14 @@ def department_submit_review(request: Request, org_unit_id: UUID, interface_id: 
         return RedirectResponse(url="/login?next=/departments", status_code=302)
     except _NotPermitted:
         return _denied(request, "提交审核需要 workforce.reports 读写权限。")
-    _check_form_token(request, review_csrf, "workhub:page-form:v1")
+    _check_form_token(request, review_csrf, "oams:page-form:v1")
     base = f"/departments/{org_unit_id}/{interface_id}"
     with connection() as conn:
         unit = _resolve_department(conn, principal, org_unit_id)
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
         prior = conn.execute(
-            """SELECT interface_id, status FROM workhub.interfaces
+            """SELECT interface_id, status FROM oams.interfaces
                WHERE interface_id = %s AND org_unit_id = %s AND status <> 'archived'""",
             (interface_id, org_unit_id)).fetchone()
         if prior is None:
@@ -1109,7 +1109,7 @@ def department_submit_review(request: Request, org_unit_id: UUID, interface_id: 
             return RedirectResponse(url=base + "?error=" + urllib.parse.quote("这个页面已经启用，无需再次提交"),
                                     status_code=303)
         conn.execute(
-            """UPDATE workhub.interfaces
+            """UPDATE oams.interfaces
                   SET status = 'pending', review_stage = 'department', review_note = NULL, updated_at = now()
                WHERE interface_id = %s""", (interface_id,))
         api.audit(conn, principal["member_id"], "interface.review_requested", "interface", interface_id,
@@ -1133,14 +1133,14 @@ def department_withdraw_review(request: Request, org_unit_id: UUID, interface_id
         return RedirectResponse(url="/login?next=/departments", status_code=302)
     except _NotPermitted:
         return _denied(request, "撤回审核需要 workforce.reports 读写权限。")
-    _check_form_token(request, review_csrf, "workhub:page-form:v1")
+    _check_form_token(request, review_csrf, "oams:page-form:v1")
     base = f"/departments/{org_unit_id}/{interface_id}"
     with connection() as conn:
         unit = _resolve_department(conn, principal, org_unit_id)
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
         prior = conn.execute(
-            """SELECT interface_id, status, reviewed_at FROM workhub.interfaces
+            """SELECT interface_id, status, reviewed_at FROM oams.interfaces
                WHERE interface_id = %s AND org_unit_id = %s AND status <> 'archived' FOR UPDATE""",
             (interface_id, org_unit_id)).fetchone()
         if prior is None:
@@ -1153,7 +1153,7 @@ def department_withdraw_review(request: Request, org_unit_id: UUID, interface_id
                 url=base + "?error=" + urllib.parse.quote("审核已给出意见，不能撤回；请按意见修改后再提交"),
                 status_code=303)
         conn.execute(
-            """UPDATE workhub.interfaces SET status = 'draft', review_stage = 'department', updated_at = now()
+            """UPDATE oams.interfaces SET status = 'draft', review_stage = 'department', updated_at = now()
                WHERE interface_id = %s""", (interface_id,))
         api.audit(conn, principal["member_id"], "interface.review_withdrawn", "interface", interface_id,
                   "department withdrew the review request", {"from": "pending", "to": "draft"})
@@ -1170,11 +1170,11 @@ def _review_bundle(conn, row):
     reference = None
     if row.get("based_on"):
         reference = conn.execute(
-            "SELECT descriptor, version_no FROM workhub.interfaces WHERE interface_id = %s",
+            "SELECT descriptor, version_no FROM oams.interfaces WHERE interface_id = %s",
             (row["based_on"],)).fetchone()
     if reference is None:
         reference = conn.execute(
-            """SELECT descriptor, version_no FROM workhub.interfaces
+            """SELECT descriptor, version_no FROM oams.interfaces
                WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
             (row["org_unit_id"], row["slug"])).fetchone()
     old_descriptor = reference["descriptor"] if reference is not None else None
@@ -1198,8 +1198,8 @@ def _department_reviewers(conn) -> dict[Any, set[Any]]:
     rows = conn.execute(
         """WITH reviewer_members AS (
                SELECT DISTINCT a.member_id
-                 FROM workhub.permission_grants g
-                 JOIN workhub.position_assignments a
+                 FROM oams.permission_grants g
+                 JOIN oams.position_assignments a
                    ON (g.subject_type = 'position' AND a.position_id = g.position_id)
                    OR (g.subject_type = 'member' AND a.member_id = g.member_id)
                 WHERE g.resource = 'workforce.interfaces' AND g.action = 'review'
@@ -1210,11 +1210,11 @@ def _department_reviewers(conn) -> dict[Any, set[Any]]:
                   AND (a.ends_at IS NULL OR now() < a.ends_at))
            SELECT DISTINCT r.member_id, p.org_unit_id
              FROM reviewer_members r
-             JOIN workhub.position_assignments a
+             JOIN oams.position_assignments a
                ON a.member_id = r.member_id
               AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
               AND (a.ends_at IS NULL OR now() < a.ends_at)
-             JOIN workhub.positions p
+             JOIN oams.positions p
                ON p.position_id = a.position_id AND p.status = 'active'""").fetchall()
     by_unit: dict[Any, set[Any]] = {}
     for row in rows:
@@ -1295,7 +1295,7 @@ def _cross_department(conn, page: Any) -> bool:
     if not page["based_on"]:
         return False
     reference = conn.execute(
-        "SELECT org_unit_id FROM workhub.interfaces WHERE interface_id = %s",
+        "SELECT org_unit_id FROM oams.interfaces WHERE interface_id = %s",
         (page["based_on"],)).fetchone()
     return reference is not None and reference["org_unit_id"] != page["org_unit_id"]
 
@@ -1325,7 +1325,7 @@ def _basis_pages(conn, member_id, org_unit_id: UUID) -> list[Any]:
     mine = list(active_org_unit_ids(conn, member_id))
     return conn.execute(
         """SELECT i.interface_id, i.name, i.visibility, o.name AS org_name
-             FROM workhub.interfaces i JOIN workhub.org_units o USING (org_unit_id)
+             FROM oams.interfaces i JOIN oams.org_units o USING (org_unit_id)
             WHERE i.status = 'active' AND i.org_unit_id <> %s
               AND (i.visibility = 'public' OR i.org_unit_id = ANY(%s))
             ORDER BY o.name, i.name""", (org_unit_id, mine)).fetchall()
@@ -1342,7 +1342,7 @@ def _employee_code_of(conn, principal: dict[str, Any]) -> str | None:
     if isinstance(code, str) and code:
         return code
     row = conn.execute(
-        "SELECT employee_code FROM workhub.workforce_members WHERE member_id = %s",
+        "SELECT employee_code FROM oams.workforce_members WHERE member_id = %s",
         (principal["member_id"],)).fetchone()
     return row["employee_code"] if row else None
 
@@ -1350,7 +1350,7 @@ def _employee_code_of(conn, principal: dict[str, Any]) -> str | None:
 def _member_id_for_code(conn, employee_code: str) -> UUID | None:
     """The member behind an employee code, or None when nobody answers to it."""
     row = conn.execute(
-        """SELECT member_id FROM workhub.workforce_members
+        """SELECT member_id FROM oams.workforce_members
             WHERE employee_code = %s AND employment_status = 'active'""",
         (employee_code,)).fetchone()
     return row["member_id"] if row else None
@@ -1365,7 +1365,7 @@ def _active_employee_codes(conn) -> set[str]:
     at the same door that refuses a missing stamp.
     """
     rows = conn.execute(
-        """SELECT employee_code FROM workhub.workforce_members
+        """SELECT employee_code FROM oams.workforce_members
             WHERE employment_status = 'active' AND employee_code IS NOT NULL""").fetchall()
     return {row["employee_code"] for row in rows if row["employee_code"]}
 
@@ -1403,7 +1403,7 @@ def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
     # Approving replaces whatever was live for this slug: a department must never
     # end up with two pages claiming to be the current one.
     conn.execute(
-        """UPDATE workhub.interfaces SET status = 'archived', updated_at = now()
+        """UPDATE oams.interfaces SET status = 'archived', updated_at = now()
            WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
         (page["org_unit_id"], page["slug"]))
     # The audience the department asked for only takes effect now: a public
@@ -1415,7 +1415,7 @@ def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
     # not read as if the company had signed it, and the row, the stamp inside the
     # descriptor and the audit entry have to tell the same story.
     conn.execute(
-        """UPDATE workhub.interfaces
+        """UPDATE oams.interfaces
               SET status = 'active', review_stage = %s,
                   reviewed_by = %s, reviewed_at = now(),
                   review_note = %s, visibility = COALESCE(%s, visibility),
@@ -1456,18 +1456,18 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
                       i.descriptor, i.based_on, i.status, i.review_stage, i.updated_by,
                       o.name AS org_name, o.org_unit_id, p.title AS position_title,
                       m.display_name AS author, i.updated_at
-               FROM workhub.interfaces i
-               JOIN workhub.org_units o USING (org_unit_id)
-               LEFT JOIN workhub.positions p ON p.position_id = i.position_id
-               LEFT JOIN workhub.workforce_members m ON m.member_id = i.updated_by
+               FROM oams.interfaces i
+               JOIN oams.org_units o USING (org_unit_id)
+               LEFT JOIN oams.positions p ON p.position_id = i.position_id
+               LEFT JOIN oams.workforce_members m ON m.member_id = i.updated_by
                WHERE i.status = 'pending'
                ORDER BY (i.review_stage = 'company') DESC, i.updated_at""").fetchall()
         decided = conn.execute(
             """SELECT i.interface_id, i.name, i.status, i.review_note, i.review_code, o.name AS org_name,
                       m.display_name AS reviewer, i.reviewed_at
-               FROM workhub.interfaces i
-               JOIN workhub.org_units o USING (org_unit_id)
-               LEFT JOIN workhub.workforce_members m ON m.member_id = i.reviewed_by
+               FROM oams.interfaces i
+               JOIN oams.org_units o USING (org_unit_id)
+               LEFT JOIN oams.workforce_members m ON m.member_id = i.reviewed_by
                WHERE i.reviewed_at IS NOT NULL
                ORDER BY i.reviewed_at DESC LIMIT 10""").fetchall()
     mine = [row for row in awaiting if _review_refusal(powers, row) is None]
@@ -1485,7 +1485,7 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
     return TEMPLATES.TemplateResponse(request, "reviews.html", {
         "pending": review_cards, "others": others, "decided": decided_cards, "member": principal,
         "powers": powers, "saved": saved, "error": error, "reasons": review_rules.REJECTION_CHOICES,
-        "csrf": _form_token(request, "workhub:review-form:v1")})
+        "csrf": _form_token(request, "oams:review-form:v1")})
 
 
 @router.post("/reviews/{interface_id}/approve")
@@ -1506,13 +1506,13 @@ def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
     principal = _member(request)
     if principal is None:
         return RedirectResponse(url="/login?next=/reviews", status_code=302)
-    _check_form_token(request, csrf, "workhub:review-form:v1")
+    _check_form_token(request, csrf, "oams:review-form:v1")
     with connection() as conn:
         powers = _review_powers(conn, principal)
         page = conn.execute(
             """SELECT i.interface_id, i.org_unit_id, i.slug, i.status, i.version_no, i.descriptor,
                       i.based_on, i.review_stage, i.updated_by
-               FROM workhub.interfaces i WHERE i.interface_id = %s FOR UPDATE""",
+               FROM oams.interfaces i WHERE i.interface_id = %s FOR UPDATE""",
             (interface_id,)).fetchone()
         if page is None:
             return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("找不到这个页面"), status_code=303)
@@ -1533,7 +1533,7 @@ def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
                 return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(failed), status_code=303)
             return RedirectResponse(url="/reviews?saved=approved", status_code=303)
         conn.execute(
-            """UPDATE workhub.interfaces SET review_stage = 'company', updated_at = now()
+            """UPDATE oams.interfaces SET review_stage = 'company', updated_at = now()
                WHERE interface_id = %s""", (interface_id,))
         api.audit(conn, principal["member_id"], "interface.review_stage_passed", "interface", interface_id,
                   note.strip() or "department passed the page to the company stage",
@@ -1549,7 +1549,7 @@ def review_reject(request: Request, interface_id: UUID, csrf: str = Form(...),
     principal = _member(request)
     if principal is None:
         return RedirectResponse(url="/login?next=/reviews", status_code=302)
-    _check_form_token(request, csrf, "workhub:review-form:v1")
+    _check_form_token(request, csrf, "oams:review-form:v1")
     if not note.strip():
         return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("退回必须写明原因"), status_code=303)
     # A code is optional for scripts and older forms but never guessed: an empty
@@ -1563,7 +1563,7 @@ def review_reject(request: Request, interface_id: UUID, csrf: str = Form(...),
         powers = _review_powers(conn, principal)
         page = conn.execute(
             """SELECT interface_id, org_unit_id, status, review_stage, updated_by
-               FROM workhub.interfaces WHERE interface_id = %s FOR UPDATE""",
+               FROM oams.interfaces WHERE interface_id = %s FOR UPDATE""",
             (interface_id,)).fetchone()
         if page is None:
             return RedirectResponse(url="/reviews?error=" + urllib.parse.quote("找不到这个页面"), status_code=303)
@@ -1573,7 +1573,7 @@ def review_reject(request: Request, interface_id: UUID, csrf: str = Form(...),
         # A returned page starts over at the first level: whatever the company said
         # about it, the department's own lead reviews the fix first.
         conn.execute(
-            """UPDATE workhub.interfaces
+            """UPDATE oams.interfaces
                   SET status = 'draft', review_stage = 'department',
                       reviewed_by = %s, reviewed_at = now(),
                       review_note = %s, review_code = %s, updated_at = now()
@@ -1600,11 +1600,11 @@ def interfaces(request: Request, saved: str | None = None, error: str | None = N
         rows = conn.execute(
             """SELECT i.interface_id, i.slug, i.name, i.visibility, i.version_no,
                       o.name AS org_name, p.title AS position_title,
-                      (SELECT count(*) FROM workhub.interface_entries e
+                      (SELECT count(*) FROM oams.interface_entries e
                         WHERE e.interface_id = i.interface_id AND e.status_entry = 'active') AS entry_count
-               FROM workhub.interfaces i
-               JOIN workhub.org_units o USING (org_unit_id)
-               LEFT JOIN workhub.positions p ON p.position_id = i.position_id
+               FROM oams.interfaces i
+               JOIN oams.org_units o USING (org_unit_id)
+               LEFT JOIN oams.positions p ON p.position_id = i.position_id
                WHERE i.status = 'active' AND (%s OR i.org_unit_id = ANY(%s))
                ORDER BY o.name, i.name""", (company_scope, scoped)).fetchall()
     return TEMPLATES.TemplateResponse(request, "interfaces.html", {
@@ -1644,16 +1644,16 @@ def interface_board(request: Request, stale_days: int = Query(default=7, ge=1, l
                       e.title, e.status, e.blocked_reason, e.needs_decision, e.progress_value,
                       e.note, e.evidence, e.reported_at, m.display_name AS reporter,
                       e.extra
-               FROM workhub.interfaces i
-               JOIN workhub.org_units o USING (org_unit_id)
-               LEFT JOIN workhub.positions p ON p.position_id = i.position_id
+               FROM oams.interfaces i
+               JOIN oams.org_units o USING (org_unit_id)
+               LEFT JOIN oams.positions p ON p.position_id = i.position_id
                LEFT JOIN LATERAL (
-                   SELECT * FROM workhub.interface_entries
+                   SELECT * FROM oams.interface_entries
                     WHERE interface_id = i.interface_id AND status_entry = 'active'
                       AND entry_mode = 'live'{entry_filter}
                     ORDER BY reported_at DESC, entry_id DESC LIMIT 1
                ) e ON true
-               LEFT JOIN workhub.workforce_members m ON m.member_id = e.reported_by
+               LEFT JOIN oams.workforce_members m ON m.member_id = e.reported_by
                WHERE {where}
                ORDER BY o.name, i.name""", params).fetchall()
     return TEMPLATES.TemplateResponse(request, "interface_board.html", {
@@ -1674,15 +1674,15 @@ def interface_fill(request: Request, interface_id: UUID, saved: str | None = Non
         company_scope = has_company_scope(conn, principal["member_id"])
         scoped = list(active_org_unit_ids(conn, principal["member_id"]))
         row = conn.execute(
-            """SELECT i.*, o.name AS org_name FROM workhub.interfaces i
-               JOIN workhub.org_units o USING (org_unit_id)
+            """SELECT i.*, o.name AS org_name FROM oams.interfaces i
+               JOIN oams.org_units o USING (org_unit_id)
                WHERE i.interface_id = %s AND i.status = 'active'
                  AND (%s OR i.org_unit_id = ANY(%s))""", (interface_id, company_scope, scoped)).fetchone()
         if row is None:
             return _denied(request, "找不到这个部门界面，或你不在该部门范围内。")
         mode = _entry_mode_for(row["status"])
         latest = conn.execute(
-            """SELECT * FROM workhub.interface_entries
+            """SELECT * FROM oams.interface_entries
                WHERE interface_id = %s AND status_entry = 'active' AND entry_mode = %s
                ORDER BY reported_at DESC, entry_id DESC LIMIT 1""", (interface_id, mode)).fetchone()
     return _interface_fill_page(request, row, latest=latest, saved=saved, error=error)
@@ -1708,7 +1708,7 @@ def _interface_fill_page(request: Request, row: dict[str, Any], *, latest: dict[
     return TEMPLATES.TemplateResponse(request, "interface_fill.html", {
         "interface": row, "rendered": rendered, "latest": latest,
         "member": _member(request), "saved": saved, "error": error,
-        "csrf": _form_token(request, "workhub:interface-form:v1")}, status_code=status_code)
+        "csrf": _form_token(request, "oams:interface-form:v1")}, status_code=status_code)
 
 
 @router.post("/interfaces/{interface_id}")
@@ -1720,13 +1720,13 @@ async def interface_submit(request: Request, interface_id: UUID, csrf: str = For
         return RedirectResponse(url="/login?next=/interfaces", status_code=302)
     except _NotPermitted:
         return _denied(request, "填写部门界面需要 workforce.reports/read 与 submit 权限。")
-    _check_form_token(request, csrf, "workhub:interface-form:v1")
+    _check_form_token(request, csrf, "oams:interface-form:v1")
     with connection() as conn:
         company_scope = has_company_scope(conn, principal["member_id"])
         scoped = list(active_org_unit_ids(conn, principal["member_id"]))
         row = conn.execute(
-            """SELECT i.*, o.name AS org_name FROM workhub.interfaces i
-               JOIN workhub.org_units o USING (org_unit_id)
+            """SELECT i.*, o.name AS org_name FROM oams.interfaces i
+               JOIN oams.org_units o USING (org_unit_id)
                WHERE i.interface_id = %s AND i.status = 'active'
                  AND (%s OR i.org_unit_id = ANY(%s))""", (interface_id, company_scope, scoped)).fetchone()
         if row is None:
@@ -1741,7 +1741,7 @@ async def interface_submit(request: Request, interface_id: UUID, csrf: str = For
             # thrown away everything the person typed before we told them.
             mode = _entry_mode_for(row["status"])
             latest = conn.execute(
-                """SELECT * FROM workhub.interface_entries
+                """SELECT * FROM oams.interface_entries
                    WHERE interface_id = %s AND status_entry = 'active' AND entry_mode = %s
                    ORDER BY reported_at DESC, entry_id DESC LIMIT 1""", (interface_id, mode)).fetchone()
             return _interface_fill_page(request, row, latest=latest, error=problem,
@@ -1754,7 +1754,7 @@ async def interface_submit(request: Request, interface_id: UUID, csrf: str = For
         keys = ", ".join(columns)
         placeholders = ", ".join(["%s"] * len(columns))
         entry = conn.execute(
-            "INSERT INTO workhub.interface_entries (interface_id, " + keys + ") VALUES (%s, " + placeholders + ")"
+            "INSERT INTO oams.interface_entries (interface_id, " + keys + ") VALUES (%s, " + placeholders + ")"
             + " RETURNING entry_id, title, status, progress_value, evidence, reported_at",
             (interface_id, *columns.values())).fetchone()
         api.audit(conn, principal["member_id"], "interface_entry.created", "interface_entry",
@@ -1774,22 +1774,22 @@ def setup_interfaces(request: Request, saved: str | None = None, error: str | No
         company_scope = has_company_scope(conn, principal["member_id"])
         scoped = list(active_org_unit_ids(conn, principal["member_id"]))
         org_units = conn.execute(
-            """SELECT org_unit_id, org_code, name FROM workhub.org_units WHERE status = 'active'
+            """SELECT org_unit_id, org_code, name FROM oams.org_units WHERE status = 'active'
                  AND (%s OR org_unit_id = ANY(%s)) ORDER BY org_code""", (company_scope, scoped)).fetchall()
         positions = conn.execute(
             """SELECT p.position_id, p.position_code, p.title, o.name AS org_name
-               FROM workhub.positions p JOIN workhub.org_units o USING (org_unit_id)
+               FROM oams.positions p JOIN oams.org_units o USING (org_unit_id)
                WHERE p.status = 'active' AND (%s OR p.org_unit_id = ANY(%s))
                ORDER BY o.org_code, p.position_code""", (company_scope, scoped)).fetchall()
         existing = conn.execute(
             """SELECT i.interface_id, i.slug, i.name, i.status, i.visibility, i.version_no, o.name AS org_name
-               FROM workhub.interfaces i JOIN workhub.org_units o USING (org_unit_id)
+               FROM oams.interfaces i JOIN oams.org_units o USING (org_unit_id)
                WHERE (%s OR i.org_unit_id = ANY(%s)) ORDER BY o.name, i.name""",
             (company_scope, scoped)).fetchall()
     return TEMPLATES.TemplateResponse(request, "setup_interfaces.html", {
         "org_units": org_units, "positions": positions, "existing": existing,
         "member": _member(request), "saved": saved, "error": error,
-        "csrf": _form_token(request, "workhub:interface-setup-form:v1")})
+        "csrf": _form_token(request, "oams:interface-setup-form:v1")})
 
 @router.post("/setup/interfaces")
 def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id: UUID = Form(...),
@@ -1801,7 +1801,7 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
         return RedirectResponse(url="/login?next=/setup/interfaces", status_code=302)
     except _NotPermitted:
         return _denied(request, "建立部门界面需要 workforce.work_items/manage 权限。")
-    _check_form_token(request, csrf, "workhub:interface-setup-form:v1")
+    _check_form_token(request, csrf, "oams:interface-setup-form:v1")
     try:
         descriptor = json.loads(descriptor_text)
     except ValueError:
@@ -1811,9 +1811,9 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
     with connection() as conn:
         # The connection uses dict_row, so these come back keyed, not positional.
         codes = {row["org_code"] for row in conn.execute(
-            "SELECT org_code FROM workhub.org_units WHERE status = 'active'").fetchall()}
+            "SELECT org_code FROM oams.org_units WHERE status = 'active'").fetchall()}
         positions_known = {row["position_code"] for row in conn.execute(
-            "SELECT position_code FROM workhub.positions WHERE status = 'active'").fetchall()}
+            "SELECT position_code FROM oams.positions WHERE status = 'active'").fetchall()}
         problems = validate_descriptor(descriptor, known_org_unit_codes=codes,
                                        known_position_codes=positions_known,
                                        # This is the one door that reaches a live
@@ -1829,13 +1829,13 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
         require_org_unit_access(conn, principal["member_id"], org_unit_id)
         position = UUID(position_id) if position_id.strip() else None
         next_version = conn.execute(
-            """SELECT COALESCE(max(version_no), 0) + 1 AS next_version FROM workhub.interfaces
+            """SELECT COALESCE(max(version_no), 0) + 1 AS next_version FROM oams.interfaces
                WHERE org_unit_id = %s AND slug = %s""",
             (org_unit_id, slug.strip())).fetchone()["next_version"]
         # Redrawing a screen must not leave two of them claiming to be current:
         # the previous live version is archived in the same transaction.
         conn.execute(
-            """UPDATE workhub.interfaces SET status = 'archived', updated_at = now()
+            """UPDATE oams.interfaces SET status = 'archived', updated_at = now()
                WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
             (org_unit_id, slug.strip()))
         # This door skips the review page, so the signature travels in the file --
@@ -1848,7 +1848,7 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
         signer_id = (_member_id_for_code(conn, signer_code)
                      if isinstance(signer_code, str) and signer_code else None)
         row = conn.execute(
-            """INSERT INTO workhub.interfaces
+            """INSERT INTO oams.interfaces
                    (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                     position_id, version_no, created_by, updated_by,
                     reviewed_by, reviewed_at)
@@ -1875,8 +1875,8 @@ def progress_center(request: Request, stale_days: int = Query(default=7, ge=1, l
     with connection() as conn:
         level = admin_level(conn, member_id)
         everyone = conn.execute(
-            """SELECT DISTINCT o.org_unit_id, o.name FROM workhub.org_units o
-               JOIN workhub.work_items w USING (org_unit_id)
+            """SELECT DISTINCT o.org_unit_id, o.name FROM oams.org_units o
+               JOIN oams.work_items w USING (org_unit_id)
                WHERE o.status = 'active' ORDER BY o.name""").fetchall()
         # The company totals are the whole company for everybody; what changes by
         # role is the department detail underneath them. Building one board per
@@ -1909,9 +1909,9 @@ def department_reports(request: Request, org: UUID | None = None, saved: str | N
     with connection() as conn:
         assignments = conn.execute(
             """SELECT DISTINCT p.position_id, p.title, p.org_unit_id, o.name AS org_name
-               FROM workhub.position_assignments a
-               JOIN workhub.positions p USING (position_id)
-               JOIN workhub.org_units o ON o.org_unit_id = p.org_unit_id
+               FROM oams.position_assignments a
+               JOIN oams.positions p USING (position_id)
+               JOIN oams.org_units o ON o.org_unit_id = p.org_unit_id
                WHERE a.member_id = %s AND a.status IN ('active', 'scheduled')
                  AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)
                  AND p.status = 'active' ORDER BY o.name, p.title""",
@@ -1921,11 +1921,11 @@ def department_reports(request: Request, org: UUID | None = None, saved: str | N
             """SELECT w.work_item_id, w.org_unit_id, w.position_id, w.title, w.status,
                       o.name AS org_name, p.title AS position_title, r.progress_value,
                       r.note, r.evidence, r.submitted_via, r.reported_at
-               FROM workhub.work_items w JOIN workhub.positions p USING (position_id)
-               JOIN workhub.org_units o ON o.org_unit_id = w.org_unit_id
+               FROM oams.work_items w JOIN oams.positions p USING (position_id)
+               JOIN oams.org_units o ON o.org_unit_id = w.org_unit_id
                LEFT JOIN LATERAL (
                    SELECT progress_value, note, evidence, submitted_via, reported_at
-                   FROM workhub.work_item_reports WHERE work_item_id = w.work_item_id
+                   FROM oams.work_item_reports WHERE work_item_id = w.work_item_id
                      AND status = 'active' ORDER BY reported_at DESC, report_id DESC LIMIT 1
                ) r ON true
                WHERE w.status IN ('planned', 'in_progress', 'blocked')
@@ -1959,12 +1959,12 @@ def submit_department_report(request: Request, work_item_id: UUID,
         raise HTTPException(status_code=403, detail="invalid report form token")
     with connection() as conn:
         item = conn.execute(
-            """SELECT w.position_id, w.org_unit_id FROM workhub.work_items w
+            """SELECT w.position_id, w.org_unit_id FROM oams.work_items w
                WHERE w.work_item_id = %s""", (work_item_id,)).fetchone()
         if not item:
             raise HTTPException(status_code=404, detail="work item not found")
         owns_position = conn.execute(
-            """SELECT 1 FROM workhub.position_assignments WHERE member_id = %s
+            """SELECT 1 FROM oams.position_assignments WHERE member_id = %s
                  AND position_id = %s AND status IN ('active', 'scheduled')
                  AND starts_at <= now() AND (ends_at IS NULL OR now() < ends_at)""",
             (principal["member_id"], item["position_id"])).fetchone()
@@ -1999,11 +1999,11 @@ def board(request: Request, org: UUID | None = None, stale_days: int = Query(def
     with connection() as conn:
         if has_company_scope(conn, request.state.member["member_id"]):
             org_units = conn.execute(
-                """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+                """SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units
                    WHERE status = 'active' ORDER BY unit_type DESC, org_code""").fetchall()
         else:
             org_units = conn.execute(
-                """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+                """SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units
                    WHERE status = 'active' AND org_unit_id = ANY(%s)
                    ORDER BY unit_type DESC, org_code""",
                 (list(active_org_unit_ids(conn, request.state.member["member_id"])),)).fetchall()
@@ -2049,11 +2049,11 @@ def board_body(request: Request, org: UUID, stale_days: int = Query(default=7, g
         data = api.build_board(conn, org, stale_days, layer, stage)
         if has_company_scope(conn, request.state.member["member_id"]):
             org_units = conn.execute(
-                """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+                """SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units
                    WHERE status = 'active' ORDER BY unit_type DESC, org_code""").fetchall()
         else:
             org_units = conn.execute(
-                """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+                """SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units
                    WHERE status = 'active' AND org_unit_id = ANY(%s)
                    ORDER BY unit_type DESC, org_code""",
                 (list(active_org_unit_ids(conn, request.state.member["member_id"])),)).fetchall()
@@ -2125,23 +2125,23 @@ def setup(request: Request, saved: str | None = None, error: str | None = None,
         return _denied(request, "试用设置需要组织、成员、岗位、任职和授权管理权限。")
     with connection() as conn:
         org_units = conn.execute(
-            """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+            """SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units
                WHERE status = 'active' ORDER BY unit_type DESC, org_code""").fetchall()
         positions = conn.execute(
             """SELECT p.position_id, p.position_code, p.title, o.name AS org_name
-               FROM workhub.positions p JOIN workhub.org_units o USING (org_unit_id)
+               FROM oams.positions p JOIN oams.org_units o USING (org_unit_id)
                WHERE p.status = 'active' ORDER BY o.org_code, p.position_code""").fetchall()
         members = conn.execute(
             """SELECT member_id, employee_code, display_name, employment_status
-               FROM workhub.workforce_members ORDER BY display_name""").fetchall()
+               FROM oams.workforce_members ORDER BY display_name""").fetchall()
     return TEMPLATES.TemplateResponse(request, "setup.html", {
         "org_units": org_units, "positions": positions, "members": members,
         "saved": saved, "error": error, "created_member_id": member_id,
         "login_token": login, "login_expires": expires, "member": _member(request),
-        "csrf_org": _form_token(request, "workhub:org-form:v1"),
-        "csrf_position": _form_token(request, "workhub:position-form:v1"),
-        "csrf_member": _form_token(request, "workhub:member-form:v1"),
-        "csrf_pilot": _form_token(request, "workhub:pilot-form:v1"),
+        "csrf_org": _form_token(request, "oams:org-form:v1"),
+        "csrf_position": _form_token(request, "oams:position-form:v1"),
+        "csrf_member": _form_token(request, "oams:member-form:v1"),
+        "csrf_pilot": _form_token(request, "oams:pilot-form:v1"),
     })
 
 
@@ -2155,7 +2155,7 @@ def setup_create_org_unit(request: Request, csrf: str = Form(...), org_code: str
         return RedirectResponse(url="/login?next=/setup", status_code=302)
     except _NotPermitted:
         return _denied(request, "新建部门需要 workforce.org_units/manage 权限。")
-    _check_form_token(request, csrf, "workhub:org-form:v1")
+    _check_form_token(request, csrf, "oams:org-form:v1")
     try:
         payload = OrgUnitCreate(org_code=org_code.strip(), name=name.strip(),
                                 parent_org_unit_id=UUID(parent_org_unit_id) if parent_org_unit_id.strip() else None,
@@ -2181,7 +2181,7 @@ def setup_create_position(request: Request, csrf: str = Form(...), position_code
         return RedirectResponse(url="/login?next=/setup", status_code=302)
     except _NotPermitted:
         return _denied(request, "新建岗位需要 workforce.positions/manage 权限。")
-    _check_form_token(request, csrf, "workhub:position-form:v1")
+    _check_form_token(request, csrf, "oams:position-form:v1")
     _require_org_access(principal, org_unit_id)
     try:
         payload = PositionCreate(position_code=position_code.strip(), title=title.strip(), org_unit_id=org_unit_id)
@@ -2208,7 +2208,7 @@ def setup_pilot_member(request: Request, csrf: str = Form(...), display_name: st
         return RedirectResponse(url="/login?next=/setup", status_code=302)
     except _NotPermitted:
         return _denied(request, "建立试用成员需要成员、任职和授权管理权限。")
-    _check_form_token(request, csrf, "workhub:pilot-form:v1")
+    _check_form_token(request, csrf, "oams:pilot-form:v1")
     now = datetime.now(timezone.utc).isoformat()
     try:
         member_payload = MemberCreate(employee_code=employee_code.strip() or None, display_name=display_name.strip())
@@ -2252,22 +2252,22 @@ def admin_work_items(request: Request, created: str | None = None, error: str | 
         scope_params = [] if company_scope else [scoped_orgs]
         items = conn.execute(
             f"""SELECT {api.WORK_ITEM_SELECT}
-                  FROM workhub.work_items w
-                  JOIN workhub.positions p USING (position_id)
-                  JOIN workhub.org_units o ON o.org_unit_id = w.org_unit_id
+                  FROM oams.work_items w
+                  JOIN oams.positions p USING (position_id)
+                  JOIN oams.org_units o ON o.org_unit_id = w.org_unit_id
                   {scope_sql}
                  ORDER BY CASE w.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1
                                         WHEN 'planned' THEN 2 ELSE 3 END, w.updated_at DESC""", scope_params).fetchall()
         positions = conn.execute(
             """SELECT p.position_id, p.position_code, p.title, o.org_code
-               FROM workhub.positions p JOIN workhub.org_units o USING (org_unit_id)
+               FROM oams.positions p JOIN oams.org_units o USING (org_unit_id)
                WHERE p.status = 'active' AND (%s OR p.org_unit_id = ANY(%s))
                ORDER BY o.org_code, p.position_code""", (company_scope, scoped_orgs)).fetchall()
     return TEMPLATES.TemplateResponse(request, "admin_work_items.html", {
         "items": items, "positions": positions, "can_manage": can_manage,
         "created": created, "error": error, "member": _member(request),
         "status_labels": STATUS_LABELS, "kind_labels": KIND_LABELS,
-        "csrf": _form_token(request, "workhub:work-item-form:v1"),
+        "csrf": _form_token(request, "oams:work-item-form:v1"),
     })
 
 
@@ -2286,7 +2286,7 @@ def admin_create_work_item(request: Request,
         return RedirectResponse(url="/login?next=/admin/work-items", status_code=302)
     except _NotPermitted:
         return _denied(request, "新建工作项需要 workforce.work_items/manage 权限。")
-    _check_form_token(request, csrf, "workhub:work-item-form:v1")
+    _check_form_token(request, csrf, "oams:work-item-form:v1")
     try:
         payload = WorkItemCreate(
             position_id=position_id, title=title.strip(), kind=kind, status=status,
@@ -2297,7 +2297,7 @@ def admin_create_work_item(request: Request,
         return RedirectResponse(url="/admin/work-items?error=blocked", status_code=303)
     try:
         with connection() as conn:
-            position = conn.execute("SELECT org_unit_id FROM workhub.positions WHERE position_id = %s",
+            position = conn.execute("SELECT org_unit_id FROM oams.positions WHERE position_id = %s",
                                     (payload.position_id,)).fetchone()
             if position:
                 require_org_unit_access(conn, principal["member_id"], position["org_unit_id"])
@@ -2319,18 +2319,18 @@ def admin_positions(request: Request, created: str | None = None, error: str | N
         can_manage = has_permission(conn, principal["member_id"], "workforce.positions", "manage")
         rows = conn.execute(
             """SELECT p.position_id, p.position_code, p.title, p.status, o.org_code, o.name AS org_name,
-                      (SELECT count(*) FROM workhub.position_assignments a
+                      (SELECT count(*) FROM oams.position_assignments a
                         WHERE a.position_id = p.position_id AND a.status IN ('active', 'scheduled')
                           AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)) AS holder_count
-               FROM workhub.positions p JOIN workhub.org_units o USING (org_unit_id)
+               FROM oams.positions p JOIN oams.org_units o USING (org_unit_id)
                ORDER BY o.org_code, p.position_code""").fetchall()
         org_units = conn.execute(
-            "SELECT org_unit_id, org_code, name FROM workhub.org_units WHERE status = 'active' ORDER BY org_code"
+            "SELECT org_unit_id, org_code, name FROM oams.org_units WHERE status = 'active' ORDER BY org_code"
         ).fetchall()
     return TEMPLATES.TemplateResponse(request, "admin_positions.html", {
         "positions": rows, "org_units": org_units, "can_manage": can_manage,
         "created": created, "error": error, "member": _member(request),
-        "csrf": _form_token(request, "workhub:position-form:v1")})
+        "csrf": _form_token(request, "oams:position-form:v1")})
 
 
 @router.post("/admin/positions")
@@ -2345,7 +2345,7 @@ def admin_create_position(request: Request,
         return RedirectResponse(url="/login?next=/admin/positions", status_code=302)
     except _NotPermitted:
         return _denied(request, "新建岗位需要 workforce.positions/manage 权限。")
-    _check_form_token(request, csrf, "workhub:position-form:v1")
+    _check_form_token(request, csrf, "oams:position-form:v1")
     payload = PositionCreate(position_code=position_code.strip(), title=title.strip(), org_unit_id=org_unit_id)
     try:
         with connection() as conn:
@@ -2369,8 +2369,8 @@ def admin_audit(request: Request, limit: int = Query(default=100, ge=1, le=500))
         events = conn.execute(
             """SELECT e.event_id, e.actor_member_id, m.display_name AS actor_name, e.event_type,
                       e.subject_type, e.subject_id, e.reason, e.occurred_at
-               FROM workhub.workforce_audit_events e
-               LEFT JOIN workhub.workforce_members m ON m.member_id = e.actor_member_id
+               FROM oams.workforce_audit_events e
+               LEFT JOIN oams.workforce_members m ON m.member_id = e.actor_member_id
                ORDER BY e.occurred_at DESC LIMIT %s""", (limit,)).fetchall()
     return TEMPLATES.TemplateResponse(request, "admin_audit.html",
                                       {"events": events, "limit": limit, "member": _member(request)})
@@ -2396,34 +2396,34 @@ def settings_home(request: Request):
             """SELECT u.org_unit_id, u.name, u.org_code, u.unit_type,
                       parent.name AS parent_name,
                       (SELECT count(*)
-                         FROM workhub.position_assignments a
-                         JOIN workhub.positions held ON held.position_id = a.position_id
+                         FROM oams.position_assignments a
+                         JOIN oams.positions held ON held.position_id = a.position_id
                         WHERE held.org_unit_id = u.org_unit_id
                           AND a.status = 'active') AS member_count,
                       (SELECT count(*)
-                         FROM workhub.interfaces i
+                         FROM oams.interfaces i
                         WHERE i.org_unit_id = u.org_unit_id
                           AND i.status = 'active') AS page_count
-               FROM workhub.org_units u
-               LEFT JOIN workhub.org_units parent ON parent.org_unit_id = u.parent_org_unit_id
+               FROM oams.org_units u
+               LEFT JOIN oams.org_units parent ON parent.org_unit_id = u.parent_org_unit_id
                WHERE u.status = 'active'
                ORDER BY u.name""").fetchall()
         positions = conn.execute(
             """SELECT p.position_id, p.title, p.position_code, o.name AS org_name
-               FROM workhub.positions p
-               JOIN workhub.org_units o ON o.org_unit_id = p.org_unit_id
+               FROM oams.positions p
+               JOIN oams.org_units o ON o.org_unit_id = p.org_unit_id
                WHERE p.status = 'active'
                ORDER BY o.name, p.title""").fetchall()
         grants = conn.execute(
             """SELECT position_id, resource, action
-               FROM workhub.permission_grants
+               FROM oams.permission_grants
                WHERE subject_type = 'position' AND revoked_at IS NULL
                ORDER BY resource, action""").fetchall()
         events = conn.execute(
             """SELECT e.event_type, e.subject_type, e.reason, e.occurred_at,
                       m.display_name AS actor_name
-               FROM workhub.workforce_audit_events e
-               LEFT JOIN workhub.workforce_members m ON m.member_id = e.actor_member_id
+               FROM oams.workforce_audit_events e
+               LEFT JOIN oams.workforce_members m ON m.member_id = e.actor_member_id
                ORDER BY e.occurred_at DESC, e.event_id DESC
                LIMIT 5""").fetchall()
 
@@ -2464,7 +2464,7 @@ COLLAB_PLACEHOLDER = {
 }
 
 #: 发言表单的 CSRF 用途串。跟其它表单一样，令牌绑在会话 cookie 上。
-COLLAB_FORM_PURPOSE = "workhub:collab-form:v1"
+COLLAB_FORM_PURPOSE = "oams:collab-form:v1"
 
 
 def _collab_columns(conn, member_id: Any, q: str | None = None) -> dict[str, Any]:

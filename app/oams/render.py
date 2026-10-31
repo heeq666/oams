@@ -24,13 +24,13 @@ Three viewpoints share the same templates; 'mode' is the only difference:
 The registry lives in oams.modules (unit A). While that file is still being
 written, the import below falls back to a mirror of the frozen contract table
 (docs/architecture/p0-interface-contract.md section 1) so this unit can be built
-and tested on its own; the moment workhub/modules.py lands, the real registry
+and tested on its own; the moment oams/modules.py lands, the real registry
 wins and the mirror is dead weight.
 
 Note on validation: this module validates only what it needs in order to paint
 (a name, a module tree it can recognise, a legal nesting depth). Semantic
 validation (field mapping, metrics, capabilities) belongs to
-workhub/descriptor.py; duplicating it here would make the renderer a second,
+oams/descriptor.py; duplicating it here would make the renderer a second,
 silently diverging rulebook.
 """
 from __future__ import annotations
@@ -264,9 +264,9 @@ class _RenderState:
     uid_seq: int = 0  # monotonic counter for unique in-page DOM ids
 
 
-_STATE: contextvars.ContextVar = contextvars.ContextVar("workhub_render_state", default=None)
-_DEPTH: contextvars.ContextVar = contextvars.ContextVar("workhub_render_depth", default=0)
-_STACK: contextvars.ContextVar = contextvars.ContextVar("workhub_render_stack", default=())
+_STATE: contextvars.ContextVar = contextvars.ContextVar("oams_render_state", default=None)
+_DEPTH: contextvars.ContextVar = contextvars.ContextVar("oams_render_depth", default=0)
+_STACK: contextvars.ContextVar = contextvars.ContextVar("oams_render_stack", default=())
 
 
 def _state() -> _RenderState:

@@ -13,7 +13,7 @@ Two things matter, and both are enforced by this module:
 Three implementations of the same DataCenter protocol exist:
 
 DataCenterHTTP
-    The real thing. The endpoint comes from WORKHUB_DATACENTER_URL; when that is
+    The real thing. The endpoint comes from OAMS_DATACENTER_URL; when that is
     unset the constructor raises DataCenterNotConfigured with an actionable
     message instead of failing later with a confusing network error.
 FixtureDataCenter
@@ -33,8 +33,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
 
-DATACENTER_URL_ENV = "WORKHUB_DATACENTER_URL"
-DATACENTER_FIXTURE_ENV = "WORKHUB_DATACENTER_FIXTURE"
+DATACENTER_URL_ENV = "OAMS_DATACENTER_URL"
+DATACENTER_FIXTURE_ENV = "OAMS_DATACENTER_FIXTURE"
 
 #: Contract §7: list_products rows must carry these keys.
 PRODUCT_FIELDS = (
@@ -446,7 +446,7 @@ class DataCenterHTTP:
             {
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "workhub", "version": "0.1"},
+                "clientInfo": {"name": "oams", "version": "0.1"},
             },
         )
         self._post({"jsonrpc": "2.0", "method": "notifications/initialized"})

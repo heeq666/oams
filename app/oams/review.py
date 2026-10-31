@@ -55,7 +55,7 @@ AREA_BASIC = "基本信息"
 
 #: The seven reasons a page comes back.  These are the same codes the validator
 #: prefixes onto its problems, so a department reading the rejection and a
-#: department running "workhub plugin check" see one vocabulary, not two.
+#: department running "oams plugin check" see one vocabulary, not two.
 REJECTION_CODES = (
     ("FIELD_UNMAPPED", "字段没接到标准字段上",
      "有字段既没映射到标准字段，也没标成 display_only，公司汇总时不知道它是什么。"),

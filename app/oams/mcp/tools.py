@@ -137,12 +137,12 @@ class ContractError(Exception):
 
 def _import_contract(name: str, *symbols: str) -> Any:
     try:
-        module = __import__(f"workhub.{name}", fromlist=["*"])
+        module = __import__(f"oams.{name}", fromlist=["*"])
     except ImportError as error:  # pragma: no cover - depends on sibling branches
-        raise ContractError(f"workhub.{name} is not importable yet: {error}") from error
+        raise ContractError(f"oams.{name} is not importable yet: {error}") from error
     for symbol in symbols:
         if not hasattr(module, symbol):
-            raise ContractError(f"workhub.{name}.{symbol} is not available yet")
+            raise ContractError(f"oams.{name}.{symbol} is not available yet")
     return module
 
 
