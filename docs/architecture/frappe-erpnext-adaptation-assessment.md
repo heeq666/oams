@@ -15,7 +15,7 @@
 
 ### 补充运行记录（同日第二批，独立容器组）
 
-以独立 Compose 项目 `workhub-poc`（frontend 绑定本机 `18080`）重跑 MariaDB 路径，版本同为 frappe/erpnext/hrms 16.50.0、HRMS `version-16` 提交 `7c037698`。结果与上文一致，形成交叉验证：`create-site` 退出 0，`install-app hrms` 干净完成，未修改上游代码。
+以独立 Compose 项目 `workhub-poc`（当时的项目名，frontend 绑定本机 `18080`；该组容器与卷已按本节末尾的命令清理删除）重跑 MariaDB 路径，版本同为 frappe/erpnext/hrms 16.50.0、HRMS `version-16` 提交 `7c037698`。结果与上文一致，形成交叉验证：`create-site` 退出 0，`install-app hrms` 干净完成，未修改上游代码。
 
 补充的实测点：
 

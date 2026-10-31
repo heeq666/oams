@@ -49,7 +49,8 @@ pytest                                # 带 db 标记的用例在没数据库时
 - `app/oams/` —— 应用本体：`modules.py`（模块注册表）、`templates/`、`static/`、`mcp/`（12 个 MCP 工具）、`cli.py`
 - `docs/architecture/` —— 契约与方案（`plugin-host-concept.md` 是现行主线，`v1-ui-redesign-plan.md` 已作废）；`collab-room-implementation-plan.md` 是协作室的实现清单（设计稿见 Figma 与 `docs/design/design-system-v1.md` §7）
 - `docs/design/` —— 界面规范与令牌
-- `db/migrations/` —— SQL 迁移；`examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill
+- `app/oams/migrations/` —— 建表 SQL，`oams db init` 按文件名顺序执行；`db/deploy/` —— 建库、建 schema、授权（DBA 手工执行）
+- `examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill（两个目录名 `workhub-*` 按批次保留、本轮不改；引用时写真实目录名，别指向不存在的路径）
 
 ## 约定
 
@@ -63,6 +64,8 @@ pytest                                # 带 db 标记的用例在没数据库时
 - 只有确实会撞别人文件时才排队等，等的时候说清撞的是哪个文件。
 - 提交前照旧跑 `pytest`；文档改动也要提交，不许只在工作区躺着。
 - **`docs/reports/` 是当时的决策记录，不回头改**：发现旧报告与现状不符，改现行文档（`docs/architecture/`、`docs/design/`）并在里面说明，别重写历史报告。
+- **改名/敏感词类验收一律排除报告目录**：写成 `git grep -n '旧名' -- README.md AGENTS.md docs/ skills/ examples/ ':!docs/reports/'`。报告保留当时的写法；为了让 grep 归零去改报告，等于为了让指标好看而篡改记录。
+- **文档口径先行，行为以仓库实际为准**：本轮文档统一写目标名（包 `app/oams/`、环境变量 `OAMS_*`、schema `oams`、命令 `oams db init`），代码可能还没跟上——这是排期，不是笔误。两边不一致时报给负责人，别自行把文档改回旧名；同一事实只在文档里写一次目标口径，别到处贴「暂未实现」的补丁。
 - **文档里举例不写真名**：主机名、账户名、客户名一律用 `x[.]local`、`<原品牌>` 这类占位写法——`scripts/opensource-check.sh` 会把字面量判红，同一坑已在报告、发布手册、标志说明页踩过三次。
 
 ### 共享库写操作：先锁行 id
