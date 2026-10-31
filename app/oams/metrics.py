@@ -154,13 +154,15 @@ def department_metric_prefix(org_unit_code: str) -> str:
 
 
 def validate_metric_binding(binding: dict, org_unit_code: str,
-                            fields: dict[str, dict]) -> list[str]:
+                            fields: dict[str, dict],
+                            own_metrics: set[str] | None = None) -> list[str]:
     """Return every problem with one `metrics[]` binding, not just the first.
 
     emit    -- declares a department metric over this interface's own fields.
                Key must start with `dept.<org_unit_code>.`, `from_field` must be a
                declared field key, and it must not shadow a platform metric.
-    display -- only references a platform metric, and carries no aggregation.
+    display -- references a platform metric, **或本页自己 emit 的指标**
+               （`own_metrics`，见契约 §2）；本身不带聚合字段。
     """
     problems: list[str] = []
     if not isinstance(binding, dict):
@@ -182,10 +184,26 @@ def validate_metric_binding(binding: dict, org_unit_code: str,
     known_metrics = get_metric(key)
 
     if mode == "display":
-        if known_metrics is None or known_metrics.origin != "platform":
+        own = own_metrics if own_metrics is not None else set()
+        prefix = department_metric_prefix(org_unit_code)
+        if known_metrics is not None and known_metrics.origin == "platform":
+            pass  # 目录里的平台指标：将来平台回来还能这么写
+        elif key in own:
+            pass  # 本页自己 emit、本页自己展示（自产自用）
+        elif key.startswith(DEPARTMENT_METRIC_PREFIX + ".") and not key.startswith(prefix):
             problems.append(
-                f"[{METRIC_UNDEFINED}] {where}.metric_key: display may only reference a platform "
-                f"metric; {key!r} is not in the catalogue"
+                f"[{METRIC_UNDEFINED}] {where}.metric_key: {key!r} 属于别的部门的指标命名空间；"
+                f"一页只能展示本部门（{prefix}）自己 emit 的指标"
+            )
+        elif key.startswith(prefix):
+            problems.append(
+                f"[{METRIC_UNDEFINED}] {where}.metric_key: 本页把 {key!r} 当展示指标用，"
+                f"但它没有在 metrics[] 里以 mode=emit 声明（自产才能自用）"
+            )
+        else:
+            problems.append(
+                f"[{METRIC_UNDEFINED}] {where}.metric_key: {key!r} 既不是目录里的平台指标，"
+                f"也不是本页 emit 的指标（后者须以 {prefix!r} 开头并在本页声明）"
             )
         for forbidden in ("agg", "from_field", "where_status"):
             if forbidden in binding:
