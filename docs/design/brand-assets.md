@@ -58,9 +58,11 @@ cp /path/to/你的-logo-login.png app/workhub/static/brand/logo-login.png
 原来那套公司品牌素材（`.ai` 源文件 + `out/`、`ref/`、`svg/` 生成物，合计约 1.9 MB）**已经移出仓库**，落在本地备份目录：
 
 ```
-.local-backups/brand-source-20261101/2026example-co新logo.ai   # 1,412,944 B
-.local-backups/brand-source-20261101/{out,ref,svg}/          # 导出物与脚本产物
+.local-backups/brand-source-20261101/2026<原品牌>新logo.ai   # 1,412,944 B（文件名里的品牌名此处略去）
+.local-backups/brand-source-20261101/{out,ref,svg}/              # 导出物与脚本产物
 ```
+
+> 目录里那个 `.ai` 的真实文件名带着客户品牌名，这里用 `<原品牌>` 占位——本页是要开源的，不能为了说明「东西存在哪」把它写回来。
 
 - **它不在仓库里**：`.gitignore:29` 覆盖了整个 `.local-backups/`，`git ls-files` 查不到它，开源仓的历史里也没有它。
 - **它也不该进仓库**：品牌源属于公司资产，进公开仓就等于把商标连同源文件一起发出去；将来真要把它放回版本管理，应该放公司自己的私有仓，不是这个开源仓。
