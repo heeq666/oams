@@ -317,6 +317,29 @@ def render_preview(descriptor: dict, sample: bool = True) -> str
 - **审核要看证据，走 `preview`**：真实控件 `disabled`、证据区照常渲染。两个视角分工清楚，不冲突。
 - 代码：`render.py:18-20` 的 docstring 写明 "skipped entirely"、`:732` 的 `state.mode == "readonly" and _hidden_in_readonly(...)`、`:755` `_hidden_in_readonly`；测试 `tests/test_render_modules.py:327` 断言只读下不出现 `data-type="evidence_gallery"`。
 
+### 6.3 一条条目算不算数：部门一面、公司一面（2026-11-02 定）
+
+**同一个条目，在部门页算数、在公司汇总不算数。** 这不是 bug，是两套谓词各答各的问题，
+代码里写成两条常量，任何读数字的地方必须挑对那一条：
+
+| 常量 | 谓词 | 谁用 |
+|---|---|---|
+| `api.DEPARTMENT_ROLLUP_PREDICATE` | `status_entry = 'active' AND entry_mode = 'live'` | 部门页自己的指标（`dept.*` 的 emit）、页面上的展示模块 |
+| `api.ROLLUP_PREDICATE` | 上面两条 **且** `work_item_id IS NOT NULL` | 公司汇总（公司层看数、进公司数字的那条路） |
+
+- **部门一面为什么要松**：部门看自己那一面问的是「我们记了什么」。一条报销、一件快递代收，
+  本来就不必先挂在某个工作项上；拿公司口径去卡部门页，结果就是演示页永远 0，部门做了的事
+  一个数都显示不出来。
+- **公司一面为什么不能松**：公司数字回答的是「有计划的活干到哪了」。没有工作项的填报如果都
+  能进公司数字，谁都能把公司数字抬起来，这条谨慎必须留着。
+- **状态标签也要各说各话**：部门面用 `api.DEPARTMENT_ROLLUP_STATE_SQL`（`counted` 已计入本部门
+  且进公司 / `counted_unlinked` 已计入本部门但未进公司 / `draft` / `retracted`），公司面用
+  `api.ROLLUP_STATE_SQL`（`rolled` / `unlinked` / `draft` / `retracted`）。**`unlinked` 只表示
+  「进不了公司数字」，绝不表示「不算数」**——把部门里已经算进去的条目标成「未关联，不算」，
+  是这一节要防的那类误读。
+- 代码：`api.py:967-980`（两条谓词与两套 CASE）、`_binding_entries(..., company=False)`、
+  `page_entries()` 每行额外带 `feeds_company` 布尔值（这一条挂不挂工作项、能不能进公司数字）。
+
 ---
 
 ## 7. 指标计算契约
@@ -344,6 +367,21 @@ def format_metric(metric_key: str, value: float | int | None, unit: str = "") ->
 展示类模块（`metric_card`/`metric_grid`/`rank_list`/`flow_strip`）能引哪些键、为什么
 不许引别部门的，见 §2「display 能引什么」——一句话：**platform 指标，或本页自己 emit 的
 指标；跨部门的一律拒**。
+
+### 7.1 没有自己列的字段（金额）怎么参与汇总（2026-11-02 定）
+
+条目表只有 `title`/`status`/`blocked_reason`/`progress_value`/`note`/`evidence` 六列，
+其余标准字段（`amount`、`completed_at`、`planned_at`、`style_code`…）落在 `interface_entries.
+extra`（jsonb）里。两条规矩：
+
+- **填了不能丢**：`web._read_entry_form` 遇到「有标准含义、表里没有列」的字段，一律写进
+  `extra`。以前这些字段被静默丢弃——页面上显示填过、库里查不到，部门指标自然永远算不出来。
+- **金额可以求和**：`api.EXTRA_AGGREGATE_COLUMNS = ("amount",)` 允许 `amount` 作为 `from_field`
+  参与 `sum`/`avg`/`count_distinct`；`api._column_value()` 先读列、再读 `extra`，两条读取路径
+  （`aggregate_entries` 的多页合并、`build_department_aggregates` 的逐页取值）都走它。非数字
+  值被跳过，不会被当成 0。
+- 这一条只放开**金额**，没有放开所有 extra 字段：任意自定义字段进汇总会把「部门私有字段」
+  变成公司可算的数字，那是另一个决定，要做先改本节。
 
 ---
 

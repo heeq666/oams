@@ -944,9 +944,51 @@ ROLLUP_STATE_SQL = ("CASE WHEN e.status_entry <> 'active' THEN 'retracted' "
 
 ROLLUP_STATES = ("rolled", "unlinked", "draft", "retracted")
 
+# ---------------------------------------------------------------------------
+# 部门自己那一面（页面面）
+#
+# The predicate above answers a *company* question -- what may lift a company
+# number -- so it is deliberately strict: a ledger row that was never planned as
+# a work item must not inflate the company total.
+#
+# A department reading its own page asks a different question: "what did we
+# record?" A reimbursed expense does not need a project before it can be counted,
+# so the department side drops the work_item_id half and keeps only the two
+# conditions that say the entry is real (not draft, not retracted).
+#
+# The contract (ch.6) states the consequence as a rule rather than leaving it to
+# be discovered: one entry counts on its department page and does not count in the
+# company rollup until it is linked. `unlinked` means "not in the company number",
+# never "not real". Anything that reads a department number uses
+# DEPARTMENT_ROLLUP_*; anything that reads a company number keeps ROLLUP_*.
+# ---------------------------------------------------------------------------
+
+#: The entries that feed a department page's own numbers.
+DEPARTMENT_ROLLUP_PREDICATE = "e.status_entry = 'active' AND e.entry_mode = 'live'"
+
+#: Why an entry is (not) in a department number. `counted_unlinked` says the entry
+#: counts here but would not reach the company until somebody links a work item.
+DEPARTMENT_ROLLUP_STATE_SQL = ("CASE WHEN e.status_entry <> 'active' THEN 'retracted' "
+                               "WHEN e.entry_mode <> 'live' THEN 'draft' "
+                               "WHEN e.work_item_id IS NULL THEN 'counted_unlinked' "
+                               "ELSE 'counted' END")
+
+DEPARTMENT_ROLLUP_STATES = ("counted", "counted_unlinked", "draft", "retracted")
+
+#: Whether one entry would reach the company rollup, as a plain boolean column.
+FEEDS_COMPANY_SQL = ("(e.status_entry = 'active' AND e.entry_mode = 'live' "
+                     "AND e.work_item_id IS NOT NULL)")
+
 #: The standard columns a declared field may map onto. Aggregation reads these;
 #: a display_only field has no column and stays private to the department.
 ROLLUP_COLUMNS = ("title", "status", "blocked_reason", "progress_value", "note", "evidence")
+
+#: Standard fields that have no column of their own and land in `extra` instead.
+#: They still aggregate: a department's money (amount) is a real number its page
+#: must be able to show, and "the field exists but cannot be summed" is not an
+#: answer a department head accepts. Reading is TEXT-safe — _aggregate_value
+#: casts, and a non-numeric value is skipped rather than turned into 0.
+EXTRA_AGGREGATE_COLUMNS = ("amount",)
 
 ENTRY_COLUMNS_SQL = ("e.entry_id, e.interface_id, e.work_item_id, e.title, e.status, "
                      "e.blocked_reason, e.progress_value, e.note, e.evidence, e.extra, "
@@ -983,7 +1025,9 @@ def _field_map_to(descriptor, field_key):
     for field in descriptor.get("fields") or []:
         if isinstance(field, dict) and field.get("key") == field_key:
             map_to = field.get("map_to")
-            return map_to if map_to in ROLLUP_COLUMNS else None
+            if map_to in ROLLUP_COLUMNS or map_to in EXTRA_AGGREGATE_COLUMNS:
+                return map_to
+            return None
     return None
 
 
@@ -1035,10 +1079,20 @@ def _active_interfaces(conn, org_unit_id, interface_id=None):
     return conn.execute(sql, params).fetchall()
 
 
-def _binding_entries(conn, interface_id, binding):
-    """Entries of one page that satisfy the rollup predicate (and where_status)."""
-    sql = ("SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
-           "FROM oams.interface_entries e WHERE e.interface_id = %s AND " + ROLLUP_PREDICATE)
+def _binding_entries(conn, interface_id, binding, company=False):
+    """Entries of one page that satisfy the predicate (and where_status).
+
+    ``company=False`` is the department side: an entry counts as soon as it is
+    real, so a ledger row does not need a work item first. ``company=True`` is the
+    strict side used when a number is meant to speak for the whole company.
+    """
+    if company:
+        predicate, state_sql = ROLLUP_PREDICATE, ROLLUP_STATE_SQL
+    else:
+        predicate, state_sql = DEPARTMENT_ROLLUP_PREDICATE, DEPARTMENT_ROLLUP_STATE_SQL
+    sql = ("SELECT " + ENTRY_COLUMNS_SQL + ", " + state_sql + " AS rollup_state, "
+           + FEEDS_COMPANY_SQL + " AS feeds_company "
+           "FROM oams.interface_entries e WHERE e.interface_id = %s AND " + predicate)
     params = [interface_id]
     where_status = binding.get("where_status")
     if where_status:
@@ -1049,23 +1103,41 @@ def _binding_entries(conn, interface_id, binding):
 
 
 def page_entries(conn, interface_id):
-    """Every stored entry of a page with its rollup state, newest first.
+    """Every stored entry of a page with its department state, newest first.
 
-    This is what the fill page lists: including the entries that are NOT in the
-    rollup, because the point of the badge is that people can see, per entry,
-    why a number is smaller than the work they did.
+    This is what the fill page lists: including the entries that are NOT counted,
+    because the point of the badge is that people can see, per entry, why a number
+    is smaller than the work they did. ``feeds_company`` travels alongside so the
+    same row can say "counts here, not in the company number yet".
     """
     return conn.execute(
-        "SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
+        "SELECT " + ENTRY_COLUMNS_SQL + ", " + DEPARTMENT_ROLLUP_STATE_SQL + " AS rollup_state, "
+        + FEEDS_COMPANY_SQL + " AS feeds_company "
         "FROM oams.interface_entries e WHERE e.interface_id = %s "
         "ORDER BY e.reported_at DESC, e.entry_id DESC", (interface_id,)).fetchall()
+
+
+def _column_value(row, column):
+    """One row's value for an aggregation column.
+
+    Columns are the standard ones; a few standard fields (money: `amount`) have
+    no column of their own and live in `extra`, so both places are looked up.
+    """
+    value = row.get(column)
+    if value is not None:
+        return value
+    extra = row.get("extra")
+    if isinstance(extra, dict):
+        return extra.get(column)
+    return None
 
 
 def _aggregate_value(agg, column, rows):
     """count / sum / avg / count_distinct over one column; NULLs are skipped."""
     if agg == "count":
         return len(rows)
-    values = [row.get(column) for row in rows if row.get(column) is not None]
+    values = [value for value in (_column_value(row, column) for row in rows)
+              if value is not None]
     if agg == "count_distinct":
         return len({str(value) for value in values})
     numbers = []
@@ -1109,7 +1181,7 @@ def _combine_pages(agg, page_rows):
     values = []
     for column, rows in page_rows:
         for row in rows:
-            value = row.get(column)
+            value = _column_value(row, column)
             if value is not None:
                 values.append(value)
     if agg == "count_distinct":
@@ -1144,12 +1216,12 @@ def _format_metric(metric_key, value, unit=""):
 
 
 def entry_state_counts(conn, interface_id):
-    """How many entries of this page sit in each rollup state."""
+    """How many entries of this page sit in each department state."""
     rows = conn.execute(
-        "SELECT state, count(*) AS n FROM (SELECT " + ROLLUP_STATE_SQL + " AS state "
+        "SELECT state, count(*) AS n FROM (SELECT " + DEPARTMENT_ROLLUP_STATE_SQL + " AS state "
         "FROM oams.interface_entries e WHERE e.interface_id = %s) t GROUP BY state",
         (interface_id,)).fetchall()
-    counts = {state: 0 for state in ROLLUP_STATES}
+    counts = {state: 0 for state in DEPARTMENT_ROLLUP_STATES}
     for row in rows:
         state = row.get("state")
         if state in counts:
@@ -1196,7 +1268,7 @@ def rollup_entries(conn, interface_id, metric_key=None):
                     "reason": "这个页面没有声明指标 " + str(metric_key) + "，因此没有条目参与它",
                     "value": None, "entries": [], "entry_count": 0})
                 return base
-            rows = _binding_entries(conn, page["interface_id"], binding)
+            rows = _binding_entries(conn, page["interface_id"], binding, company=True)
         else:
             rows = conn.execute(
                 "SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
@@ -1228,7 +1300,9 @@ def aggregate_entries(conn, org_unit_id, metric_key, interface_id=None):
 
     Contract 2 binding: {metric_key, mode=emit, agg, from_field, where_status}.
     The binding is read from the page's own descriptor (never re-invented here),
-    and the number is computed only over entries passing ROLLUP_PREDICATE.
+    and the number is computed over entries passing DEPARTMENT_ROLLUP_PREDICATE:
+    this is a department's number, so an unlinked ledger row still counts (see the
+    comment on that constant). Company totals keep the stricter ROLLUP_PREDICATE.
     """
     try:
         # Every page that declares this metric contributes; the schema allows two
@@ -1302,18 +1376,18 @@ def build_department_aggregates(conn, org_unit_id, descriptor=None, interface_id
     """
     empty = {"available": False, "reason": None, "org_unit_id": str(org_unit_id),
              "interfaces": [], "metrics": [], "aggregates": {},
-             "counts": {state: 0 for state in ROLLUP_STATES}, "total": 0}
+             "counts": {state: 0 for state in DEPARTMENT_ROLLUP_STATES}, "total": 0}
     try:
         pages = list(_active_interfaces(conn, org_unit_id, interface_id))
         if descriptor is not None and not pages:
             pages = [{"interface_id": interface_id, "name": None, "descriptor": descriptor}]
         panel = dict(empty)
         panel.update({"available": True, "interfaces": [], "metrics": [], "aggregates": {}})
-        totals = {state: 0 for state in ROLLUP_STATES}
+        totals = {state: 0 for state in DEPARTMENT_ROLLUP_STATES}
         for page in pages:
             page_interface_id = page.get("interface_id")
             counts = (entry_state_counts(conn, page_interface_id) if page_interface_id is not None
-                      else {state: 0 for state in ROLLUP_STATES})
+                      else {state: 0 for state in DEPARTMENT_ROLLUP_STATES})
             for state, count in counts.items():
                 totals[state] = totals.get(state, 0) + count
             page_metrics = []
