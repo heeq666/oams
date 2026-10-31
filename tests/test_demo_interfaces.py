@@ -24,7 +24,8 @@ from workhub.render import RenderError, render_interface, render_read_only  # no
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEMO_PAGES = [
-    REPO_ROOT / "data" / "live-design-interface.json",
+    # 只有这一份是本机数据（`data/live-design-*.json` 在 .gitignore 里），用仓内快照。
+    REPO_ROOT / "tests" / "fixtures" / "live-design-interface.json",
     REPO_ROOT / "data" / "design-style-development.json",
     REPO_ROOT / "data" / "design-weekly-test.json",
 ]

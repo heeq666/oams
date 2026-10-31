@@ -1,0 +1,30 @@
+{
+  "schema_version": "0.2",
+  "interface_id": "design-sampling",
+  "name": "设计部打样进度",
+  "org_unit_code": "DESIGN",
+  "position_codes": ["DESIGN_LEAD"],
+  "capabilities": ["entries:write", "entries:read:dept"],
+  "modules": [
+    { "key": "item", "type": "progress_row", "order": 1, "source_fields": ["title", "sample_done", "note_text"] },
+    { "key": "state", "type": "status_chart", "order": 2, "source_fields": ["state_word"], "params": { "dimension": "status" } },
+    { "key": "blocked", "type": "blocker_list", "order": 3, "source_fields": ["blocked_reason"] },
+    { "key": "evidence", "type": "evidence_gallery", "order": 5, "source_fields": ["evidence_ref"] },
+    { "key": "private", "type": "note_block", "order": 7, "aggregatable": false, "params": { "text": "面料备注（仅本部门可见）：待补货" } }
+  ],
+  "fields": [
+    { "key": "title", "label": "款号 / 事项", "type": "text", "required": true, "map_to": "title", "aggregatable": true, "example": "AW24-001 秋冬针织外套" },
+    { "key": "state_word", "label": "打样状态", "type": "enum", "required": true, "map_to": "status", "aggregatable": true, "example": "打样中", "options": ["待打样", "打样中", "等面料", "已完成"] },
+    { "key": "blocked_reason", "label": "卡在哪、在等谁", "type": "text", "required": false, "map_to": "blocked_reason", "aggregatable": true, "example": "等面料到仓，供应商承诺 10-20" },
+    { "key": "sample_done", "label": "完成进度", "type": "number", "required": false, "map_to": "progress_value", "aggregatable": true, "example": "40" },
+    { "key": "evidence_ref", "label": "依据（单号或文件名）", "type": "text", "required": true, "map_to": "evidence", "aggregatable": true, "example": "样衣确认单 SY-2410" },
+    { "key": "note_text", "label": "这次做了什么", "type": "text", "required": true, "map_to": "note", "aggregatable": true, "example": "已完成初版打样，待确认面料" },
+    { "key": "fabric_note", "label": "面料备注", "type": "text", "required": false, "map_to": "display_only", "aggregatable": false, "example": "待补货" }
+  ],
+  "status_map": { "待打样": "planned", "打样中": "in_progress", "等面料": "blocked", "已完成": "done" },
+  "metrics": [
+    { "metric_key": "dept.DESIGN.finished", "mode": "emit", "agg": "count", "from_field": "state_word", "where_status": "done" }
+  ],
+  "rules": { "evidence_required": true, "blocked_reason_required_when_blocked": true, "progress_range": [0, 100] },
+  "meta": { "author_position_code": "DESIGN_LEAD", "version": 2, "visibility": "department", "review": { "status": "draft" } }
+}

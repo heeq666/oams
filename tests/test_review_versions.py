@@ -23,7 +23,9 @@ import pytest
 from workhub import review as review_rules
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BASE_DESCRIPTOR = json.loads((REPO_ROOT / "data" / "live-design-interface.json").read_text(encoding="utf-8"))
+# 描述符快照放 tests/fixtures/：`data/live-design-*.json` 是 .gitignore 里的本机数据，
+# 外面的人 clone 下来没有这个文件，模块级去读会让整个测试套件收集失败。
+BASE_DESCRIPTOR = json.loads((REPO_ROOT / "tests" / "fixtures" / "live-design-interface.json").read_text(encoding="utf-8"))
 
 
 def _descriptor(**overrides):

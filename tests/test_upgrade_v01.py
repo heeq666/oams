@@ -27,7 +27,8 @@ from workhub.upgrade import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "descriptor_v01_design_sampling.json"
-LIVE_DATA = REPO_ROOT / "data" / "live-design-interface.json"
+# `data/live-design-*.json` 被 .gitignore，clone 下来没有：改用仓内的快照。
+LIVE_DATA = REPO_ROOT / "tests" / "fixtures" / "live-design-interface.json"
 
 
 def load_fixture() -> dict:
