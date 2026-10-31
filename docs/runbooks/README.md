@@ -12,10 +12,6 @@
 | [department-page-lifecycle.md](department-page-lifecycle.md) | 部门页面的生命周期：建、改、提交、初审、公司终审、撤回 | 20 分钟 |
 | [department-interface-guide.md](department-interface-guide.md) | 写部门界面 descriptor（模块怎么挑、字段怎么映射） | 40 分钟 |
 | [account-center-integration.md](account-center-integration.md) | 接公司账号中心：身份、岗位、权限怎么对上 | 30 分钟 |
-| [product-hub-data-access.md](product-hub-data-access.md) | 取商品数据中心的数（只读 MCP），地址与凭据怎么配 | 20 分钟 |
-| [product-hub-mcp-setup-journey.md](product-hub-mcp-setup-journey.md) | 从头接一次商品中心 MCP，含踩坑记录 | 40 分钟 |
-| [windows-server-deployment.md](windows-server-deployment.md) | 部署到 Windows 工作站 | 60 分钟 |
-| [opensource-publish.md](opensource-publish.md) | 把私有仓变成开源仓：冻结、重写历史、验、推私有仓、换主仓 | 90 分钟 |
 
 ## 三条通用提醒
 
