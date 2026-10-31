@@ -785,7 +785,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   {# 触发器是按钮，面板挂在 body 末尾：data-wh-popover 由 static/wh-popover.js 接。 #}
   <button type="button" class="dev-badge" id="dev-switch" data-wh-popover
           aria-controls="dev-menu" aria-expanded="false" aria-haspopup="menu"
-          title="设计开发阶段：已跳过登录。点开可以换成别的身份看同一页；去掉 WORKHUB_DEV_AUTOLOGIN 并重启即恢复登录。">
+          title="设计开发阶段：已跳过登录。点开可以换成别的身份看同一页；去掉 OAMS_DEV_AUTOLOGIN 并重启即恢复登录。">
     <span class="dot" aria-hidden="true"></span>开发模式 · 免登录{% if member %} · {{ member.display_name }}{% endif %}<span class="caret" aria-hidden="true">▼</span>
   </button>
 </div>
