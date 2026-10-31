@@ -3,6 +3,7 @@ name = "company-workhub"
 version = "0.1.0"
 description = "Company workforce identity, positions, assignments, and permissions service"
 requires-python = ">=3.11"
+license = { text = "AGPL-3.0-only" }
 dependencies = [
   "fastapi>=0.115,<1",
   "uvicorn[standard]>=0.34,<1",
