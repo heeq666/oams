@@ -52,31 +52,16 @@ modules:
         params:
           title: 汇总
         children:
-          - key: summary
-            type: metric_grid
+          - key: spread
+            type: status_chart
             order: 1
             module_version: "^1.0"
+            source_fields: [stage]
             params:
-              columns: 2
-              metric_keys:
-                - funnel.sample_done
-                - funnel.sample_open
-          - key: flow
-            type: flow_strip
-            order: 2
-            module_version: "^1.0"
-            params:
-              metrics:
-                - funnel.sample_done
-                - funnel.sample_open
-                - funnel.ordered
-              labels:
-                - 已出样
-                - 打样未完成
-                - 已下单
+              dimension: status
           - key: private
             type: note_block
-            order: 3
+            order: 2
             module_version: "^1.0"
             params:
               text: 本区仅本部门可见
@@ -90,7 +75,7 @@ fields:
     aggregatable: true
     example: NBCK26151
   - key: style_ref
-    label: 商品中心款号
+    label: 上游款号
     type: text
     required: false
     map_to: style_code
@@ -154,12 +139,18 @@ status_map:
   已完成: done
 
 metrics:
-  - metric_key: funnel.sample_done
-    mode: display
-  - metric_key: funnel.sample_open
-    mode: display
-  - metric_key: funnel.ordered
-    mode: display
+  # 平台指标（funnel.*，原来是 display 引用）随商品数据中心一起下线，这里改成
+  # 本部门自己的 emit 指标：同一批数据，口径由本页字段说了算。
+  - metric_key: dept.PRODUCTION.done_count
+    mode: emit
+    agg: count
+    from_field: stage
+    where_status: done
+  - metric_key: dept.PRODUCTION.wip_count
+    mode: emit
+    agg: count
+    from_field: stage
+    where_status: in_progress
   - metric_key: dept.PRODUCTION.blocked_count
     mode: emit
     agg: count

@@ -174,19 +174,7 @@ def known_module_keys() -> tuple[str, ...]:
 # ---------------------------------------------------------------------------
 
 # key -> (name, unit); contract section 2, platform metrics only.
-_METRIC_MIRROR: dict[str, tuple[str, str]] = {
-    "funnel.designed": ("有设计图", "款"),
-    "funnel.sample_done": ("已出样", "款"),
-    "funnel.sample_wip": ("打样在制", "款"),
-    "funnel.sample_pending": ("打样未开始", "款"),
-    "funnel.sample_open": ("打样未完成", "款"),
-    "funnel.priced": ("核价完成", "款"),
-    "funnel.ordered": ("已下单", "款"),
-    "funnel.not_ordered": ("未下单", "款"),
-    "funnel.qty": ("下单件数", "件"),
-    "funnel.gmv": ("下单金额", "元"),
-    "funnel.roi": ("推广 ROI", "倍"),
-}
+
 
 try:  # pragma: no cover - branch depends on whether unit A has landed
     from oams.metrics import get_metric as _real_get_metric
@@ -213,8 +201,8 @@ def metric_meta(metric_key: str | None) -> dict[str, str]:
         return {"key": metric_key,
                 "name": str(getattr(spec, "name", "") or metric_key),
                 "unit": str(getattr(spec, "unit", "") or "")}
-    name, unit = _METRIC_MIRROR.get(metric_key, (metric_key, ""))
-    return {"key": metric_key, "name": name, "unit": unit}
+    # 平台指标下线后没有镜像表可查：名字就用键本身，单位交给调用方（空串合法）。
+    return {"key": metric_key, "name": metric_key, "unit": ""}
 
 
 def _number(value: Any) -> float | None:
@@ -958,14 +946,22 @@ def _sample_values(descriptor: dict) -> dict:
 
 
 def _sample_aggregates(descriptor: dict) -> dict:
-    """Fake numbers for every metric the descriptor mentions, plus a status spread."""
+    """Preview numbers for the metrics **this page declares**, plus a status spread.
+
+    以前这里伪造的是平台漏斗（已出样 128、下单金额 1745.87 万、ROI 5.1751）和
+    抖音/天猫/拼多多的排名——那是商品数据中心那套的演示数据，随它一起下线。
+    现在只给本页自己 emit 的部门指标一个中性数（件/单/元都说得通的 128），
+    再加四态分布与活动流；页面没声明指标，就不出现指标格。
+    """
     aggregates: dict[str, Any] = {}
-    for key in ("funnel.designed", "funnel.sample_done", "funnel.sample_wip",
-                "funnel.sample_pending", "funnel.sample_open", "funnel.priced",
-                "funnel.ordered", "funnel.not_ordered", "funnel.qty",
-                "funnel.gmv", "funnel.roi"):
-        aggregates[key] = {"funnel.qty": 63289, "funnel.gmv": 17458734.0,
-                           "funnel.roi": 5.1751}.get(key, 128)
+    bindings = descriptor.get("metrics") or []
+    if isinstance(bindings, list):
+        for binding in bindings:
+            if not isinstance(binding, dict) or binding.get("mode") != "emit":
+                continue
+            key = binding.get("metric_key")
+            if isinstance(key, str) and key.strip():
+                aggregates[key.strip()] = 128
     for index, (word, standard) in enumerate((descriptor.get("status_map") or {}).items()):
         aggregates[f"status.{word}"] = 12 + index * 7
         aggregates[f"status.{standard}"] = 12 + index * 7
@@ -974,7 +970,4 @@ def _sample_aggregates(descriptor: dict) -> dict:
         {"when": "昨天 16:40", "what": "把 3 款从待打样推进到打样中", "who": "设计部"},
         {"when": "昨天 10:05", "what": "登记了一条阻塞：等面料检测报告", "who": "设计部"},
     ]
-    for key in ("funnel.gmv", "funnel.qty", "funnel.sample_done"):
-        for label, value in (("抖音", 820), ("天猫", 640), ("拼多多", 310)):
-            aggregates[f"rank.{key}.{label}"] = value
     return aggregates
