@@ -318,9 +318,15 @@ SAMPLE_WIP_WORDS: tuple[str, ...]
 def derive_style_sample_state(color_states: list[str]) -> str   # "done" | "wip" | "pending"
 def compute_funnel(dc: DataCenter, *, wave: str | None) -> dict[str, float | int]
     # 返回 11 个 platform metric_key 的值，键名必须与 §2 完全一致
-def format_metric(metric_key: str, value: float | int | None) -> str
-    # 63,289 件 / ¥1,745.87 万 / 5.17 / 59 款
+def format_metric(metric_key: str, value: float | int | None, unit: str = "") -> str
+    # 63,289 件 / ¥1,745.87 万 / 5.18 / 59 款（unit 为空时只写数字）
 ```
+
+**单位从哪来**：`unit` 一律由调用方传入，不在格式化函数里查表——`render.aggregate` 取
+`MetricSpec.unit`（经 `metric_meta`），`api._format_metric` 取 binding 上若有的 `unit`；
+部门指标的 binding **目前没有 `unit` 字段**（emit 只声明 `metric_key`/`agg`/`from_field`/
+`where_status`），所以部门数字现在按「无单位」渲染，空串是合法的显示结果。要给部门指标
+配单位，先在本契约里给 binding 加 `unit`，再实现，不要在渲染层硬编码。
 
 `list_products` 返回的每条**必须**含：`style_code, wave, category, has_design_image, is_ordered, quantity, paid_amount`。
 `list_development` 返回 `{"styles": {style_code: {"sample_states": [颜色级状态...], "pricing_status": "核价完成"|...}}}`。
