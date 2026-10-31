@@ -28,17 +28,17 @@ def issue_session(member_id: str, provider: str = "administrator-issued") -> tup
     expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.session_ttl_hours)
     with connection() as conn:
         member = conn.execute(
-            "SELECT employment_status, token_version FROM workhub.workforce_members WHERE member_id = %s FOR UPDATE",
+            "SELECT employment_status, token_version FROM oams.workforce_members WHERE member_id = %s FOR UPDATE",
             (member_id,),
         ).fetchone()
         if not member or member["employment_status"] != "active":
             raise ValueError("member must exist and be active")
         conn.execute(
-            "INSERT INTO workhub.workforce_sessions (member_id, token_digest, token_version, expires_at, auth_provider) VALUES (%s, %s, %s, %s, %s)",
+            "INSERT INTO oams.workforce_sessions (member_id, token_digest, token_version, expires_at, auth_provider) VALUES (%s, %s, %s, %s, %s)",
             (member_id, digest_token(token), member["token_version"], expires_at, provider),
         )
         conn.execute(
-            "INSERT INTO workhub.workforce_audit_events (event_type, subject_type, subject_id, reason, metadata) VALUES ('session.issued', 'member', %s, %s, %s)",
+            "INSERT INTO oams.workforce_audit_events (event_type, subject_type, subject_id, reason, metadata) VALUES ('session.issued', 'member', %s, %s, %s)",
             (member_id, "session issued through trusted operator CLI", Jsonb({"provider": provider})),
         )
     return token, expires_at
@@ -54,15 +54,15 @@ def principal_for_token(token: str) -> dict[str, Any] | None:
         row = conn.execute(
             """SELECT m.member_id, m.display_name, m.employment_status, m.token_version,
                       s.session_id, s.token_version AS session_token_version,
-                      (SELECT p.title FROM workhub.position_assignments a
-                         JOIN workhub.positions p USING (position_id)
+                      (SELECT p.title FROM oams.position_assignments a
+                         JOIN oams.positions p USING (position_id)
                         WHERE a.member_id = m.member_id
                           AND a.status IN ('active', 'scheduled')
                           AND a.starts_at <= now()
                           AND (a.ends_at IS NULL OR now() < a.ends_at)
                         ORDER BY a.starts_at DESC LIMIT 1) AS position_title
-               FROM workhub.workforce_sessions s
-               JOIN workhub.workforce_members m USING (member_id)
+               FROM oams.workforce_sessions s
+               JOIN oams.workforce_members m USING (member_id)
                WHERE s.token_digest = %s AND s.revoked_at IS NULL
                  AND s.expires_at > now() AND m.employment_status = 'active'""",
             (digest_token(token),),
@@ -75,7 +75,7 @@ def principal_for_token(token: str) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 # Design-stage shortcut: no login screen
 #
-# WORKHUB_DEV_AUTOLOGIN=<employee_code> signs in a session-less request as that
+# OAMS_DEV_AUTOLOGIN=<employee_code> signs in a session-less request as that
 # member (1/true/yes/on means the bootstrap administrator). It is a *who*, never
 # a *what*: permission checks, org-unit scoping, the form tokens and the audit
 # trail are untouched, so the pages behave exactly as they will once the login
@@ -88,7 +88,7 @@ DEV_AUTOLOGIN_ADMIN_CODE = "ADMIN001"
 # The switcher in the badge writes the chosen employee_code here rather than
 # rewriting .env and restarting the server: a design review is exactly the moment
 # you need to see the same page as a manager, then as somebody with no rights.
-DEV_WORKER_COOKIE = "workhub_dev_worker"
+DEV_WORKER_COOKIE = "oams_dev_worker"
 # Three levels and only three: the company administrator, the administrator of
 # one or more departments, and everybody else. A level is read from the grants --
 # what the pages will actually let somebody do -- never from a job title, because
@@ -117,37 +117,37 @@ DEV_ROLE_STAFF = ROLE_STAFF
 
 _DEV_PRINCIPAL_SQL = """SELECT m.member_id, m.employee_code, m.display_name, m.employment_status, m.token_version,
           NULL::uuid AS session_id, m.token_version AS session_token_version,
-          (SELECT p.title FROM workhub.position_assignments a
-             JOIN workhub.positions p USING (position_id)
+          (SELECT p.title FROM oams.position_assignments a
+             JOIN oams.positions p USING (position_id)
             WHERE a.member_id = m.member_id
               AND a.status IN ('active', 'scheduled')
               AND a.starts_at <= now()
               AND (a.ends_at IS NULL OR now() < a.ends_at)
             ORDER BY a.starts_at DESC LIMIT 1) AS position_title
-   FROM workhub.workforce_members m
+   FROM oams.workforce_members m
   WHERE m.employee_code = %s AND m.employment_status = 'active'"""
 
 _DEV_IDENTITY_SQL = """SELECT m.member_id, m.employee_code, m.display_name,
-          (SELECT p.title FROM workhub.position_assignments a
-             JOIN workhub.positions p USING (position_id)
+          (SELECT p.title FROM oams.position_assignments a
+             JOIN oams.positions p USING (position_id)
             WHERE a.member_id = m.member_id
               AND a.status IN ('active', 'scheduled')
               AND a.starts_at <= now()
               AND (a.ends_at IS NULL OR now() < a.ends_at)
             ORDER BY a.starts_at DESC LIMIT 1) AS position_title,
           (SELECT coalesce(array_agg(DISTINCT g.resource || ':' || g.action), '{}')
-             FROM workhub.permission_grants g
+             FROM oams.permission_grants g
             WHERE g.revoked_at IS NULL
               AND g.effect = 'allow'
               AND g.valid_from <= now()
               AND (g.valid_until IS NULL OR now() < g.valid_until)
               AND ((g.subject_type = 'member' AND g.member_id = m.member_id)
                 OR (g.subject_type = 'position' AND EXISTS (
-                     SELECT 1 FROM workhub.position_assignments a
+                     SELECT 1 FROM oams.position_assignments a
                       WHERE a.position_id = g.position_id
                         AND a.member_id = m.member_id
                         AND a.status IN ('active', 'scheduled'))))) AS grants
-   FROM workhub.workforce_members m
+   FROM oams.workforce_members m
   WHERE m.employment_status = 'active'"""
 
 _DEV_WARNED = False
@@ -233,8 +233,8 @@ def dev_principal(request: Request | None = None) -> dict[str, Any] | None:
         return None
     if not _DEV_WARNED:
         _DEV_WARNED = True
-        print(f"[workhub] DEV AUTOLOGIN IS ON: every session-less request is signed "
-              f"in as {target}. Unset WORKHUB_DEV_AUTOLOGIN before any real deployment.",
+        print(f"[oams] DEV AUTOLOGIN IS ON: every session-less request is signed "
+              f"in as {target}. Unset OAMS_DEV_AUTOLOGIN before any real deployment.",
               file=sys.stderr, flush=True)
     return dict(row, dev_autologin=True)
 
@@ -271,13 +271,13 @@ def effective_grants(conn, member_id: Any, resource: str, action: str) -> list[d
     # department joins.
     return conn.execute(
         """SELECT g.effect, g.scope_type, g.scope_org_unit_id, g.scope_definition
-           FROM workhub.permission_grants g
+           FROM oams.permission_grants g
            WHERE g.resource = %s AND g.action = %s AND g.revoked_at IS NULL
              AND g.valid_from <= now() AND (g.valid_until IS NULL OR now() < g.valid_until)
              AND g.scope_type = 'all'
              AND ((g.subject_type = 'member' AND g.member_id = %s)
                OR (g.subject_type = 'position' AND EXISTS (
-                    SELECT 1 FROM workhub.position_assignments a
+                    SELECT 1 FROM oams.position_assignments a
                     WHERE a.position_id = g.position_id AND a.member_id = %s
                       AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
                       AND (a.ends_at IS NULL OR now() < a.ends_at))))""",
@@ -295,8 +295,8 @@ def has_permission(conn, member_id: Any, resource: str, action: str) -> bool:
 def active_org_unit_ids(conn, member_id: Any) -> set[Any]:
     """Departments reached through the member's currently effective positions."""
     rows = conn.execute(
-        """SELECT DISTINCT p.org_unit_id FROM workhub.position_assignments a
-           JOIN workhub.positions p USING (position_id)
+        """SELECT DISTINCT p.org_unit_id FROM oams.position_assignments a
+           JOIN oams.positions p USING (position_id)
            WHERE a.member_id = %s AND a.status IN ('active', 'scheduled')
              AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)
              AND p.status = 'active'""",
@@ -347,9 +347,9 @@ def require_org_unit_access(conn, member_id: Any, org_unit_id: Any) -> None:
 
 def revoke_session(conn, session_id: Any, member_id: Any) -> None:
     """Logout and operator revocation share this, so both leave the same audit trail."""
-    conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE session_id = %s", (session_id,))
+    conn.execute("UPDATE oams.workforce_sessions SET revoked_at = now() WHERE session_id = %s", (session_id,))
     conn.execute(
-        """INSERT INTO workhub.workforce_audit_events
+        """INSERT INTO oams.workforce_audit_events
            (actor_member_id, event_type, subject_type, subject_id, reason)
            VALUES (%s, 'session.revoked', 'session', %s, 'member ended the current session')""",
         (member_id, session_id),

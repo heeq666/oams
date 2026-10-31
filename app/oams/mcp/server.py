@@ -32,7 +32,7 @@ from oams.mcp.tools import (
     build_registry,
 )
 
-SERVER_NAME = "workhub-interface"
+SERVER_NAME = "oams-interface"
 SERVER_VERSION = "0.1.0"
 
 #: Instruction block a client shows to the AI before the first call.
@@ -61,7 +61,7 @@ def _import_sdk() -> tuple[Any, Any]:
 
 
 def _session_id() -> str:
-    return os.environ.get("WORKHUB_MCP_SESSION_ID") or "stdio-session"
+    return os.environ.get("OAMS_MCP_SESSION_ID") or "stdio-session"
 
 
 # --------------------------------------------------------------------------- #
@@ -142,7 +142,7 @@ def main() -> int:
     try:
         asyncio.run(serve_stdio())
     except McpSdkUnavailable as error:
-        print(f"workhub mcp: {error}", file=sys.stderr)
+        print(f"oams mcp: {error}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:  # pragma: no cover - interactive only
         return 0

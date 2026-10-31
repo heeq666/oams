@@ -627,12 +627,12 @@ def recorded_approval_gaps(descriptor: dict[str, Any], *,
 
     Empty list means every claim on this document is backed by a recorded
     signature. Callers that refuse to publish a file without one (`/setup`,
-    `workhub plugin`) print this; authoring and submitting do not ask, because
+    `oams plugin`) print this; authoring and submitting do not ask, because
     the signature is produced by the review that follows.
 
     One rule, two doors: the same function runs behind the online gates (which
     pass `known_employee_codes` and therefore also refuse a name that is not an
-    active member) and behind the offline `workhub plugin check` (which passes
+    active member) and behind the offline `oams plugin check` (which passes
     ``None`` and prints that the name could not be verified here). Splitting it
     into a "strict" copy would let the two drift, and the drift would be silent.
     """
@@ -675,7 +675,7 @@ def validate_descriptor(descriptor: dict[str, Any],
     `require_recorded_approval` is off by default and off is the honest default:
     a page being written or waiting for review is *supposed* to be missing the
     signature that this flag demands. Only the paths that publish a file without
-    a review turn it on (`/setup/interfaces`, `workhub plugin`); the page that
+    a review turn it on (`/setup/interfaces`, `oams plugin`); the page that
     does get reviewed is signed by the approval itself, not by its author.
 
     `known_employee_codes` is the employee-code list of the company's active

@@ -3,9 +3,9 @@
 The department administrator is a developer colleague, not a platform insider.
 These three commands are the whole local loop:
 
-    workhub plugin check examples/production-dept.yaml
-    workhub plugin preview examples/production-dept.yaml
-    workhub plugin upgrade old-0.1-interface.json --out upgraded.json
+    oams plugin check examples/production-dept.yaml
+    oams plugin preview examples/production-dept.yaml
+    oams plugin upgrade old-0.1-interface.json --out upgraded.json
 
 All three are offline by default: no database, no network. A descriptor is data,
 so checking one is a pure function over a file -- which is what makes it safe to
@@ -24,6 +24,7 @@ lines so a person can confirm them.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -79,7 +80,7 @@ def active_employee_codes() -> set[str]:
 
     with connection() as conn:
         rows = conn.execute(
-            """SELECT employee_code FROM workhub.workforce_members
+            """SELECT employee_code FROM oams.workforce_members
                 WHERE employment_status = 'active' AND employee_code IS NOT NULL""").fetchall()
     return {row["employee_code"] for row in rows if row["employee_code"]}
 
@@ -170,7 +171,10 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import sys
 
-    parser = argparse.ArgumentParser(prog="workhub plugin", description="离线校验与预览部门插件")
+    # 帮助里的程序名跟着入口走：oams 与兼容别名 workhub 各自报各自的名字
+    entry = Path(sys.argv[0]).name
+    prog = entry if entry in {"oams", "workhub"} else "workhub"
+    parser = argparse.ArgumentParser(prog=f"{prog} plugin", description="离线校验与预览部门插件")
     verbs = parser.add_subparsers(dest="verb", required=True)
     for name, help_text in (
         ("check", "静态校验：字段映射、状态映射、模块版本、容器深度"),

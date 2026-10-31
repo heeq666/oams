@@ -23,7 +23,7 @@ app = FastAPI(title="Company Workhub API", version="0.1.0")
 def audit(conn, actor_id: UUID, event_type: str, subject_type: str, subject_id: UUID, reason: str,
           after: dict[str, Any], before: dict[str, Any] | None = None):
     conn.execute(
-        """INSERT INTO workhub.workforce_audit_events
+        """INSERT INTO oams.workforce_audit_events
            (actor_member_id, event_type, subject_type, subject_id, reason, before_state, after_state)
            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (actor_id, event_type, subject_type, subject_id, reason,
@@ -50,7 +50,7 @@ def me(principal: dict = Depends(current_principal)):
         assignments = conn.execute(
             """SELECT a.assignment_id, a.position_id, p.position_code, p.title,
                       a.assignment_type, a.starts_at, a.ends_at
-               FROM workhub.position_assignments a JOIN workhub.positions p USING (position_id)
+               FROM oams.position_assignments a JOIN oams.positions p USING (position_id)
                WHERE a.member_id = %s AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
                  AND (a.ends_at IS NULL OR now() < a.ends_at) ORDER BY a.starts_at""",
             (principal["member_id"],),
@@ -61,14 +61,14 @@ def me(principal: dict = Depends(current_principal)):
 @app.get("/v1/org-units")
 def list_org_units(_actor: dict = Depends(require_permission("workforce.org_units", "read"))):
     with connection() as conn:
-        return conn.execute("SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status FROM workhub.org_units ORDER BY org_code").fetchall()
+        return conn.execute("SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status FROM oams.org_units ORDER BY org_code").fetchall()
 
 
 def insert_org_unit(conn, payload: OrgUnitCreate, actor_member_id: Any) -> dict[str, Any]:
     """Shared department creation for the JSON API and the setup page."""
     try:
         row = conn.execute(
-            """INSERT INTO workhub.org_units (org_code, name, parent_org_unit_id, unit_type)
+            """INSERT INTO oams.org_units (org_code, name, parent_org_unit_id, unit_type)
                VALUES (%s, %s, %s, %s)
                RETURNING org_unit_id, parent_org_unit_id, org_code, name, unit_type, status""",
             (payload.org_code, payload.name, payload.parent_org_unit_id, payload.unit_type),
@@ -89,7 +89,7 @@ def insert_assignment(conn, payload: AssignmentCreate, actor_member_id: Any) -> 
     try:
         eligibility = conn.execute(
             """SELECT m.employment_status, p.status AS position_status
-                 FROM workhub.workforce_members m CROSS JOIN workhub.positions p
+                 FROM oams.workforce_members m CROSS JOIN oams.positions p
                 WHERE m.member_id = %s AND p.position_id = %s""",
             (payload.member_id, payload.position_id),
         ).fetchone()
@@ -98,7 +98,7 @@ def insert_assignment(conn, payload: AssignmentCreate, actor_member_id: Any) -> 
         if eligibility["employment_status"] != "active" or eligibility["position_status"] != "active":
             raise HTTPException(status_code=409, detail="member and position must be active")
         row = conn.execute(
-            """INSERT INTO workhub.position_assignments
+            """INSERT INTO oams.position_assignments
                   (member_id, position_id, assignment_type, status, starts_at, ends_at, approved_by,
                    approved_at, reason, created_by)
                VALUES (%s, %s, %s, %s, %s, %s, %s, now(), %s, %s)
@@ -106,8 +106,8 @@ def insert_assignment(conn, payload: AssignmentCreate, actor_member_id: Any) -> 
             (payload.member_id, payload.position_id, payload.assignment_type, state, payload.starts_at,
              payload.ends_at, actor_member_id, payload.reason, actor_member_id),
         ).fetchone()
-        conn.execute("UPDATE workhub.workforce_members SET token_version = token_version + 1, updated_at = now() WHERE member_id = %s", (payload.member_id,))
-        conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (payload.member_id,))
+        conn.execute("UPDATE oams.workforce_members SET token_version = token_version + 1, updated_at = now() WHERE member_id = %s", (payload.member_id,))
+        conn.execute("UPDATE oams.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (payload.member_id,))
         audit(conn, actor_member_id, "assignment.created", "assignment", row["assignment_id"], payload.reason, row)
         return row
     except UniqueViolation:
@@ -124,7 +124,7 @@ def insert_grant(conn, payload: GrantCreate, actor_member_id: Any) -> dict[str, 
         raise HTTPException(status_code=422, detail="valid_until must be after valid_from")
     try:
         row = conn.execute(
-            """INSERT INTO workhub.permission_grants
+            """INSERT INTO oams.permission_grants
                   (subject_type, position_id, member_id, resource, action, scope_type, scope_org_unit_id,
                    scope_definition, effect, valid_from, valid_until, reason, approved_by, approved_at, created_by)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s)
@@ -153,7 +153,7 @@ def list_members(_actor: dict = Depends(require_permission("workforce.members", 
     with connection() as conn:
         return conn.execute(
             """SELECT member_id, employee_code, display_name, employment_status, joined_at, departed_at
-               FROM workhub.workforce_members ORDER BY display_name"""
+               FROM oams.workforce_members ORDER BY display_name"""
         ).fetchall()
 
 
@@ -161,7 +161,7 @@ def insert_member(conn, payload: MemberCreate, actor_member_id: Any) -> dict[str
     """Shared by the JSON API and the setup page: one insert, one audit, active."""
     try:
         member = conn.execute(
-            """INSERT INTO workhub.workforce_members (employee_code, display_name, joined_at, employment_status)
+            """INSERT INTO oams.workforce_members (employee_code, display_name, joined_at, employment_status)
                VALUES (%s, %s, %s, 'active')
                RETURNING member_id, employee_code, display_name, employment_status, joined_at""",
             (payload.employee_code, payload.display_name, payload.joined_at),
@@ -174,17 +174,17 @@ def insert_member(conn, payload: MemberCreate, actor_member_id: Any) -> dict[str
 
 def activate_member(conn, member_id: Any, actor_member_id: Any, reason: str) -> dict[str, Any]:
     """Restore a pending or suspended account to active and invalidate old sessions."""
-    member = conn.execute("SELECT * FROM workhub.workforce_members WHERE member_id = %s FOR UPDATE", (member_id,)).fetchone()
+    member = conn.execute("SELECT * FROM oams.workforce_members WHERE member_id = %s FOR UPDATE", (member_id,)).fetchone()
     if not member:
         raise HTTPException(status_code=404, detail="member not found")
     updated = conn.execute(
-        """UPDATE workhub.workforce_members SET employment_status = 'active', departed_at = NULL,
+        """UPDATE oams.workforce_members SET employment_status = 'active', departed_at = NULL,
                   token_version = token_version + 1, updated_at = now()
            WHERE member_id = %s
            RETURNING member_id, display_name, employment_status, departed_at, token_version""",
         (member_id,),
     ).fetchone()
-    conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))
+    conn.execute("UPDATE oams.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))
     audit(conn, actor_member_id, "member.status_changed", "member", member_id, reason, updated, member)
     return updated
 
@@ -200,7 +200,7 @@ def list_positions(_actor: dict = Depends(require_permission("workforce.position
     with connection() as conn:
         return conn.execute(
             """SELECT p.position_id, p.position_code, p.title, p.org_unit_id, o.org_code, p.status
-               FROM workhub.positions p JOIN workhub.org_units o USING (org_unit_id)
+               FROM oams.positions p JOIN oams.org_units o USING (org_unit_id)
                ORDER BY o.org_code, p.position_code"""
         ).fetchall()
 
@@ -233,9 +233,9 @@ def list_assignments(member_id: UUID | None = None, position_id: UUID | None = N
             f"""SELECT a.assignment_id, a.member_id, m.display_name, a.position_id, p.position_code,
                       p.title, a.assignment_type, a.status, a.starts_at, a.ends_at, a.reason,
                       a.approved_by, a.approved_at
-               FROM workhub.position_assignments a
-               JOIN workhub.workforce_members m USING (member_id)
-               JOIN workhub.positions p USING (position_id)
+               FROM oams.position_assignments a
+               JOIN oams.workforce_members m USING (member_id)
+               JOIN oams.positions p USING (position_id)
                {where} ORDER BY a.starts_at DESC""",
             params,
         ).fetchall()
@@ -260,7 +260,7 @@ def list_grants(subject_type: str | None = None, subject_id: UUID | None = None,
             f"""SELECT g.grant_id, g.subject_type, g.position_id, g.member_id, g.resource, g.action,
                       g.scope_type, g.scope_org_unit_id, g.scope_definition, g.effect, g.valid_from,
                       g.valid_until, g.revoked_at, g.reason, g.approved_by, g.approved_at
-               FROM workhub.permission_grants g {where} ORDER BY g.created_at DESC""",
+               FROM oams.permission_grants g {where} ORDER BY g.created_at DESC""",
             params,
         ).fetchall()
 
@@ -275,14 +275,14 @@ def create_assignment(payload: AssignmentCreate, actor: dict = Depends(require_p
 def end_assignment(assignment_id: UUID, reason: str, actor: dict = Depends(require_permission("workforce.assignments", "manage"))):
     with connection() as conn:
         prior = conn.execute(
-            "SELECT assignment_id, member_id, position_id, status, starts_at, ends_at FROM workhub.position_assignments WHERE assignment_id = %s FOR UPDATE",
+            "SELECT assignment_id, member_id, position_id, status, starts_at, ends_at FROM oams.position_assignments WHERE assignment_id = %s FOR UPDATE",
             (assignment_id,),
         ).fetchone()
         if not prior or prior["status"] not in ("active", "scheduled"):
             raise HTTPException(status_code=404, detail="active assignment not found")
         future = prior["starts_at"] >= datetime.now(timezone.utc)
         row = conn.execute(
-            """UPDATE workhub.position_assignments
+            """UPDATE oams.position_assignments
                SET status = CASE WHEN %s THEN 'cancelled' ELSE 'ended' END,
                    ends_at = CASE WHEN %s THEN ends_at ELSE LEAST(COALESCE(ends_at, now()), now()) END,
                    ended_at = CASE WHEN %s THEN NULL ELSE now() END, ended_by = %s
@@ -292,8 +292,8 @@ def end_assignment(assignment_id: UUID, reason: str, actor: dict = Depends(requi
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="active assignment not found")
-        conn.execute("UPDATE workhub.workforce_members SET token_version = token_version + 1, updated_at = now() WHERE member_id = %s", (row["member_id"],))
-        conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (row["member_id"],))
+        conn.execute("UPDATE oams.workforce_members SET token_version = token_version + 1, updated_at = now() WHERE member_id = %s", (row["member_id"],))
+        conn.execute("UPDATE oams.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (row["member_id"],))
         audit(conn, actor["member_id"], "assignment.ended", "assignment", row["assignment_id"], reason, row, prior)
         return row
 
@@ -310,7 +310,7 @@ def list_position_config_versions(position_id: UUID, _actor: dict = Depends(requ
         return conn.execute(
             """SELECT config_version_id, position_id, version_no, status, effective_from, effective_to,
                       based_on_version_id, config, change_reason, created_by, approved_by, approved_at
-               FROM workhub.position_config_versions WHERE position_id = %s ORDER BY version_no DESC""",
+               FROM oams.position_config_versions WHERE position_id = %s ORDER BY version_no DESC""",
             (position_id,),
         ).fetchall()
 
@@ -319,16 +319,16 @@ def list_position_config_versions(position_id: UUID, _actor: dict = Depends(requ
 def create_position_config_version(position_id: UUID, payload: PositionConfigCreate,
                                    actor: dict = Depends(require_permission("workforce.positions", "manage"))):
     with connection() as conn:
-        exists = conn.execute("SELECT 1 FROM workhub.positions WHERE position_id = %s", (position_id,)).fetchone()
+        exists = conn.execute("SELECT 1 FROM oams.positions WHERE position_id = %s", (position_id,)).fetchone()
         if not exists:
             raise HTTPException(status_code=404, detail="position not found")
-        conn.execute("SELECT position_id FROM workhub.positions WHERE position_id = %s FOR UPDATE", (position_id,))
+        conn.execute("SELECT position_id FROM oams.positions WHERE position_id = %s FOR UPDATE", (position_id,))
         version = conn.execute(
-            "SELECT COALESCE(max(version_no), 0) + 1 AS next_version FROM workhub.position_config_versions WHERE position_id = %s",
+            "SELECT COALESCE(max(version_no), 0) + 1 AS next_version FROM oams.position_config_versions WHERE position_id = %s",
             (position_id,),
         ).fetchone()["next_version"]
         row = conn.execute(
-            """INSERT INTO workhub.position_config_versions
+            """INSERT INTO oams.position_config_versions
                (position_id, version_no, status, effective_from, based_on_version_id, config, change_reason, created_by)
                VALUES (%s, %s, 'draft', %s, %s, %s, %s, %s)
                RETURNING config_version_id, position_id, version_no, status, effective_from, based_on_version_id, config""",
@@ -343,18 +343,18 @@ def create_position_config_version(position_id: UUID, payload: PositionConfigCre
 def approve_position_config_version(version_id: UUID, actor: dict = Depends(require_permission("workforce.positions", "manage"))):
     with connection() as conn:
         row = conn.execute(
-            "SELECT * FROM workhub.position_config_versions WHERE config_version_id = %s FOR UPDATE", (version_id,)
+            "SELECT * FROM oams.position_config_versions WHERE config_version_id = %s FOR UPDATE", (version_id,)
         ).fetchone()
         if not row or row["status"] != "draft":
             raise HTTPException(status_code=404, detail="draft config version not found")
-        conn.execute("SELECT position_id FROM workhub.positions WHERE position_id = %s FOR UPDATE", (row["position_id"],))
+        conn.execute("SELECT position_id FROM oams.positions WHERE position_id = %s FOR UPDATE", (row["position_id"],))
         if row["based_on_version_id"] is not None and not conn.execute(
-            "SELECT 1 FROM workhub.position_config_versions WHERE config_version_id = %s AND position_id = %s",
+            "SELECT 1 FROM oams.position_config_versions WHERE config_version_id = %s AND position_id = %s",
             (row["based_on_version_id"], row["position_id"]),
         ).fetchone():
             raise HTTPException(status_code=422, detail="based_on_version_id must belong to this position")
         next_version = conn.execute(
-            """SELECT config_version_id FROM workhub.position_config_versions
+            """SELECT config_version_id FROM oams.position_config_versions
                WHERE position_id = %s AND status IN ('active', 'scheduled') AND effective_from > %s
                ORDER BY effective_from LIMIT 1""",
             (row["position_id"], row["effective_from"]),
@@ -362,7 +362,7 @@ def approve_position_config_version(version_id: UUID, actor: dict = Depends(requ
         if next_version:
             raise HTTPException(status_code=409, detail="configuration cannot be scheduled before an existing active or scheduled version")
         previous = conn.execute(
-            """SELECT config_version_id, effective_from FROM workhub.position_config_versions
+            """SELECT config_version_id, effective_from FROM oams.position_config_versions
                WHERE position_id = %s AND status IN ('active', 'scheduled')
                  AND effective_from < %s AND (effective_to IS NULL OR effective_to > %s)
                ORDER BY effective_from DESC LIMIT 1 FOR UPDATE""",
@@ -372,12 +372,12 @@ def approve_position_config_version(version_id: UUID, actor: dict = Depends(requ
             if row["effective_from"] <= datetime.now(timezone.utc):
                 raise HTTPException(status_code=409, detail="a new version for an existing configuration must start in the future")
             conn.execute(
-                "UPDATE workhub.position_config_versions SET effective_to = %s WHERE config_version_id = %s",
+                "UPDATE oams.position_config_versions SET effective_to = %s WHERE config_version_id = %s",
                 (row["effective_from"], previous["config_version_id"]),
             )
         target_status = "active" if row["effective_from"] <= datetime.now(timezone.utc) else "scheduled"
         approved = conn.execute(
-            """UPDATE workhub.position_config_versions SET status = %s, approved_by = %s, approved_at = now()
+            """UPDATE oams.position_config_versions SET status = %s, approved_by = %s, approved_at = now()
                WHERE config_version_id = %s
                RETURNING config_version_id, position_id, version_no, status, effective_from, effective_to, approved_by, approved_at""",
             (target_status, actor["member_id"], version_id),
@@ -390,11 +390,11 @@ def approve_position_config_version(version_id: UUID, actor: dict = Depends(requ
 def update_member_status(member_id: UUID, payload: MemberStatusUpdate,
                          actor: dict = Depends(require_permission("workforce.members", "manage"))):
     with connection() as conn:
-        member = conn.execute("SELECT * FROM workhub.workforce_members WHERE member_id = %s FOR UPDATE", (member_id,)).fetchone()
+        member = conn.execute("SELECT * FROM oams.workforce_members WHERE member_id = %s FOR UPDATE", (member_id,)).fetchone()
         if not member:
             raise HTTPException(status_code=404, detail="member not found")
         updated = conn.execute(
-            """UPDATE workhub.workforce_members SET employment_status = %s,
+            """UPDATE oams.workforce_members SET employment_status = %s,
                       departed_at = CASE WHEN %s = 'departed' THEN CURRENT_DATE
                                          WHEN %s = 'active' THEN NULL ELSE departed_at END,
                       token_version = token_version + 1, updated_at = now()
@@ -402,17 +402,17 @@ def update_member_status(member_id: UUID, payload: MemberStatusUpdate,
                 RETURNING member_id, display_name, employment_status, departed_at, token_version""",
             (payload.employment_status, payload.employment_status, payload.employment_status, member_id),
         ).fetchone()
-        conn.execute("UPDATE workhub.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))
+        conn.execute("UPDATE oams.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))
         if payload.employment_status in ("departed", "suspended"):
             if payload.employment_status == "departed":
-                conn.execute("UPDATE workhub.permission_grants SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))
+                conn.execute("UPDATE oams.permission_grants SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))
                 conn.execute(
-                    """UPDATE workhub.position_assignments SET status = 'ended', ends_at = LEAST(COALESCE(ends_at, now()), now()), ended_at = now(), ended_by = %s
+                    """UPDATE oams.position_assignments SET status = 'ended', ends_at = LEAST(COALESCE(ends_at, now()), now()), ended_at = now(), ended_by = %s
                        WHERE member_id = %s AND status = 'active' AND starts_at < now()""",
                     (actor["member_id"], member_id),
                 )
                 conn.execute(
-                    """UPDATE workhub.position_assignments SET status = 'cancelled'
+                    """UPDATE oams.position_assignments SET status = 'cancelled'
                        WHERE member_id = %s AND status = 'scheduled'""", (member_id,)
                 )
         audit(conn, actor["member_id"], "member.status_changed", "member", member_id, payload.reason, updated, member)
@@ -423,11 +423,11 @@ def update_member_status(member_id: UUID, payload: MemberStatusUpdate,
 def revoke_grant(grant_id: UUID, reason: str,
                  actor: dict = Depends(require_permission("workforce.grants", "manage"))):
     with connection() as conn:
-        prior = conn.execute("SELECT * FROM workhub.permission_grants WHERE grant_id = %s AND revoked_at IS NULL FOR UPDATE", (grant_id,)).fetchone()
+        prior = conn.execute("SELECT * FROM oams.permission_grants WHERE grant_id = %s AND revoked_at IS NULL FOR UPDATE", (grant_id,)).fetchone()
         if not prior:
             raise HTTPException(status_code=404, detail="active grant not found")
         row = conn.execute(
-            """UPDATE workhub.permission_grants SET revoked_at = now()
+            """UPDATE oams.permission_grants SET revoked_at = now()
                WHERE grant_id = %s
                RETURNING grant_id, subject_type, position_id, member_id, resource, action, scope_type, revoked_at""",
             (grant_id,),
@@ -481,9 +481,9 @@ def list_work_items(org_unit_id: UUID | None = None, position_id: UUID | None = 
         where = ("WHERE " + " AND ".join(filters)) if filters else ""
         return conn.execute(
             f"""SELECT {WORK_ITEM_SELECT}
-                  FROM workhub.work_items w
-                  JOIN workhub.positions p USING (position_id)
-                  JOIN workhub.org_units o ON o.org_unit_id = w.org_unit_id
+                  FROM oams.work_items w
+                  JOIN oams.positions p USING (position_id)
+                  JOIN oams.org_units o ON o.org_unit_id = w.org_unit_id
                   {where}
                  ORDER BY CASE w.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,
                           w.needs_decision DESC, w.updated_at DESC""",
@@ -495,7 +495,7 @@ def list_work_items(org_unit_id: UUID | None = None, position_id: UUID | None = 
 def create_work_item(payload: WorkItemCreate, actor: dict = Depends(require_permission("workforce.work_items", "manage"))):
     try:
         with connection() as conn:
-            position = conn.execute("SELECT org_unit_id FROM workhub.positions WHERE position_id = %s",
+            position = conn.execute("SELECT org_unit_id FROM oams.positions WHERE position_id = %s",
                                     (payload.position_id,)).fetchone()
             if position:
                 require_org_unit_access(conn, actor["member_id"], position["org_unit_id"])
@@ -513,7 +513,7 @@ def update_work_item(work_item_id: UUID, payload: WorkItemUpdate,
     try:
         with connection() as conn:
             prior = conn.execute(
-                "SELECT * FROM workhub.work_items WHERE work_item_id = %s FOR UPDATE", (work_item_id,)
+                "SELECT * FROM oams.work_items WHERE work_item_id = %s FOR UPDATE", (work_item_id,)
             ).fetchone()
             if not prior:
                 raise HTTPException(status_code=404, detail="work item not found")
@@ -527,7 +527,7 @@ def update_work_item(work_item_id: UUID, payload: WorkItemUpdate,
             assignments = ", ".join(f"{column_map[field]} = %s" for field in updates)
             params = list(updates.values()) + [work_item_id]
             row = conn.execute(
-                f"""UPDATE workhub.work_items SET {assignments}, updated_at = now()
+                f"""UPDATE oams.work_items SET {assignments}, updated_at = now()
                     WHERE work_item_id = %s
                     RETURNING work_item_id, org_unit_id, position_id, title, kind, status, blocked_reason,
                               needs_decision, created_at, updated_at""",
@@ -551,7 +551,7 @@ def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: An
     try:
         with connection() as conn:
             item = conn.execute(
-                "SELECT work_item_id, status FROM workhub.work_items WHERE work_item_id = %s FOR UPDATE",
+                "SELECT work_item_id, status FROM oams.work_items WHERE work_item_id = %s FOR UPDATE",
                 (work_item_id,),
             ).fetchone()
             if not item:
@@ -559,8 +559,8 @@ def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: An
             if item["status"] not in OPEN_ITEM_STATUSES:
                 raise HTTPException(status_code=409, detail="cannot report progress on a closed work item")
             assigned = conn.execute(
-                """SELECT 1 FROM workhub.position_assignments
-                   WHERE member_id = %s AND position_id = (SELECT position_id FROM workhub.work_items WHERE work_item_id = %s)
+                """SELECT 1 FROM oams.position_assignments
+                   WHERE member_id = %s AND position_id = (SELECT position_id FROM oams.work_items WHERE work_item_id = %s)
                      AND status IN ('active', 'scheduled') AND starts_at <= now()
                      AND (ends_at IS NULL OR now() < ends_at)""",
                 (actor_member_id, work_item_id),
@@ -570,7 +570,7 @@ def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: An
             if not assigned and not has_permission(conn, actor_member_id, "workforce.grants", "manage"):
                 raise HTTPException(status_code=403, detail="reporter is not assigned to this work item position")
             row = conn.execute(
-                """INSERT INTO workhub.work_item_reports
+                """INSERT INTO oams.work_item_reports
                    (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence)
                    VALUES (%s, %s, %s, %s, %s, %s)
                    RETURNING report_id, work_item_id, reported_by_member_id, submitted_via, progress_value,
@@ -578,7 +578,7 @@ def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: An
                 (work_item_id, actor_member_id, payload.submitted_via, payload.progress_value,
                  payload.note, payload.evidence),
             ).fetchone()
-            conn.execute("UPDATE workhub.work_items SET updated_at = now() WHERE work_item_id = %s", (work_item_id,))
+            conn.execute("UPDATE oams.work_items SET updated_at = now() WHERE work_item_id = %s", (work_item_id,))
             audit(conn, actor_member_id, "work_item_report.created", "work_item_report", row["report_id"],
                   f"progress submitted via {payload.submitted_via}", row)
             return row
@@ -590,15 +590,15 @@ def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: An
 def list_work_item_reports(work_item_id: UUID,
                            actor: dict = Depends(require_permission("workforce.reports", "read"))):
     with connection() as conn:
-        exists = conn.execute("SELECT org_unit_id FROM workhub.work_items WHERE work_item_id = %s", (work_item_id,)).fetchone()
+        exists = conn.execute("SELECT org_unit_id FROM oams.work_items WHERE work_item_id = %s", (work_item_id,)).fetchone()
         if not exists:
             raise HTTPException(status_code=404, detail="work item not found")
         require_org_unit_access(conn, actor["member_id"], exists["org_unit_id"])
         return conn.execute(
             """SELECT r.report_id, r.reported_by_member_id, m.display_name AS reported_by, r.submitted_via,
                       r.progress_value, r.note, r.evidence, r.status, r.retracted_at, r.reported_at
-               FROM workhub.work_item_reports r
-               JOIN workhub.workforce_members m ON m.member_id = r.reported_by_member_id
+               FROM oams.work_item_reports r
+               JOIN oams.workforce_members m ON m.member_id = r.reported_by_member_id
                WHERE r.work_item_id = %s ORDER BY r.reported_at DESC""",
             (work_item_id,),
         ).fetchall()
@@ -609,7 +609,7 @@ def retract_report(report_id: UUID, payload: ReportRetract,
                    actor: dict = Depends(require_permission("workforce.reports", "submit"))):
     with connection() as conn:
         prior = conn.execute(
-            "SELECT * FROM workhub.work_item_reports WHERE report_id = %s FOR UPDATE", (report_id,)
+            "SELECT * FROM oams.work_item_reports WHERE report_id = %s FOR UPDATE", (report_id,)
         ).fetchone()
         if not prior:
             raise HTTPException(status_code=404, detail="report not found")
@@ -620,7 +620,7 @@ def retract_report(report_id: UUID, payload: ReportRetract,
         if prior["reported_by_member_id"] != actor["member_id"]:
             raise HTTPException(status_code=403, detail="members can only retract their own reports")
         row = conn.execute(
-            """UPDATE workhub.work_item_reports
+            """UPDATE oams.work_item_reports
                SET status = 'retracted', retracted_by_member_id = %s, retracted_at = now()
                WHERE report_id = %s
                RETURNING report_id, work_item_id, submitted_via, status, retracted_at""",
@@ -647,16 +647,16 @@ def retract_report(report_id: UUID, payload: ReportRetract,
 BOARD_QUERY = """SELECT w.work_item_id, w.title, w.kind, w.status, w.blocked_reason, w.needs_decision,
                         w.created_at, w.updated_at,
                         p.position_id, p.position_code, p.title AS position_title,
-                        (SELECT count(*) FROM workhub.position_assignments a
+                        (SELECT count(*) FROM oams.position_assignments a
                           WHERE a.position_id = p.position_id
                             AND a.status IN ('active', 'scheduled')
                             AND a.starts_at <= now()
                             AND (a.ends_at IS NULL OR now() < a.ends_at)) AS holder_count,
                         s.latest_report_id, s.latest_submitted_via, s.latest_progress_value,
                         s.latest_note, s.latest_evidence, s.latest_reported_at
-                   FROM workhub.work_items w
-                   JOIN workhub.positions p ON p.position_id = w.position_id
-                   LEFT JOIN workhub.work_item_current_state s ON s.work_item_id = w.work_item_id
+                   FROM oams.work_items w
+                   JOIN oams.positions p ON p.position_id = w.position_id
+                   LEFT JOIN oams.work_item_current_state s ON s.work_item_id = w.work_item_id
                   WHERE w.org_unit_id = %s AND w.status IN ('planned', 'in_progress', 'blocked')
                   ORDER BY CASE w.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,
                            w.needs_decision DESC, w.updated_at DESC"""
@@ -763,7 +763,7 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7, layer: str = "all"
     now = datetime.now(timezone.utc)
     stale_after = timedelta(days=stale_days)
     org_unit = conn.execute(
-        "SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status FROM workhub.org_units WHERE org_unit_id = %s",
+        "SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status FROM oams.org_units WHERE org_unit_id = %s",
         (org_unit_id,),
     ).fetchone()
     if not org_unit:
@@ -772,7 +772,7 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7, layer: str = "all"
     stage = normalize_stage(stage)
     rows = conn.execute(BOARD_QUERY, (org_unit_id,)).fetchall()
     child_org_units = conn.execute(
-        """SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units
+        """SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units
            WHERE parent_org_unit_id = %s AND status = 'active' ORDER BY org_code""",
         (org_unit_id,),
     ).fetchall()
@@ -804,7 +804,7 @@ def build_board(conn, org_unit_id: UUID, stale_days: int = 7, layer: str = "all"
     # BOARD_QUERY excludes finished work on purpose, so it stays a department-wide
     # count instead of pretending to be a layer of cards.
     finished = conn.execute(
-        """SELECT count(*) AS n FROM workhub.work_items
+        """SELECT count(*) AS n FROM oams.work_items
            WHERE org_unit_id = %s AND status IN ('done', 'cancelled')""",
         (org_unit_id,),
     ).fetchone()["n"]
@@ -862,7 +862,7 @@ def board_for_org_unit(org_unit_id: UUID, stale_days: int = 7, layer: str = "all
 def insert_work_item(conn, payload: WorkItemCreate, actor_member_id: Any) -> dict[str, Any]:
     """Shared by the JSON endpoint and the admin page; one insert, one audit."""
     position = conn.execute(
-        "SELECT p.position_id, p.org_unit_id, p.status FROM workhub.positions p WHERE p.position_id = %s",
+        "SELECT p.position_id, p.org_unit_id, p.status FROM oams.positions p WHERE p.position_id = %s",
         (payload.position_id,),
     ).fetchone()
     if not position:
@@ -870,7 +870,7 @@ def insert_work_item(conn, payload: WorkItemCreate, actor_member_id: Any) -> dic
     if position["status"] != "active":
         raise HTTPException(status_code=409, detail="work items can only be attached to an active position")
     row = conn.execute(
-        """INSERT INTO workhub.work_items
+        """INSERT INTO oams.work_items
            (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision, created_by)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING work_item_id, org_unit_id, position_id, title, kind, status, blocked_reason,
@@ -885,7 +885,7 @@ def insert_work_item(conn, payload: WorkItemCreate, actor_member_id: Any) -> dic
 
 def insert_position(conn, payload: PositionCreate, actor_member_id: Any) -> dict[str, Any]:
     position = conn.execute(
-        """INSERT INTO workhub.positions (position_code, title, org_unit_id)
+        """INSERT INTO oams.positions (position_code, title, org_unit_id)
            VALUES (%s, %s, %s)
            RETURNING position_id, position_code, title, org_unit_id, status""",
         (payload.position_code, payload.title, payload.org_unit_id),
@@ -902,7 +902,7 @@ def list_audit_events(limit: int = 100, _actor: dict = Depends(require_permissio
         return conn.execute(
             """SELECT event_id, actor_member_id, event_type, subject_type, subject_id, occurred_at, reason,
                       before_state, after_state, metadata
-               FROM workhub.workforce_audit_events ORDER BY occurred_at DESC LIMIT %s""",
+               FROM oams.workforce_audit_events ORDER BY occurred_at DESC LIMIT %s""",
             (limit,),
         ).fetchall()
 
@@ -1000,8 +1000,8 @@ def _field_label(descriptor, field_key):
 INTERFACES_SQL = """
     SELECT i.interface_id, i.name, i.org_unit_id, i.version_no, i.descriptor,
            o.org_code, o.name AS org_unit_name
-      FROM workhub.interfaces i
-      JOIN workhub.org_units o ON o.org_unit_id = i.org_unit_id
+      FROM oams.interfaces i
+      JOIN oams.org_units o ON o.org_unit_id = i.org_unit_id
      WHERE i.status = 'active'
        AND (%(scope)s)"""
 
@@ -1015,16 +1015,16 @@ def _active_interfaces(conn, org_unit_id, interface_id=None):
     whose parent pointer was never filled in must still be visible there.
     """
     unit = conn.execute(
-        "SELECT org_unit_id, org_code, name, unit_type FROM workhub.org_units WHERE org_unit_id = %s",
+        "SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units WHERE org_unit_id = %s",
         (org_unit_id,)).fetchone()
     is_company = bool(unit) and (unit.get("unit_type") or "") == "company"
     params = {}
     if is_company:
-        scope_sql = ("i.org_unit_id IN (SELECT org_unit_id FROM workhub.org_units "
+        scope_sql = ("i.org_unit_id IN (SELECT org_unit_id FROM oams.org_units "
                      "WHERE status = 'active' AND unit_type <> 'company')")
     else:
         scope_sql = ("(i.org_unit_id = %(unit)s OR i.org_unit_id IN "
-                     "(SELECT org_unit_id FROM workhub.org_units "
+                     "(SELECT org_unit_id FROM oams.org_units "
                      " WHERE parent_org_unit_id = %(unit)s AND status = 'active'))")
         params["unit"] = org_unit_id
     sql = INTERFACES_SQL % {"scope": scope_sql}
@@ -1038,7 +1038,7 @@ def _active_interfaces(conn, org_unit_id, interface_id=None):
 def _binding_entries(conn, interface_id, binding):
     """Entries of one page that satisfy the rollup predicate (and where_status)."""
     sql = ("SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
-           "FROM workhub.interface_entries e WHERE e.interface_id = %s AND " + ROLLUP_PREDICATE)
+           "FROM oams.interface_entries e WHERE e.interface_id = %s AND " + ROLLUP_PREDICATE)
     params = [interface_id]
     where_status = binding.get("where_status")
     if where_status:
@@ -1057,7 +1057,7 @@ def page_entries(conn, interface_id):
     """
     return conn.execute(
         "SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
-        "FROM workhub.interface_entries e WHERE e.interface_id = %s "
+        "FROM oams.interface_entries e WHERE e.interface_id = %s "
         "ORDER BY e.reported_at DESC, e.entry_id DESC", (interface_id,)).fetchall()
 
 
@@ -1143,7 +1143,7 @@ def entry_state_counts(conn, interface_id):
     """How many entries of this page sit in each rollup state."""
     rows = conn.execute(
         "SELECT state, count(*) AS n FROM (SELECT " + ROLLUP_STATE_SQL + " AS state "
-        "FROM workhub.interface_entries e WHERE e.interface_id = %s) t GROUP BY state",
+        "FROM oams.interface_entries e WHERE e.interface_id = %s) t GROUP BY state",
         (interface_id,)).fetchall()
     counts = {state: 0 for state in ROLLUP_STATES}
     for row in rows:
@@ -1174,7 +1174,7 @@ def rollup_entries(conn, interface_id, metric_key=None):
     try:
         page = conn.execute(
             """SELECT interface_id, name, org_unit_id, status, descriptor
-                 FROM workhub.interfaces WHERE interface_id = %s""",
+                 FROM oams.interfaces WHERE interface_id = %s""",
             (interface_id,)).fetchone()
         if not page:
             return {"available": False, "reason": "找不到这个界面", "entries": [],
@@ -1196,7 +1196,7 @@ def rollup_entries(conn, interface_id, metric_key=None):
         else:
             rows = conn.execute(
                 "SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
-                "FROM workhub.interface_entries e WHERE e.interface_id = %s AND "
+                "FROM oams.interface_entries e WHERE e.interface_id = %s AND "
                 + ROLLUP_PREDICATE + " ORDER BY e.reported_at DESC, e.entry_id DESC",
                 (page["interface_id"],)).fetchall()
         column = _field_map_to(page["descriptor"], (binding or {}).get("from_field"))
@@ -1371,7 +1371,7 @@ def list_open_work_items(conn, org_unit_id=None, company_scope=False, limit=100)
     except (TypeError, ValueError):
         limit = 100
     sql = ("SELECT w.work_item_id, w.title, w.status, w.org_unit_id, o.name AS org_unit_name "
-           "FROM workhub.work_items w JOIN workhub.org_units o ON o.org_unit_id = w.org_unit_id "
+           "FROM oams.work_items w JOIN oams.org_units o ON o.org_unit_id = w.org_unit_id "
            "WHERE w.status IN ('planned', 'in_progress', 'blocked')")
     params = []
     if not company_scope:
@@ -1517,13 +1517,13 @@ async def attach_browser_principal(request, call_next):
             if nav["departments"]:
                 if has_company_scope(conn, member_id):
                     request.state.dept_rail = conn.execute(
-                        """SELECT org_unit_id, name FROM workhub.org_units
+                        """SELECT org_unit_id, name FROM oams.org_units
                            WHERE status = 'active' AND unit_type <> 'company' ORDER BY name""").fetchall()
                 else:
                     scoped = list(active_org_unit_ids(conn, member_id))
                     if scoped:
                         request.state.dept_rail = conn.execute(
-                            """SELECT org_unit_id, name FROM workhub.org_units
+                            """SELECT org_unit_id, name FROM oams.org_units
                                WHERE status = 'active' AND org_unit_id = ANY(%s) ORDER BY name""",
                             (scoped,)).fetchall()
             caps = {

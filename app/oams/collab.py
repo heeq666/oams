@@ -82,8 +82,8 @@ def visible_objects(conn, member_id: Any) -> list[dict[str, Any]]:
         for row in conn.execute(
             f"""SELECT o.org_unit_id, o.name AS org_name,
                        t.thread_id, t.status AS thread_status
-                  FROM workhub.org_units o
-                  LEFT JOIN workhub.collab_threads t
+                  FROM oams.org_units o
+                  LEFT JOIN oams.collab_threads t
                          ON t.org_unit_id = o.org_unit_id AND t.kind = 'manage'
                  WHERE {where}
                  ORDER BY o.name""", params).fetchall():
@@ -101,9 +101,9 @@ def visible_objects(conn, member_id: Any) -> list[dict[str, Any]]:
         for row in conn.execute(
             f"""SELECT i.interface_id, i.name, o.name AS org_name,
                        t.thread_id, t.status AS thread_status
-                  FROM workhub.interfaces i
-                  JOIN workhub.org_units o USING (org_unit_id)
-                  LEFT JOIN workhub.collab_threads t
+                  FROM oams.interfaces i
+                  JOIN oams.org_units o USING (org_unit_id)
+                  LEFT JOIN oams.collab_threads t
                          ON t.interface_id = i.interface_id AND t.kind = 'fill'
                  WHERE i.status = 'active' AND ({scope_sql})
                  ORDER BY o.name, i.name""", scope_params).fetchall():
@@ -127,8 +127,8 @@ def _fill_scope_sql(conn, member_id: Any) -> tuple[str | None, list[Any]]:
     parts: list[str] = []
     params: list[Any] = []
     mine = conn.execute(
-        """SELECT DISTINCT p.position_id FROM workhub.position_assignments a
-             JOIN workhub.positions p USING (position_id)
+        """SELECT DISTINCT p.position_id FROM oams.position_assignments a
+             JOIN oams.positions p USING (position_id)
             WHERE a.member_id = %s AND a.status IN ('active', 'scheduled')
               AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)
               AND p.status = 'active'""", (member_id,)).fetchall()
@@ -160,16 +160,16 @@ def _attach_last_message(conn, member_id: Any, rows: list[dict[str, Any]]) -> No
             """SELECT t.thread_id,
                       m.body AS last_body, m.created_at AS last_at,
                       m.author_kind AS last_author_kind,
-                      (SELECT count(*) FROM workhub.collab_messages x
+                      (SELECT count(*) FROM oams.collab_messages x
                         WHERE x.thread_id = t.thread_id
                           AND x.seq > coalesce(r.last_seq, 0)
                           AND x.author_id IS DISTINCT FROM %s) AS unread
-                 FROM workhub.collab_threads t
+                 FROM oams.collab_threads t
                  LEFT JOIN LATERAL (
-                     SELECT body, created_at, author_kind FROM workhub.collab_messages
+                     SELECT body, created_at, author_kind FROM oams.collab_messages
                       WHERE thread_id = t.thread_id ORDER BY seq DESC LIMIT 1
                  ) m ON true
-                 LEFT JOIN workhub.collab_reads r
+                 LEFT JOIN oams.collab_reads r
                         ON r.thread_id = t.thread_id AND r.member_id = %s
                 WHERE t.thread_id = ANY(%s)""",
             (member_id, member_id, thread_ids)).fetchall():
@@ -187,8 +187,8 @@ def visible_dms(conn, member_id: Any) -> list[dict[str, Any]]:
         """SELECT t.thread_id, t.created_at,
                   CASE WHEN t.member_a = %s THEN t.member_b ELSE t.member_a END AS peer_id,
                   p.display_name AS peer_name, p.employee_code AS peer_code
-             FROM workhub.collab_threads t
-             JOIN workhub.workforce_members p
+             FROM oams.collab_threads t
+             JOIN oams.workforce_members p
                ON p.member_id = CASE WHEN t.member_a = %s THEN t.member_b ELSE t.member_a END
             WHERE t.kind = 'dm' AND t.status = 'active'
               AND (t.member_a = %s OR t.member_b = %s)
@@ -220,22 +220,22 @@ def visible_dms(conn, member_id: Any) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------- #
 
 _DIRECTORY_SQL = """SELECT m.member_id, m.display_name,
-          (SELECT p.title FROM workhub.position_assignments a
-             JOIN workhub.positions p USING (position_id)
+          (SELECT p.title FROM oams.position_assignments a
+             JOIN oams.positions p USING (position_id)
             WHERE a.member_id = m.member_id
               AND a.status IN ('active', 'scheduled')
               AND a.starts_at <= now()
               AND (a.ends_at IS NULL OR now() < a.ends_at)
             ORDER BY a.starts_at DESC LIMIT 1) AS position_title,
-          (SELECT o.name FROM workhub.position_assignments a
-             JOIN workhub.positions p USING (position_id)
-             JOIN workhub.org_units o USING (org_unit_id)
+          (SELECT o.name FROM oams.position_assignments a
+             JOIN oams.positions p USING (position_id)
+             JOIN oams.org_units o USING (org_unit_id)
             WHERE a.member_id = m.member_id
               AND a.status IN ('active', 'scheduled')
               AND a.starts_at <= now()
               AND (a.ends_at IS NULL OR now() < a.ends_at)
             ORDER BY a.starts_at DESC LIMIT 1) AS org_name,
-          EXISTS (SELECT 1 FROM workhub.permission_grants g
+          EXISTS (SELECT 1 FROM oams.permission_grants g
                    WHERE g.revoked_at IS NULL
                      AND g.effect = 'allow'
                      AND g.action = 'manage'
@@ -244,11 +244,11 @@ _DIRECTORY_SQL = """SELECT m.member_id, m.display_name,
                      AND (g.valid_until IS NULL OR now() < g.valid_until)
                      AND ((g.subject_type = 'member' AND g.member_id = m.member_id)
                        OR (g.subject_type = 'position' AND EXISTS (
-                            SELECT 1 FROM workhub.position_assignments pa
+                            SELECT 1 FROM oams.position_assignments pa
                              WHERE pa.position_id = g.position_id
                                AND pa.member_id = m.member_id
                                AND pa.status IN ('active', 'scheduled'))))) AS is_admin
-     FROM workhub.workforce_members m
+     FROM oams.workforce_members m
     WHERE m.employment_status = 'active'
       AND m.member_id <> %s
     ORDER BY m.display_name"""
@@ -334,12 +334,12 @@ def _dm_by_peer(conn, member_id: Any) -> dict[Any, dict[str, Any]]:
     rows = conn.execute(
         """SELECT t.thread_id,
                   CASE WHEN t.member_a = %s THEN t.member_b ELSE t.member_a END AS peer_id,
-                  (SELECT count(*) FROM workhub.collab_messages x
+                  (SELECT count(*) FROM oams.collab_messages x
                     WHERE x.thread_id = t.thread_id
                       AND x.seq > coalesce(r.last_seq, 0)
                       AND x.author_id IS DISTINCT FROM %s) AS unread
-             FROM workhub.collab_threads t
-             LEFT JOIN workhub.collab_reads r
+             FROM oams.collab_threads t
+             LEFT JOIN oams.collab_reads r
                     ON r.thread_id = t.thread_id AND r.member_id = %s
             WHERE t.kind = 'dm' AND t.status = 'active'
               AND (t.member_a = %s OR t.member_b = %s)""",
@@ -364,7 +364,7 @@ def can_see(conn, member_id: Any, thread: dict[str, Any]) -> bool:
         if interface_id is None:
             return False
         row = conn.execute(
-            """SELECT i.org_unit_id, i.position_id FROM workhub.interfaces i
+            """SELECT i.org_unit_id, i.position_id FROM oams.interfaces i
                 WHERE i.interface_id = %s AND i.status = 'active'""",
             (interface_id,)).fetchone()
         if row is None:
@@ -376,7 +376,7 @@ def can_see(conn, member_id: Any, thread: dict[str, Any]) -> bool:
         if row["position_id"] is None:
             return False
         held = conn.execute(
-            """SELECT 1 FROM workhub.position_assignments a
+            """SELECT 1 FROM oams.position_assignments a
                 WHERE a.member_id = %s AND a.position_id = %s
                   AND a.status IN ('active', 'scheduled')
                   AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)""",
@@ -404,7 +404,7 @@ def ensure_thread(conn, member_id: Any, *, kind: str,
                 or org_unit_id in administered_org_unit_ids(conn, member_id)):
             raise CollabError("只有这个部门的管理员能进这个管理群。")
         conn.execute(
-            """INSERT INTO workhub.collab_threads (kind, org_unit_id, title)
+            """INSERT INTO oams.collab_threads (kind, org_unit_id, title)
                VALUES ('manage', %s, %s)
                ON CONFLICT (org_unit_id) WHERE kind = 'manage' DO NOTHING""",
             (org_unit_id, _manage_title(conn, org_unit_id)))
@@ -413,7 +413,7 @@ def ensure_thread(conn, member_id: Any, *, kind: str,
         if interface_id is None:
             raise CollabError("汇报群需要指定页面。")
         conn.execute(
-            """INSERT INTO workhub.collab_threads (kind, interface_id, title)
+            """INSERT INTO oams.collab_threads (kind, interface_id, title)
                VALUES ('fill', %s, %s)
                ON CONFLICT (interface_id) WHERE kind = 'fill' DO NOTHING""",
             (interface_id, _fill_title(conn, interface_id)))
@@ -425,7 +425,7 @@ def ensure_thread(conn, member_id: Any, *, kind: str,
             raise CollabError("不能和自己私聊。")
         low, high = sorted([member_id, peer_id], key=str)
         conn.execute(
-            """INSERT INTO workhub.collab_threads (kind, member_a, member_b)
+            """INSERT INTO oams.collab_threads (kind, member_a, member_b)
                VALUES ('dm', %s, %s)
                ON CONFLICT (member_a, member_b) WHERE kind = 'dm' DO NOTHING""",
             (low, high))
@@ -440,13 +440,13 @@ def ensure_thread(conn, member_id: Any, *, kind: str,
 
 
 def _manage_title(conn, org_unit_id: Any) -> str:
-    name = conn.execute("SELECT name FROM workhub.org_units WHERE org_unit_id = %s",
+    name = conn.execute("SELECT name FROM oams.org_units WHERE org_unit_id = %s",
                         (org_unit_id,)).fetchone()
     return f"{name['name'] if name else '部门'} · 管理群"
 
 
 def _fill_title(conn, interface_id: Any) -> str:
-    row = conn.execute("SELECT name FROM workhub.interfaces WHERE interface_id = %s",
+    row = conn.execute("SELECT name FROM oams.interfaces WHERE interface_id = %s",
                        (interface_id,)).fetchone()
     return f"{row['name'] if row else '页面'} · 汇报群"
 
@@ -456,7 +456,7 @@ def _fetch_thread(conn, **keys: Any) -> dict[str, Any] | None:
     return conn.execute(
         f"""SELECT thread_id, kind, org_unit_id, interface_id, member_a, member_b,
                    status, title, created_at
-              FROM workhub.collab_threads
+              FROM oams.collab_threads
              WHERE {where} AND status = 'active'""", tuple(keys.values())).fetchone()
 
 
@@ -464,7 +464,7 @@ def get_thread(conn, thread_id: Any) -> dict[str, Any] | None:
     return conn.execute(
         """SELECT thread_id, kind, org_unit_id, interface_id, member_a, member_b,
                   status, title, created_at
-             FROM workhub.collab_threads WHERE thread_id = %s""", (thread_id,)).fetchone()
+             FROM oams.collab_threads WHERE thread_id = %s""", (thread_id,)).fetchone()
 
 
 def thread_header(conn, member_id: Any, thread: dict[str, Any]) -> dict[str, Any]:
@@ -479,13 +479,13 @@ def thread_header(conn, member_id: Any, thread: dict[str, Any]) -> dict[str, Any
     header = {"kind": thread["kind"], "kind_label": KIND_LABELS[thread["kind"]],
               "title": thread["title"], "subtitle": "", "member_count": None}
     if thread["kind"] == KIND_MANAGE:
-        row = conn.execute("SELECT name FROM workhub.org_units WHERE org_unit_id = %s",
+        row = conn.execute("SELECT name FROM oams.org_units WHERE org_unit_id = %s",
                            (thread["org_unit_id"],)).fetchone()
         header["title"] = row["name"] if row else "管理群"
     elif thread["kind"] == KIND_FILL:
         row = conn.execute(
-            """SELECT i.name, o.name AS org_name FROM workhub.interfaces i
-                JOIN workhub.org_units o USING (org_unit_id)
+            """SELECT i.name, o.name AS org_name FROM oams.interfaces i
+                JOIN oams.org_units o USING (org_unit_id)
                WHERE i.interface_id = %s""", (thread["interface_id"],)).fetchone()
         if row:
             header["title"] = row["name"]
@@ -495,7 +495,7 @@ def thread_header(conn, member_id: Any, thread: dict[str, Any]) -> dict[str, Any
     else:
         peer_id = thread["member_b"] if thread["member_a"] == member_id else thread["member_a"]
         row = conn.execute(
-            "SELECT display_name, employee_code FROM workhub.workforce_members WHERE member_id = %s",
+            "SELECT display_name, employee_code FROM oams.workforce_members WHERE member_id = %s",
             (peer_id,)).fetchone()
         header["title"] = row["display_name"] if row else "私聊"
         header["peer_id"] = peer_id
@@ -517,13 +517,13 @@ def _member_count(conn, thread: dict[str, Any]) -> int:
     if thread["kind"] == KIND_MANAGE:
         return conn.execute(
             """SELECT count(DISTINCT a.member_id) AS n
-                 FROM workhub.position_assignments a
-                 JOIN workhub.positions p USING (position_id)
+                 FROM oams.position_assignments a
+                 JOIN oams.positions p USING (position_id)
                 WHERE p.org_unit_id = %s AND a.status IN ('active', 'scheduled')
                   AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)""",
             (thread["org_unit_id"],)).fetchone()["n"]
     row = conn.execute(
-        """SELECT org_unit_id, position_id FROM workhub.interfaces WHERE interface_id = %s""",
+        """SELECT org_unit_id, position_id FROM oams.interfaces WHERE interface_id = %s""",
         (thread["interface_id"],)).fetchone()
     if row is None:
         return 0
@@ -531,8 +531,8 @@ def _member_count(conn, thread: dict[str, Any]) -> int:
     # 退回「整个部门」——宁可能看见的人数偏多，也不要显示 0 人。
     return conn.execute(
         """SELECT count(DISTINCT a.member_id) AS n
-             FROM workhub.position_assignments a
-             JOIN workhub.positions p USING (position_id)
+             FROM oams.position_assignments a
+             JOIN oams.positions p USING (position_id)
             WHERE p.org_unit_id = %s AND a.status IN ('active', 'scheduled')
               AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)
               AND (%s::uuid IS NULL OR p.position_id = %s)""",
@@ -560,8 +560,8 @@ def list_messages(conn, thread_id: Any, *, before_seq: int | None = None,
         f"""SELECT m.message_id, m.seq, m.body, m.created_at,
                    m.author_id, m.author_kind, m.agent_model, m.mentions,
                    w.display_name AS author_name
-              FROM workhub.collab_messages m
-              LEFT JOIN workhub.workforce_members w ON w.member_id = m.author_id
+              FROM oams.collab_messages m
+              LEFT JOIN oams.workforce_members w ON w.member_id = m.author_id
              WHERE m.thread_id = %s{clause}
              ORDER BY m.seq DESC LIMIT %s""", params).fetchall()
     return list(reversed(rows))
@@ -590,20 +590,20 @@ def post_message(conn, thread: dict[str, Any], member_id: Any, body: str, *,
 
     if client_msg_id:
         existing = conn.execute(
-            """SELECT message_id, seq, body, created_at FROM workhub.collab_messages
+            """SELECT message_id, seq, body, created_at FROM oams.collab_messages
                 WHERE thread_id = %s AND client_msg_id = %s""",
             (thread["thread_id"], client_msg_id)).fetchone()
         if existing is not None:
             return dict(existing)
 
     # 锁住线程行再取 seq：两个并发写入拿不到同一个号，也不需要序列。
-    conn.execute("SELECT 1 FROM workhub.collab_threads WHERE thread_id = %s FOR UPDATE",
+    conn.execute("SELECT 1 FROM oams.collab_threads WHERE thread_id = %s FOR UPDATE",
                  (thread["thread_id"],))
     seq = conn.execute(
-        "SELECT coalesce(max(seq), 0) + 1 AS next FROM workhub.collab_messages WHERE thread_id = %s",
+        "SELECT coalesce(max(seq), 0) + 1 AS next FROM oams.collab_messages WHERE thread_id = %s",
         (thread["thread_id"],)).fetchone()["next"]
     row = conn.execute(
-        """INSERT INTO workhub.collab_messages
+        """INSERT INTO oams.collab_messages
                (thread_id, seq, author_id, author_kind, agent_model, body, mentions, client_msg_id)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING message_id, seq, body, created_at""",
@@ -614,7 +614,7 @@ def post_message(conn, thread: dict[str, Any], member_id: Any, body: str, *,
     out["author_kind"] = author_kind
     out["agent_model"] = agent_model
     out["author_name"] = conn.execute(
-        "SELECT display_name FROM workhub.workforce_members WHERE member_id = %s",
+        "SELECT display_name FROM oams.workforce_members WHERE member_id = %s",
         (member_id,)).fetchone()["display_name"]
     return out
 
@@ -630,13 +630,13 @@ def mark_read(conn, thread_id: Any, member_id: Any) -> int:
     重新标成未读。
     """
     latest = conn.execute(
-        "SELECT coalesce(max(seq), 0) AS n FROM workhub.collab_messages WHERE thread_id = %s",
+        "SELECT coalesce(max(seq), 0) AS n FROM oams.collab_messages WHERE thread_id = %s",
         (thread_id,)).fetchone()["n"]
     row = conn.execute(
-        """INSERT INTO workhub.collab_reads (thread_id, member_id, last_seq, read_at)
+        """INSERT INTO oams.collab_reads (thread_id, member_id, last_seq, read_at)
            VALUES (%s, %s, %s, now())
            ON CONFLICT (thread_id, member_id) DO UPDATE
-              SET last_seq = GREATEST(workhub.collab_reads.last_seq, EXCLUDED.last_seq),
+              SET last_seq = GREATEST(oams.collab_reads.last_seq, EXCLUDED.last_seq),
                   read_at = now()
            RETURNING last_seq""",
         (thread_id, member_id, latest)).fetchone()
@@ -666,7 +666,7 @@ def unread_total(conn, member_id: Any) -> int:
                 granted AS (
                     SELECT g.resource,
                            bool_or(g.effect = 'allow') AND NOT bool_or(g.effect = 'deny') AS ok
-                      FROM workhub.permission_grants g, me
+                      FROM oams.permission_grants g, me
                      WHERE g.action = 'manage'
                        AND g.resource = ANY(%s)
                        AND g.revoked_at IS NULL
@@ -675,7 +675,7 @@ def unread_total(conn, member_id: Any) -> int:
                        AND g.scope_type = 'all'
                        AND ((g.subject_type = 'member' AND g.member_id = me.member_id)
                          OR (g.subject_type = 'position' AND EXISTS (
-                              SELECT 1 FROM workhub.position_assignments a
+                              SELECT 1 FROM oams.position_assignments a
                                WHERE a.position_id = g.position_id
                                  AND a.member_id = me.member_id
                                  AND a.status IN ('active', 'scheduled')
@@ -690,16 +690,16 @@ def unread_total(conn, member_id: Any) -> int:
                 ),
                 mine AS (
                     SELECT array(SELECT DISTINCT p.position_id
-                                   FROM workhub.position_assignments a
-                                   JOIN workhub.positions p USING (position_id), me
+                                   FROM oams.position_assignments a
+                                   JOIN oams.positions p USING (position_id), me
                                   WHERE a.member_id = me.member_id
                                     AND a.status IN ('active', 'scheduled')
                                     AND a.starts_at <= now()
                                     AND (a.ends_at IS NULL OR now() < a.ends_at)
                                     AND p.status = 'active') AS positions,
                            array(SELECT DISTINCT p.org_unit_id
-                                   FROM workhub.position_assignments a
-                                   JOIN workhub.positions p USING (position_id), me
+                                   FROM oams.position_assignments a
+                                   JOIN oams.positions p USING (position_id), me
                                   WHERE a.member_id = me.member_id
                                     AND a.status IN ('active', 'scheduled')
                                     AND a.starts_at <= now()
@@ -707,15 +707,15 @@ def unread_total(conn, member_id: Any) -> int:
                                     AND p.status = 'active') AS units
                 )
            SELECT coalesce(sum(c.unread), 0) AS total
-             FROM (SELECT (SELECT count(*) FROM workhub.collab_messages x
+             FROM (SELECT (SELECT count(*) FROM oams.collab_messages x
                             WHERE x.thread_id = t.thread_id
                               AND x.seq > coalesce(r.last_seq, 0)
                               AND x.author_id IS DISTINCT FROM me.member_id) AS unread
-                     FROM workhub.collab_threads t
+                     FROM oams.collab_threads t
                      CROSS JOIN me
                      CROSS JOIN scope
                      CROSS JOIN mine
-                     LEFT JOIN workhub.collab_reads r
+                     LEFT JOIN oams.collab_reads r
                             ON r.thread_id = t.thread_id AND r.member_id = me.member_id
                     WHERE t.status = 'active'
                       AND ((t.kind = 'dm' AND me.member_id IN (t.member_a, t.member_b))
@@ -723,7 +723,7 @@ def unread_total(conn, member_id: Any) -> int:
                             AND (scope.company
                               OR (scope.admin AND t.org_unit_id = ANY(mine.units))))
                         OR (t.kind = 'fill'
-                            AND EXISTS (SELECT 1 FROM workhub.interfaces i
+                            AND EXISTS (SELECT 1 FROM oams.interfaces i
                                          WHERE i.interface_id = t.interface_id
                                            AND i.status = 'active'
                                            AND (scope.company
@@ -741,6 +741,6 @@ def last_seen_seq(conn, thread_id: Any, member_id: Any) -> int:
     没有已读记录时返回 0：一条都没读过，所以整个会话都算「新的」。
     """
     row = conn.execute(
-        "SELECT last_seq FROM workhub.collab_reads WHERE thread_id = %s AND member_id = %s",
+        "SELECT last_seq FROM oams.collab_reads WHERE thread_id = %s AND member_id = %s",
         (thread_id, member_id)).fetchone()
     return row["last_seq"] if row else 0
