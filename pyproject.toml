@@ -1,5 +1,7 @@
 [project]
-name = "company-workhub"
+# 发行名（PyPI 上的名字）是 oams；包目录与导入名仍是 workhub，数据库 schema、
+# 迁移与测试夹具一律不动——改名只发生在「发布面」上，见 docs/reports/20261101-rename-oams-cli.md。
+name = "oams"
 version = "0.1.0"
 description = "Company workforce identity, positions, assignments, and permissions service"
 requires-python = ">=3.11"
@@ -22,6 +24,8 @@ dev = [
 ]
 
 [project.scripts]
+# 主名 oams；workhub 作为兼容别名留着——手册、脚本、别人的肌肉记忆都还叫它。
+oams = "workhub.cli:main"
 workhub = "workhub.cli:main"
 
 [build-system]
