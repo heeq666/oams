@@ -1131,10 +1131,10 @@ def _combine_pages(agg, page_rows):
 
 
 def _format_metric(metric_key, value):
-    """The company formatter, so a department number reads like a company one."""
+    """The shared formatter, so a department number reads like any other one."""
     try:
-        from oams import funnel as funnel_module
-        return funnel_module.format_metric(metric_key, value)
+        from oams.metric_format import format_metric
+        return format_metric(metric_key, value)
     except Exception:  # noqa: BLE001 - formatting is never worth a 500
         return "—" if value is None else str(value)
 
