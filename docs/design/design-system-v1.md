@@ -413,7 +413,7 @@ GROUP · 浮层（在 B2）： Tooltip、 Menu（面板 200 宽、圆角 18 —�
 三种载体，按复用范围选：
 
 1. **本仓库的会话**：根目录 `AGENTS.md` 已写好入口，任何新会话会自动带上硬规则和本文路径 —— 什么都不用说。
-2. **别的仓库 / 别人的机器**：把 `skills/workhub-design-system/SKILL.md` 装进 `~/.dsh/skills/workhub-design-system/`，之后说「按 OAMS 设计规范做这个页面」即可。
+2. **别的仓库 / 别人的机器**：把 `skills/oams-design-system/SKILL.md` 装进 `~/.dsh/skills/oams-design-system/`，之后说「按 OAMS 设计规范做这个页面」即可。
 3. **只想让 AI 读一次**：直接说「读 `docs/design/design-system-v1.md` 和 `docs/design/tokens.json`，按里面的令牌和八条硬规则实现」。
 
 同理，新会话里说「按 §6 的组件清单补一个 xxx 组件」，它会自己读本文的令牌、复用既有组件、把规则写回本文与代码。
