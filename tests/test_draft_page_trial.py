@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest  # noqa: E402  (test-module wrapper)
 
-from workhub.upgrade import upgrade_descriptor  # noqa: E402
+from oams.upgrade import upgrade_descriptor  # noqa: E402
 
 
 pytestmark = pytest.mark.db  # needs a live PostgreSQL and a served app
@@ -29,9 +29,9 @@ def _script() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
     import psycopg
     from psycopg.rows import dict_row
-    from workhub.security import issue_session
+    from oams.security import issue_session
 
-    base = os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000")
+    base = os.environ.get("OAMS_BASE", "http://127.0.0.1:8000")
     failures = []
 
     def check(name, ok, detail=""):
@@ -71,10 +71,10 @@ def _script() -> None:
     # testing the flow instead of the migration.
     descriptor, _ = upgrade_descriptor(descriptor)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        member = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code='DESIGN001'").fetchone()["member_id"]
-        org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code='DESIGN'").fetchone()["org_unit_id"]
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug = 'design-draft-trial'")
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        member = conn.execute("SELECT member_id FROM oams.workforce_members WHERE employee_code='DESIGN001'").fetchone()["member_id"]
+        org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code='DESIGN'").fetchone()["org_unit_id"]
+        conn.execute("DELETE FROM oams.interfaces WHERE slug = 'design-draft-trial'")
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -106,8 +106,8 @@ def _script() -> None:
         "position_id": "", "descriptor_text": json.dumps(descriptor)})
     check("draft page created", status == 303 and "saved=1" in headers.get("location", ""), headers.get("location"))
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        page = conn.execute("SELECT interface_id, status FROM workhub.interfaces WHERE slug='design-draft-trial'").fetchone()
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        page = conn.execute("SELECT interface_id, status FROM oams.interfaces WHERE slug='design-draft-trial'").fetchone()
     check("new page is a draft", page["status"] == "draft", page)
 
     status, html, _ = call(f"/departments/{org}/{page['interface_id']}")
@@ -118,12 +118,12 @@ def _script() -> None:
     check("draft page accepts a trial entry", status == 303 and "saved=1" in headers.get("location", ""),
           headers.get("location"))
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
         row = conn.execute(
-            """SELECT entry_mode FROM workhub.interface_entries
+            """SELECT entry_mode FROM oams.interface_entries
                 WHERE interface_id = %s AND title = '测试页面-试填'""", (page["interface_id"],)).fetchone()
         live_count = conn.execute(
-            """SELECT count(*) AS n FROM workhub.interface_entries
+            """SELECT count(*) AS n FROM oams.interface_entries
                 WHERE interface_id = %s AND entry_mode = 'live'""", (page["interface_id"],)).fetchone()["n"]
     check("trial entry stored in draft mode", row is not None and row["entry_mode"] == "draft", row)
     check("no trial row is live", live_count == 0, live_count)
@@ -131,8 +131,8 @@ def _script() -> None:
     status, board, _ = call("/interfaces/board")
     check("manager board does not show the trial entry", "测试页面-试填" not in board)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug='design-draft-trial'")
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        conn.execute("DELETE FROM oams.interfaces WHERE slug='design-draft-trial'")
 
     if failures:
         raise AssertionError("failed checks: " + ", ".join(failures))

@@ -10,7 +10,7 @@ which matters because data arrives in fits: names get corrected, work items get
 added later, a second department follows the first.
 
     # 1. print exactly what would be written, change nothing
-    WORKHUB_MIGRATOR_URL=... WORKHUB_ADMIN_MEMBER_ID=... \\
+    OAMS_MIGRATOR_URL=... OAMS_ADMIN_MEMBER_ID=... \\
         python scripts/load_department_data.py data/example-department.json
 
     # 2. write it
@@ -52,7 +52,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PORT = int(os.environ.get("WORKHUB_LOADER_PORT", "8126"))
+PORT = int(os.environ.get("OAMS_LOADER_PORT", "8126"))
 BASE = f"http://127.0.0.1:{PORT}"
 REASON = "initial department load"
 DEFAULT_GRANT_REASON = "minimum permission needed to do the job"
@@ -323,17 +323,17 @@ def main() -> None:
     args = parser.parse_args()
 
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
-    migrator_url = os.environ.get("WORKHUB_MIGRATOR_URL")
-    admin_id = os.environ.get("WORKHUB_ADMIN_MEMBER_ID")
+    migrator_url = os.environ.get("OAMS_MIGRATOR_URL")
+    admin_id = os.environ.get("OAMS_ADMIN_MEMBER_ID")
     if not migrator_url or not admin_id:
-        raise SystemExit("WORKHUB_MIGRATOR_URL and WORKHUB_ADMIN_MEMBER_ID are required to mint a session token")
+        raise SystemExit("OAMS_MIGRATOR_URL and OAMS_ADMIN_MEMBER_ID are required to mint a session token")
 
     sys.path.insert(0, str(ROOT / "app"))
     # Sessions are minted as the migration operator; the service itself must keep
     # whatever runtime connection the environment already points at.
-    service_url = os.environ.get("WORKHUB_DATABASE_URL")
-    os.environ["WORKHUB_DATABASE_URL"] = migrator_url
-    from workhub.security import issue_session
+    service_url = os.environ.get("OAMS_DATABASE_URL")
+    os.environ["OAMS_DATABASE_URL"] = migrator_url
+    from oams.security import issue_session
 
     token, expires_at = issue_session(admin_id)
     print(f"session minted for this run, expires {expires_at.isoformat()}", flush=True)
@@ -341,9 +341,9 @@ def main() -> None:
 
     child_env = dict(os.environ)
     if service_url is None:
-        child_env.pop("WORKHUB_DATABASE_URL", None)
+        child_env.pop("OAMS_DATABASE_URL", None)
     else:
-        child_env["WORKHUB_DATABASE_URL"] = service_url
+        child_env["OAMS_DATABASE_URL"] = service_url
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "workhub.api:app", "--host", "127.0.0.1", "--port", str(PORT)],
         cwd=str(ROOT), env=child_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

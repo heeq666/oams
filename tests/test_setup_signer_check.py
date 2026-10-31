@@ -20,9 +20,9 @@ import uuid
 import pytest
 from starlette.testclient import TestClient
 
-import workhub.api
-from workhub import web
-from workhub.config import settings
+import oams.api
+from oams import web
+from oams.config import settings
 
 pytestmark = pytest.mark.db
 
@@ -79,18 +79,18 @@ def desk(seeded_database, monkeypatch):
 
     conn = psycopg.connect(seeded_database.url, row_factory=dict_row)
     monkeypatch.setattr(web, "connection", lambda: _one_transaction(conn))
-    monkeypatch.setattr(workhub.api, "connection", lambda: _one_transaction(conn))
+    monkeypatch.setattr(oams.api, "connection", lambda: _one_transaction(conn))
 
     me = conn.execute(
-        "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+        "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
         (ADMIN,)).fetchone()["member_id"]
-    monkeypatch.setattr(workhub.api, "principal_from_request",
+    monkeypatch.setattr(oams.api, "principal_from_request",
                         lambda request: {"member_id": me, "employee_code": ADMIN,
                                          "display_name": ADMIN,
                                          "employment_status": "active"})
 
     def client() -> TestClient:
-        made = TestClient(workhub.api.app)
+        made = TestClient(oams.api.app)
         made.cookies.set(settings.web_session_cookie, "setup-signer-test")
         return made
 
@@ -128,7 +128,7 @@ def test_setup_accepts_a_stamp_signed_by_a_real_employee(desk):
     这种偷懒写法也会绿，正是测试上一轮审出来的那条。
     """
     signer = desk["conn"].execute(
-        "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+        "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
         (SIGNER,)).fetchone()["member_id"]
     assert signer != desk["me"], "签字人不能就是点按钮的人，否则这条测不出东西"
 
@@ -139,7 +139,7 @@ def test_setup_accepts_a_stamp_signed_by_a_real_employee(desk):
     assert location.endswith("saved=1"), location
     row = desk["conn"].execute(
         """SELECT status, reviewed_by, reviewed_at, descriptor->'meta'->'review' AS review
-             FROM workhub.interfaces
+             FROM oams.interfaces
             WHERE org_unit_id = %s AND name = '签字人核对'
             ORDER BY version_no DESC LIMIT 1""", (desk["org"],)).fetchone()
     assert row is not None and row["status"] == "active"
@@ -159,7 +159,7 @@ def test_a_signature_from_somebody_who_already_left_is_refused(desk):
     交接、离职、换岗之后最容易被借用的那张脸。
     """
     desk["conn"].execute(
-        """INSERT INTO workhub.workforce_members
+        """INSERT INTO oams.workforce_members
                  (employee_code, display_name, employment_status, joined_at, departed_at)
            VALUES ('LEFT001', '已离职的老王', 'departed', current_date - 400, current_date - 1)""")
     response = _submit(desk, _descriptor("LEFT001"))
@@ -168,5 +168,5 @@ def test_a_signature_from_somebody_who_already_left_is_refused(desk):
     assert "must name an active member" in location, location
     assert "LEFT001" in location
     assert desk["conn"].execute(
-        "SELECT 1 FROM workhub.interfaces WHERE name = '签字人核对'").fetchone() is None, \
+        "SELECT 1 FROM oams.interfaces WHERE name = '签字人核对'").fetchone() is None, \
         "被拒的那一页不该留下半条记录"

@@ -20,8 +20,8 @@ import logging
 import pytest
 from starlette.testclient import TestClient
 
-import workhub.api
-from workhub import web
+import oams.api
+from oams import web
 
 pytestmark = pytest.mark.db
 
@@ -67,13 +67,13 @@ def served_as(seeded_database, monkeypatch):
                  "display_name": "设计负责人", "employment_status": "active"}
     # 路由与中间件都走 `connection()`；换成这笔事务，权限与页面才看的是同一个库。
     monkeypatch.setattr(web, "connection", lambda: _one_transaction(conn))
-    monkeypatch.setattr(workhub.api, "connection", lambda: _one_transaction(conn))
-    monkeypatch.setattr(workhub.api, "principal_from_request", lambda request: principal)
+    monkeypatch.setattr(oams.api, "connection", lambda: _one_transaction(conn))
+    monkeypatch.setattr(oams.api, "principal_from_request", lambda request: principal)
     try:
         yield {"conn": conn, "member_id": member_id,
                "org_unit_id": seeded_database.org_unit_id("DESIGN"),
                "good": seeded_database.scalar(
-                   "SELECT interface_id FROM workhub.interfaces WHERE slug = %s AND status = 'active'",
+                   "SELECT interface_id FROM oams.interfaces WHERE slug = %s AND status = 'active'",
                    (GOOD_PAGE,))}
     finally:
         conn.rollback()
@@ -85,7 +85,7 @@ def _broken_page(served_as) -> dict:
 
     conn = served_as["conn"]
     row = conn.execute(
-        """INSERT INTO workhub.interfaces
+        """INSERT INTO oams.interfaces
                (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                 position_id, version_no, created_by, updated_by)
            VALUES (%s, %s, %s, 'active', 'department', '0.1', %s,
@@ -99,8 +99,8 @@ def _broken_page(served_as) -> dict:
 
 def test_a_page_the_renderer_cannot_draw_says_so_instead_of_redirecting(served_as, caplog):
     page = _broken_page(served_as)
-    with caplog.at_level(logging.ERROR, logger="workhub.render"):
-        response = TestClient(workhub.api.app).get(f"/interfaces/{page['interface_id']}")
+    with caplog.at_level(logging.ERROR, logger="oams.render"):
+        response = TestClient(oams.api.app).get(f"/interfaces/{page['interface_id']}")
 
     # 500 而不是一张「被踢回去」的 303：这一页是坏的，不是这个人不够格
     assert response.status_code == 500
@@ -116,7 +116,7 @@ def test_a_page_the_renderer_cannot_draw_says_so_instead_of_redirecting(served_a
 
 def test_the_department_workbench_reports_the_same_break(served_as):
     page = _broken_page(served_as)
-    response = TestClient(workhub.api.app).get(
+    response = TestClient(oams.api.app).get(
         f"/departments/{page['org_unit_id']}/{page['interface_id']}")
 
     # 两个入口同一件事：都是 500 + 原因，没有一个是静默 303
@@ -128,7 +128,7 @@ def test_a_page_that_renders_is_untouched(served_as):
     if served_as["good"] is None:  # pragma: no cover - 种子不对时给一句人话
         pytest.skip(f"这个库没有 {GOOD_PAGE}")
 
-    response = TestClient(workhub.api.app).get(f"/interfaces/{served_as['good']}")
+    response = TestClient(oams.api.app).get(f"/interfaces/{served_as['good']}")
 
     assert response.status_code == 200
     assert "MODULE_NOT_WHITELISTED" not in response.text
@@ -144,7 +144,7 @@ def test_a_refused_permission_still_goes_quietly_to_the_landing_page(served_as, 
         raise web._NotPermitted()
 
     monkeypatch.setattr(web, "_require", refuse)
-    response = TestClient(workhub.api.app).get(f"/interfaces/{served_as['good']}",
+    response = TestClient(oams.api.app).get(f"/interfaces/{served_as['good']}",
                                                follow_redirects=False)
 
     assert response.status_code == 303

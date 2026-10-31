@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from workhub.descriptor import (  # noqa: E402
+from oams.descriptor import (  # noqa: E402
     DescriptorError,
     assert_descriptor,
     validate_descriptor,
@@ -201,7 +201,7 @@ def test_a_stamped_descriptor_reads_back_as_approved():
     the request handler is not a record."""
     import json
 
-    from workhub.review import stamp_approval
+    from oams.review import stamp_approval
 
     descriptor = base()
     descriptor["meta"]["visibility"] = "public"
@@ -228,7 +228,7 @@ def test_a_status_word_that_is_not_approved_is_not_a_signature():
     全看「三个人一组齐没齐」，所以它才是那个 bug 的原发地——旧口径下 draft 被当成
     填好了，一页没批的公司汇总页就这么上线了。
     """
-    from workhub.descriptor import recorded_approval_gaps
+    from oams.descriptor import recorded_approval_gaps
 
     descriptor = base()
     descriptor["capabilities"] = ["entries:write", "aggregate:read:company"]
@@ -253,7 +253,7 @@ def test_a_hand_written_signature_must_name_somebody_who_works_here():
     `reviewed_by: 王二`，形状上完全合规，只有连库才知道公司里有没有这个人。所以这一
     条分开验：不给名单（离线）时只验形状，给名单时连名字一起验。
     """
-    from workhub.descriptor import recorded_approval_gaps
+    from oams.descriptor import recorded_approval_gaps
 
     descriptor = base()
     descriptor["meta"]["visibility"] = "public"
@@ -282,7 +282,7 @@ def test_a_hand_written_signature_must_name_somebody_who_works_here():
 def test_an_unverifiable_name_is_not_reported_as_verified_offline():
     """离线不是「通过」，是「没验」。函数返回空列表只代表形状齐、不代表签字人是真的；
     两件事由调用方在报告里分开说，这里钉住「给不给名单结果确实不同」。"""
-    from workhub.descriptor import recorded_approval_gaps
+    from oams.descriptor import recorded_approval_gaps
 
     descriptor = base()
     descriptor["meta"]["visibility"] = "public"

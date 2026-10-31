@@ -19,8 +19,8 @@ from pathlib import Path
 import pytest
 
 # ego 装在本机哪个路径因机器而异，别把某个人的家目录写进仓库：
-# 优先 WORKHUB_EGO，否则按安装说明的默认位置（~/.local/bin）找。
-EGO = os.environ.get("WORKHUB_EGO") or str(Path("~/.local/bin/ego-browser").expanduser())
+# 优先 OAMS_EGO，否则按安装说明的默认位置（~/.local/bin）找。
+EGO = os.environ.get("OAMS_EGO") or str(Path("~/.local/bin/ego-browser").expanduser())
 ROOT = Path(__file__).resolve().parents[1]
 DRIVER = ROOT / "scripts" / "ego-measure.mjs"
 PLACEHOLDER = '"__EGO_MEASURE_CONFIG__"'
@@ -31,11 +31,11 @@ def admin_token(employee_code="ADMIN001") -> str:
     sys.path.insert(0, str(ROOT / "app"))
     import psycopg
     from psycopg.rows import dict_row
-    from workhub.security import issue_session
+    from oams.security import issue_session
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
         row = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
             (employee_code,),
         ).fetchone()
     if row is None:
@@ -62,7 +62,7 @@ def measure(paths, expression, *, viewport, tmp_path, scroll=None, settle=2200, 
     out = tmp_path / "ego-measure.out.json"
     config.write_text(json.dumps({
         "out": str(out),
-        "base": os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000"),
+        "base": os.environ.get("OAMS_BASE", "http://127.0.0.1:8000"),
         "login": login,
         "paths": paths,
         "expression": expression,

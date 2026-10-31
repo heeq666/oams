@@ -20,7 +20,7 @@ import json
 
 import pytest
 
-from workhub import api
+from oams import api
 
 pytestmark = pytest.mark.db
 
@@ -72,14 +72,14 @@ DESCRIPTOR = {
 
 def _insert_org(conn, code, name, unit_type, parent=None):
     return conn.execute(
-        "INSERT INTO workhub.org_units (org_code, name, unit_type, parent_org_unit_id) "
+        "INSERT INTO oams.org_units (org_code, name, unit_type, parent_org_unit_id) "
         "VALUES (%s, %s, %s, %s) RETURNING org_unit_id",
         (code, name, unit_type, parent)).fetchone()["org_unit_id"]
 
 
 def _insert_position(conn, code, org_unit_id):
     return conn.execute(
-        "INSERT INTO workhub.positions (position_code, title, org_unit_id) "
+        "INSERT INTO oams.positions (position_code, title, org_unit_id) "
         "VALUES (%s, %s, %s) RETURNING position_id",
         (code, code + " 负责人", org_unit_id)).fetchone()["position_id"]
 
@@ -87,7 +87,7 @@ def _insert_position(conn, code, org_unit_id):
 def _insert_work_item(conn, org_unit_id, position_id, title, status="in_progress",
                       blocked_reason=None):
     return conn.execute(
-        "INSERT INTO workhub.work_items "
+        "INSERT INTO oams.work_items "
         "(org_unit_id, position_id, title, kind, status, blocked_reason) "
         "VALUES (%s, %s, %s, 'project', %s, %s) RETURNING work_item_id",
         (org_unit_id, position_id, title, status, blocked_reason)).fetchone()["work_item_id"]
@@ -96,7 +96,7 @@ def _insert_work_item(conn, org_unit_id, position_id, title, status="in_progress
 def _insert_interface(conn, org_unit_id, member_id, position_id, status="active",
                       descriptor=None, slug="rollup-fixture"):
     return conn.execute(
-        "INSERT INTO workhub.interfaces "
+        "INSERT INTO oams.interfaces "
         "(org_unit_id, slug, name, status, visibility, schema_version, descriptor, "
         " position_id, version_no, created_by, updated_by) "
         "VALUES (%s, %s, %s, %s, 'department', '0.2', %s::jsonb, %s, 1, %s, %s) "
@@ -116,7 +116,7 @@ def _insert_entry(conn, interface_id, member_id, note, status="done", progress=N
     # database rejects the fixture before the rollup logic is ever reached.
     retracted = status_entry == "retracted"
     return conn.execute(
-        "INSERT INTO workhub.interface_entries "
+        "INSERT INTO oams.interface_entries "
         "(interface_id, work_item_id, title, status, blocked_reason, progress_value, note, "
         " evidence, reported_by, entry_mode, status_entry, retracted_by, retracted_at) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, 'SY-2410', %s, %s, %s, "
@@ -140,7 +140,7 @@ def scratch_world(db_ready):
         conn.execute("SAVEPOINT rollup_fixture")
         try:
             member_id = conn.execute(
-                "SELECT member_id FROM workhub.workforce_members "
+                "SELECT member_id FROM oams.workforce_members "
                 "WHERE employee_code = 'ADMIN001'").fetchone()
             if member_id is None:
                 pytest.skip("no ADMIN001 member in this database")
@@ -557,7 +557,7 @@ def test_an_entry_can_be_linked_and_then_it_counts(world):
     assert before["value"] == 200
 
     world["conn"].execute(
-        "UPDATE workhub.interface_entries SET work_item_id = %s WHERE entry_id = %s",
+        "UPDATE oams.interface_entries SET work_item_id = %s WHERE entry_id = %s",
         (world["item_c"], world["entries"]["unlinked"]))
 
     after = api.aggregate_entries(world["conn"], world["dept"],
@@ -570,7 +570,7 @@ def test_an_entry_can_be_linked_and_then_it_counts(world):
     assert states["unlinked-done-97"] == "rolled"
 
     world["conn"].execute(
-        "UPDATE workhub.interface_entries SET work_item_id = NULL WHERE entry_id = %s",
+        "UPDATE oams.interface_entries SET work_item_id = NULL WHERE entry_id = %s",
         (world["entries"]["unlinked"],))
     back = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.progress_sum")
     assert back["value"] == 200, "unlinking removes it again"

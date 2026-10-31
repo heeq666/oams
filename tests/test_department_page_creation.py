@@ -22,14 +22,14 @@ def _script() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
     import psycopg
     from psycopg.rows import dict_row
-    from workhub.security import issue_session
+    from oams.security import issue_session
 
-    base = os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000")
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+    base = os.environ.get("OAMS_BASE", "http://127.0.0.1:8000")
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
         member = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'DESIGN001'").fetchone()["member_id"]
-        org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code = 'DESIGN'").fetchone()["org_unit_id"]
-        other_org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code = 'COMPANY'").fetchone()["org_unit_id"]
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code = 'DESIGN001'").fetchone()["member_id"]
+        org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code = 'DESIGN'").fetchone()["org_unit_id"]
+        other_org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code = 'COMPANY'").fetchone()["org_unit_id"]
 
     descriptor = {
         "schema_version": "0.1",
@@ -104,9 +104,9 @@ def _script() -> None:
     location = headers.get("location", "")
     check("valid page is created and opens", status == 303 and "saved=1" in location, location[:160])
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
         row = conn.execute(
-            """SELECT interface_id, status FROM workhub.interfaces
+            """SELECT interface_id, status FROM oams.interfaces
                 WHERE slug = 'design-weekly-test' ORDER BY version_no DESC LIMIT 1""").fetchone()
     check("new page starts as draft", row is not None and row["status"] == "draft")
 

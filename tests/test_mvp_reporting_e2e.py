@@ -15,13 +15,13 @@ def _script() -> None:
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'app'))
     import psycopg
-    from workhub.security import issue_session
-    base = os.environ.get('WORKHUB_DEMO_BASE','http://127.0.0.1:8132')
-    with psycopg.connect(os.environ['WORKHUB_DATABASE_URL']) as conn:
-        people = dict(conn.execute("SELECT employee_code, member_id FROM workhub.workforce_members WHERE employee_code IN ('MVP1001','MVP2001','ADMIN001')"))
-        items = dict(conn.execute("SELECT title, work_item_id FROM workhub.work_items WHERE title LIKE 'MVP演示：%'"))
-        hr_org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code='HR'").fetchone()[0]
-        sales_org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code='SALES'").fetchone()[0]
+    from oams.security import issue_session
+    base = os.environ.get('OAMS_DEMO_BASE','http://127.0.0.1:8132')
+    with psycopg.connect(os.environ['OAMS_DATABASE_URL']) as conn:
+        people = dict(conn.execute("SELECT employee_code, member_id FROM oams.workforce_members WHERE employee_code IN ('MVP1001','MVP2001','ADMIN001')"))
+        items = dict(conn.execute("SELECT title, work_item_id FROM oams.work_items WHERE title LIKE 'MVP演示：%'"))
+        hr_org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code='HR'").fetchone()[0]
+        sales_org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code='SALES'").fetchone()[0]
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl): return None
     def request(opener, path, method='GET', form=None):
@@ -85,10 +85,10 @@ def _script() -> None:
     print('PASS invalid CSRF and cross-position reporting rejected on HTML and JSON API')
     status,_,headers=request(hr,f'/reports/{hr_item}','POST',form)
     assert status==303 and 'saved=1' in headers.get('location',''),(status,headers)
-    with psycopg.connect(os.environ['WORKHUB_DATABASE_URL']) as conn:
-        report=conn.execute('SELECT latest_note,latest_evidence,latest_progress_value FROM workhub.work_item_current_state WHERE work_item_id=%s',(hr_item,)).fetchone()
-        latest=conn.execute("SELECT report_id,reported_by_member_id FROM workhub.work_item_reports WHERE work_item_id=%s ORDER BY reported_at DESC,report_id DESC LIMIT 1",(hr_item,)).fetchone()
-        audit=conn.execute("SELECT count(*) FROM workhub.workforce_audit_events WHERE subject_type='work_item_report' AND event_type='work_item_report.created' AND subject_id=%s AND actor_member_id=%s",(latest[0],people['MVP1001'])).fetchone()[0]
+    with psycopg.connect(os.environ['OAMS_DATABASE_URL']) as conn:
+        report=conn.execute('SELECT latest_note,latest_evidence,latest_progress_value FROM oams.work_item_current_state WHERE work_item_id=%s',(hr_item,)).fetchone()
+        latest=conn.execute("SELECT report_id,reported_by_member_id FROM oams.work_item_reports WHERE work_item_id=%s ORDER BY reported_at DESC,report_id DESC LIMIT 1",(hr_item,)).fetchone()
+        audit=conn.execute("SELECT count(*) FROM oams.workforce_audit_events WHERE subject_type='work_item_report' AND event_type='work_item_report.created' AND subject_id=%s AND actor_member_id=%s",(latest[0],people['MVP1001'])).fetchone()[0]
     assert report==('演示复核：面试时间已确认','虚构演示：面试日程 v2',75),report
     assert latest[1]==people['MVP1001'] and audit==1,(latest,audit)
     status,board,_=request(admin,'/board?org='+str(hr_org))

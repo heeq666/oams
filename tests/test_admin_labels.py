@@ -7,7 +7,7 @@ as-is -- a new event type must never be silently relabelled into something it is
 not.
 """
 
-from workhub import admin_labels
+from oams import admin_labels
 
 
 def test_known_events_read_as_actions():

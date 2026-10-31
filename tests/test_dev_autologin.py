@@ -1,6 +1,6 @@
 """The design-stage shortcut: no login screen.
 
-```WORKHUB_DEV_AUTOLOGIN=ADMIN001``` signs every session-less request in as that
+```OAMS_DEV_AUTOLOGIN=ADMIN001``` signs every session-less request in as that
 member. The point of these tests is not that it works, but that it stays a
 *who* and never becomes a *what*:
 
@@ -21,8 +21,8 @@ from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from starlette.requests import Request
 
-from workhub.config import settings
-from workhub.security import (DEV_ROLE_ADMIN, DEV_ROLE_MANAGER, DEV_ROLE_STAFF, DEV_WORKER_COOKIE,
+from oams.config import settings
+from oams.security import (DEV_ROLE_ADMIN, DEV_ROLE_MANAGER, DEV_ROLE_STAFF, DEV_WORKER_COOKIE,
                               ROLE_DEPARTMENT, ROLE_RANK, ROLE_STAFF, ROLE_SYSTEM,
                               current_principal, dev_autologin_target, dev_identities, dev_principal,
                               dev_role_label, principal_for_token, principal_from_request)
@@ -140,8 +140,8 @@ def test_the_three_levels_rank_from_company_to_staff():
 def test_switch_is_not_reachable_without_the_shortcut(monkeypatch):
     # api imports the web router at the bottom of its module; importing web first
     # would meet a half-built module, so load the app module the way serve does.
-    import workhub.api  # noqa: F401
-    from workhub.web import dev_switch_identity
+    import oams.api  # noqa: F401
+    from oams.web import dev_switch_identity
 
     monkeypatch.setattr(settings, "dev_autologin", None, raising=False)
     with pytest.raises(HTTPException) as excinfo:
@@ -161,11 +161,11 @@ def _admin_member_id():
     different member depending on which test runs first. Asking the connection the
     app is actually using keeps the assertion about the code path, not the seed.
     """
-    from workhub.db import connection
+    from oams.db import connection
 
     with connection() as conn:
         row = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s AND employment_status = 'active'",
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s AND employment_status = 'active'",
             ("ADMIN001",)).fetchone()
     if row is None:
         pytest.skip("no ADMIN001 member in the database the app is pointed at")
@@ -222,7 +222,7 @@ def _get(url: str):
 
 
 # These four talk to a served instance.  They name the `site` fixture (not
-# `workhub_server`) on purpose: the autouse settings_follow_the_test fixture only
+# `oams_server`) on purpose: the autouse settings_follow_the_test fixture only
 # repoints the process settings for a test that names site / hr_site /
 # migrated_site, and the app resolves the shortcut through those settings.  Asking
 # for `site` is what keeps the assertion about this member, not whichever

@@ -22,10 +22,10 @@ import uuid
 import pytest
 from starlette.testclient import TestClient
 
-import workhub.api
-from workhub import review as review_rules
-from workhub import web
-from workhub.config import settings
+import oams.api
+from oams import review as review_rules
+from oams import web
+from oams.config import settings
 
 pytestmark = pytest.mark.db
 
@@ -122,29 +122,29 @@ def room(seeded_database, monkeypatch):
 
     conn = psycopg.connect(seeded_database.url, row_factory=dict_row)
     monkeypatch.setattr(web, "connection", lambda: _one_transaction(conn))
-    monkeypatch.setattr(workhub.api, "connection", lambda: _one_transaction(conn))
+    monkeypatch.setattr(oams.api, "connection", lambda: _one_transaction(conn))
 
     conn.execute(
-        """INSERT INTO workhub.positions (position_code, title, org_unit_id)
-           SELECT 'DESIGNER', '设计师', org_unit_id FROM workhub.org_units
+        """INSERT INTO oams.positions (position_code, title, org_unit_id)
+           SELECT 'DESIGNER', '设计师', org_unit_id FROM oams.org_units
             WHERE org_code = 'DESIGN'""")
     conn.execute(
-        """INSERT INTO workhub.workforce_members
+        """INSERT INTO oams.workforce_members
                  (employee_code, display_name, employment_status, joined_at)
            VALUES (%s, '设计师小李', 'active', current_date - 30)""", (DESIGN_AUTHOR,))
     conn.execute(
-        """INSERT INTO workhub.position_assignments
+        """INSERT INTO oams.position_assignments
                  (member_id, position_id, assignment_type, status, starts_at, reason)
            SELECT m.member_id, p.position_id, 'primary', 'active',
                   now() - interval '30 days', 'seed'
-             FROM workhub.workforce_members m, workhub.positions p
+             FROM oams.workforce_members m, oams.positions p
             WHERE m.employee_code = %s AND p.position_code = 'DESIGNER'""", (DESIGN_AUTHOR,))
     # 设计师能建页、能提交，但审不了：审核权留在负责人手里，这一层才有意义。
     conn.execute(
-        """INSERT INTO workhub.permission_grants
+        """INSERT INTO oams.permission_grants
                  (subject_type, position_id, resource, action, scope_type, valid_from, reason)
            SELECT 'position', p.position_id, g.resource, g.action, 'all', now(), 'seed'
-             FROM workhub.positions p
+             FROM oams.positions p
              JOIN (VALUES ('workforce.org_units', 'read'),
                           ('workforce.positions', 'read'),
                           ('workforce.work_items', 'read'),
@@ -156,18 +156,18 @@ def room(seeded_database, monkeypatch):
     hr = seeded_database.org_unit_id("HR")
     # 同一条连接查：刚补的设计师还没提交，别的连接看不见。
     people = {code: conn.execute(
-        "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+        "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
         (code,)).fetchone()["member_id"]
         for code in (DESIGN_REVIEWER, PLATFORM, DESIGN_AUTHOR, HR_AUTHOR)}
     state = {"me": DESIGN_REVIEWER, "cookie": "review-stage-test"}
-    monkeypatch.setattr(workhub.api, "principal_from_request",
+    monkeypatch.setattr(oams.api, "principal_from_request",
                         lambda request: {"member_id": people[state["me"]],
                                          "employee_code": state["me"],
                                          "display_name": state["me"],
                                          "employment_status": "active"})
 
     def client() -> TestClient:
-        made = TestClient(workhub.api.app)
+        made = TestClient(oams.api.app)
         made.cookies.set(settings.web_session_cookie, state["cookie"])
         return made
 
@@ -249,14 +249,14 @@ def _reject(room, interface_id, note="改一下字段", code="FIELD_UNMAPPED"):
 def _row(room, interface_id):
     return room["conn"].execute(
         """SELECT status, review_stage, reviewed_at, reviewed_by, visibility
-             FROM workhub.interfaces WHERE interface_id = %s""",
+             FROM oams.interfaces WHERE interface_id = %s""",
         (interface_id,)).fetchone()
 
 
 def _stamp(room, interface_id):
     """描述符里那枚批准章：谁签的、哪一级、第几版。"""
     return room["conn"].execute(
-        "SELECT descriptor FROM workhub.interfaces WHERE interface_id = %s",
+        "SELECT descriptor FROM oams.interfaces WHERE interface_id = %s",
         (interface_id,)).fetchone()["descriptor"]["meta"]["review"]
 
 
@@ -350,7 +350,7 @@ def test_a_public_page_stops_at_the_company_stage_after_the_department_agrees(ro
     assert (row["status"], row["review_stage"]) == ("pending", "company")
     assert row["reviewed_at"] is None
     audit = room["conn"].execute(
-        """SELECT after_state FROM workhub.workforce_audit_events
+        """SELECT after_state FROM oams.workforce_audit_events
             WHERE subject_id = %s AND event_type = 'interface.review_stage_passed'""",
         (page,)).fetchall()
     assert len(audit) == 1
@@ -362,7 +362,7 @@ def test_a_public_page_stops_at_the_company_stage_after_the_department_agrees(ro
     row = _row(room, page)
     assert (row["status"], row["visibility"]) == ("active", "public")
     final = room["conn"].execute(
-        """SELECT after_state FROM workhub.workforce_audit_events
+        """SELECT after_state FROM oams.workforce_audit_events
             WHERE subject_id = %s AND event_type = 'interface.approved'
             ORDER BY occurred_at DESC LIMIT 1""",
         (page,)).fetchone()["after_state"]
@@ -413,7 +413,7 @@ def test_a_standing_in_approval_says_so_in_the_audit_record(room):
 
     assert _row(room, page)["status"] == "active"
     event = room["conn"].execute(
-        """SELECT after_state, actor_member_id FROM workhub.workforce_audit_events
+        """SELECT after_state, actor_member_id FROM oams.workforce_audit_events
             WHERE subject_id = %s AND event_type = 'interface.approved'
             ORDER BY occurred_at DESC LIMIT 1""",
         (page,)).fetchone()
@@ -422,7 +422,7 @@ def test_a_standing_in_approval_says_so_in_the_audit_record(room):
     assert payload["acting"] == "company_proxy"
     assert payload["stage"] == "department"
     platform_id = room["conn"].execute(
-        "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+        "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
         (PLATFORM,)).fetchone()["member_id"]
     assert event["actor_member_id"] == platform_id
 
@@ -479,7 +479,7 @@ def test_a_public_page_is_signed_by_two_people_from_end_to_end(room):
 
     # 6. 审计里两级各留一条，级别各自对得上
     events = room["conn"].execute(
-        """SELECT event_type, after_state FROM workhub.workforce_audit_events
+        """SELECT event_type, after_state FROM oams.workforce_audit_events
             WHERE subject_id = %s ORDER BY occurred_at""", (page,)).fetchall()
     by_type = {event["event_type"]: event["after_state"] for event in events}
     assert by_type["interface.review_stage_passed"]["stage"] == "department"

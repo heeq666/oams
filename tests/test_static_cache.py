@@ -17,17 +17,17 @@ import re
 
 import pytest
 
-import workhub.api  # noqa: F401  —— 先装配好路由，TestClient 才拿得到 app
+import oams.api  # noqa: F401  —— 先装配好路由，TestClient 才拿得到 app
 from starlette.testclient import TestClient
 
-from workhub import web
+from oams import web
 
-CSS = "workhub-modules.css"
+CSS = "oams-modules.css"
 
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(workhub.api.app)
+    return TestClient(oams.api.app)
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def test_a_static_url_carries_the_hash_of_the_file_contents():
     assert re.fullmatch(r"[0-9a-f]{8}", version), version
     assert web.static_url(CSS) == f"/static/{CSS}?v={version}"
     # 两个不同文件不该算出同一个版本串，否则一个改了两处都换地址（或者都不换）。
-    assert web.static_url("workhub-collab.css") != web.static_url(CSS)
+    assert web.static_url("oams-collab.css") != web.static_url(CSS)
 
 
 def test_one_edited_byte_changes_the_url(static_dir):
@@ -93,5 +93,5 @@ def test_the_page_links_what_the_helper_returns(client):
     response = client.get("/login")
     assert response.status_code == 200
     html = response.text
-    for relative in (CSS, "workhub-collab.css", "vendor/htmx.min.js", "brand/logo-login.png"):
+    for relative in (CSS, "oams-collab.css", "vendor/htmx.min.js", "brand/logo-login.png"):
         assert web.static_url(relative) in html, relative

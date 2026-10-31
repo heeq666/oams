@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from workhub.descriptor import (  # noqa: E402
+from oams.descriptor import (  # noqa: E402
     CAPABILITIES,
     CONTAINER_DEPTH_LIMIT,
     CURRENT_SCHEMA_VERSION,

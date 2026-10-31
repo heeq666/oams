@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest  # noqa: E402  (test-module wrapper)
 
-from workhub.upgrade import upgrade_descriptor  # noqa: E402
+from oams.upgrade import upgrade_descriptor  # noqa: E402
 
 
 pytestmark = pytest.mark.db  # needs a live PostgreSQL and a served app
@@ -30,9 +30,9 @@ def _script() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
     import psycopg
     from psycopg.rows import dict_row
-    from workhub.security import issue_session
+    from oams.security import issue_session
 
-    base = os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000")
+    base = os.environ.get("OAMS_BASE", "http://127.0.0.1:8000")
     failures = []
 
     def check(name, ok, detail=""):
@@ -72,11 +72,11 @@ def _script() -> None:
     # testing the flow instead of the migration.
     descriptor, _ = upgrade_descriptor(descriptor)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        design = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code='DESIGN001'").fetchone()["member_id"]
-        admin = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code='ADMIN001'").fetchone()["member_id"]
-        org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code='DESIGN'").fetchone()["org_unit_id"]
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug = 'design-withdraw-flow'")
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        design = conn.execute("SELECT member_id FROM oams.workforce_members WHERE employee_code='DESIGN001'").fetchone()["member_id"]
+        admin = conn.execute("SELECT member_id FROM oams.workforce_members WHERE employee_code='ADMIN001'").fetchone()["member_id"]
+        org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code='DESIGN'").fetchone()["org_unit_id"]
+        conn.execute("DELETE FROM oams.interfaces WHERE slug = 'design-withdraw-flow'")
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -112,8 +112,8 @@ def _script() -> None:
         "csrf": token_of(form, "csrf"), "slug": "design-withdraw-flow", "name": "设计部撤回测试页",
         "position_id": "", "descriptor_text": json.dumps(descriptor)})
     check("page created", status == 303 and "saved=1" in headers.get("location", ""), headers.get("location"))
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        page = conn.execute("SELECT interface_id FROM workhub.interfaces WHERE slug='design-withdraw-flow'").fetchone()
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        page = conn.execute("SELECT interface_id FROM oams.interfaces WHERE slug='design-withdraw-flow'").fetchone()
     iid = page["interface_id"]
 
     status, html, _ = design_call(f"/departments/{org}/{iid}")
@@ -131,8 +131,8 @@ def _script() -> None:
                                      {"review_csrf": token_of(html)})
     check("withdraw accepted", status == 303 and "saved=withdrawn" in headers.get("location", ""),
           headers.get("location"))
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        state = conn.execute("SELECT status FROM workhub.interfaces WHERE interface_id=%s", (iid,)).fetchone()["status"]
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        state = conn.execute("SELECT status FROM oams.interfaces WHERE interface_id=%s", (iid,)).fetchone()["status"]
     check("page is back to draft", state == "draft", state)
 
     status, queue, _ = admin_call("/reviews")
@@ -143,8 +143,8 @@ def _script() -> None:
     design_call(f"/departments/{org}/{iid}/submit-review", "POST", {"review_csrf": token_of(html)})
     status, queue, _ = admin_call("/reviews")
     admin_call(f"/reviews/{iid}/reject", "POST", {"csrf": token_of(queue, "csrf"), "note": "再改改"})
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        row = conn.execute("SELECT status, reviewed_at FROM workhub.interfaces WHERE interface_id=%s", (iid,)).fetchone()
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        row = conn.execute("SELECT status, reviewed_at FROM oams.interfaces WHERE interface_id=%s", (iid,)).fetchone()
     check("rejected page returns to draft with a decision on record",
           row["status"] == "draft" and row["reviewed_at"] is not None, row)
 
@@ -156,8 +156,8 @@ def _script() -> None:
     status, html, _ = design_call(f"/departments/{org}/{iid}")
     review_token = token_of(html, "review_csrf")  # the draft page's submit form carries it
     design_call(f"/departments/{org}/{iid}/submit-review", "POST", {"review_csrf": review_token})
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        again = conn.execute("SELECT status, reviewed_at FROM workhub.interfaces WHERE interface_id=%s",
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        again = conn.execute("SELECT status, reviewed_at FROM oams.interfaces WHERE interface_id=%s",
                              (iid,)).fetchone()
     check("re-submitted page waits again but still carries the returned decision",
           again["status"] == "pending" and again["reviewed_at"] is not None, again)
@@ -177,12 +177,12 @@ def _script() -> None:
           status == 303 and "saved=withdrawn" not in location, (status, location[:120]))
     reason = urllib.parse.unquote(location)
     check("refusal explains why", "error=" in reason and "审核已给出意见" in reason, reason[:160])
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        still = conn.execute("SELECT status FROM workhub.interfaces WHERE interface_id=%s", (iid,)).fetchone()["status"]
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        still = conn.execute("SELECT status FROM oams.interfaces WHERE interface_id=%s", (iid,)).fetchone()["status"]
     check("page stayed pending after the refused withdraw", still == "pending", still)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug='design-withdraw-flow'")
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        conn.execute("DELETE FROM oams.interfaces WHERE slug='design-withdraw-flow'")
 
     if failures:
         raise AssertionError("failed checks: " + ", ".join(failures))

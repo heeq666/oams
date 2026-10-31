@@ -1,4 +1,4 @@
-"""Tests for workhub.funnel and workhub.datacenter (contract §7).
+"""Tests for oams.funnel and oams.datacenter (contract §7).
 
 Pure functions only: no database, no network. The numbers asserted here are the
 26D冬1-2波 measurements frozen in the P0 contract (§2) and the concept doc
@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from workhub.datacenter import (  # noqa: E402
+from oams.datacenter import (  # noqa: E402
     DataCenter,
     DataCenterError,
     DataCenterHTTP,
@@ -31,7 +31,7 @@ from workhub.datacenter import (  # noqa: E402
     normalize_products,
     unwrap_tool_result,
 )
-from workhub.funnel import (  # noqa: E402
+from oams.funnel import (  # noqa: E402
     FUNNEL_KEYS,
     SAMPLE_DONE_WORDS,
     SAMPLE_WIP_WORDS,
@@ -153,7 +153,7 @@ def test_late_stages_the_owner_named_stay_in_production():
 
 
 def test_unclassified_words_keep_only_the_no_work_started_residue():
-    from workhub.funnel import UNCLASSIFIED_SAMPLE_WORDS
+    from oams.funnel import UNCLASSIFIED_SAMPLE_WORDS
 
     assert set(UNCLASSIFIED_SAMPLE_WORDS) == {
         "未开始", "未填写", "取消", "ODM", "失败", "特殊情况", "待定", "AI效果图"
@@ -492,10 +492,10 @@ def test_unwrap_tool_result_parses_text_blocks():
 # ---------------------------------------------------------------------------
 
 def test_http_client_without_a_url_and_transport_is_not_configured(monkeypatch):
-    monkeypatch.delenv("WORKHUB_DATACENTER_URL", raising=False)
+    monkeypatch.delenv("OAMS_DATACENTER_URL", raising=False)
     with pytest.raises(DataCenterNotConfigured) as excinfo:
         DataCenterHTTP()
-    assert "WORKHUB_DATACENTER_URL" in str(excinfo.value)
+    assert "OAMS_DATACENTER_URL" in str(excinfo.value)
 
 
 def test_http_client_paginates_until_a_short_page():
@@ -546,7 +546,7 @@ def test_http_client_supplies_a_data_center_protocol():
 
 
 def test_build_datacenter_honours_the_fixture_variable(monkeypatch):
-    monkeypatch.setenv("WORKHUB_DATACENTER_FIXTURE", str(FIXTURE))
+    monkeypatch.setenv("OAMS_DATACENTER_FIXTURE", str(FIXTURE))
     built = build_datacenter()
     assert isinstance(built, FixtureDataCenter)
     assert compute_funnel(built, wave=WAVE)["funnel.ordered"] == 29

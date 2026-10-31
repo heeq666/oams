@@ -19,9 +19,9 @@ import uuid
 import pytest
 from starlette.testclient import TestClient
 
-import workhub.api
-from workhub import web
-from workhub.config import settings
+import oams.api
+from oams import web
+from oams.config import settings
 
 pytestmark = pytest.mark.db
 
@@ -73,34 +73,34 @@ def hall(seeded_database, monkeypatch):
 
     conn = psycopg.connect(seeded_database.url, row_factory=dict_row)
     monkeypatch.setattr(web, "connection", lambda: _one_transaction(conn))
-    monkeypatch.setattr(workhub.api, "connection", lambda: _one_transaction(conn))
+    monkeypatch.setattr(oams.api, "connection", lambda: _one_transaction(conn))
 
     design = seeded_database.org_unit_id("DESIGN")
     # 种子里设计部只有负责人一个人，而他就是审核人；作者得是别人，不然作者回避
     # 会把这两页一起挡掉，测试就测不到「启用写了什么」。
     conn.execute(
-        """INSERT INTO workhub.positions (position_code, title, org_unit_id)
-           SELECT 'DESIGNER', '设计师', org_unit_id FROM workhub.org_units
+        """INSERT INTO oams.positions (position_code, title, org_unit_id)
+           SELECT 'DESIGNER', '设计师', org_unit_id FROM oams.org_units
             WHERE org_code = 'DESIGN'""")
     conn.execute(
-        """INSERT INTO workhub.workforce_members
+        """INSERT INTO oams.workforce_members
                  (employee_code, display_name, employment_status, joined_at)
            VALUES (%s, '设计师小李', 'active', current_date - 30)""", (AUTHOR,))
     conn.execute(
-        """INSERT INTO workhub.position_assignments
+        """INSERT INTO oams.position_assignments
                  (member_id, position_id, assignment_type, status, starts_at, reason)
            SELECT m.member_id, p.position_id, 'primary', 'active',
                   now() - interval '30 days', 'seed'
-             FROM workhub.workforce_members m, workhub.positions p
+             FROM oams.workforce_members m, oams.positions p
             WHERE m.employee_code = %s AND p.position_code = 'DESIGNER'""", (AUTHOR,))
     people = {code: conn.execute(
-        "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+        "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
         (code,)).fetchone()["member_id"]
         for code in (DESIGN_REVIEWER, PLATFORM, AUTHOR)}
 
     def pending(slug: str, stage: str) -> str:
         return str(conn.execute(
-            """INSERT INTO workhub.interfaces
+            """INSERT INTO oams.interfaces
                    (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                     version_no, review_stage, created_by, updated_by)
                VALUES (%s, %s, %s, 'pending', 'department', '0.2', %s, 1, %s, %s, %s)
@@ -109,12 +109,12 @@ def hall(seeded_database, monkeypatch):
              people[AUTHOR], people[AUTHOR])).fetchone()["interface_id"])
 
     state = {"me": PLATFORM, "cookie": "activation-stage-test"}
-    monkeypatch.setattr(workhub.api, "principal_from_request",
+    monkeypatch.setattr(oams.api, "principal_from_request",
                         lambda request: {"member_id": people[state["me"]],
                                          "employee_code": state["me"],
                                          "display_name": state["me"],
                                          "employment_status": "active"})
-    client = TestClient(workhub.api.app)
+    client = TestClient(oams.api.app)
     client.cookies.set(settings.web_session_cookie, state["cookie"])
 
     def as_(code):
@@ -141,12 +141,12 @@ def _row(hall, interface_id: str):
         """SELECT status, review_stage,
                   descriptor->'meta'->'review'->>'stage' AS stamp_stage,
                   descriptor->'meta'->'review'->>'status' AS stamp_status
-             FROM workhub.interfaces WHERE interface_id = %s""", (interface_id,)).fetchone()
+             FROM oams.interfaces WHERE interface_id = %s""", (interface_id,)).fetchone()
 
 
 def _last_audit(hall, interface_id: str):
     return hall["conn"].execute(
-        """SELECT after_state FROM workhub.workforce_audit_events
+        """SELECT after_state FROM oams.workforce_audit_events
             WHERE subject_id = %s AND event_type = 'interface.approved'
             ORDER BY occurred_at DESC, event_id DESC LIMIT 1""", (interface_id,)).fetchone()
 

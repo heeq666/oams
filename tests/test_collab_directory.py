@@ -10,14 +10,14 @@
 """
 import pytest
 
-import workhub.api  # noqa: F401  -- web imports api; importing web alone is a half-built module
-from workhub import collab
-from workhub.security import ROLE_DEPARTMENT, ROLE_SYSTEM, admin_level
+import oams.api  # noqa: F401  -- web imports api; importing web alone is a half-built module
+from oams import collab
+from oams.security import ROLE_DEPARTMENT, ROLE_SYSTEM, admin_level
 
 
 def _active_members(db):
     return db.all(
-        """SELECT member_id, display_name FROM workhub.workforce_members
+        """SELECT member_id, display_name FROM oams.workforce_members
             WHERE employment_status = 'active' ORDER BY display_name""")
 
 

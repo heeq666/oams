@@ -29,7 +29,7 @@ const settle = cfg.settle ?? 2200;
 
 // Reuse the task space (cheap) but never a page: a reused page label can point at
 // a tab an earlier run closed, and every goto then fails with "page p1 was closed".
-const space = await taskSpace(cfg.space || "workhub 布局量测");
+const space = await taskSpace(cfg.space || "oams 布局量测");
 const page = await space.newPage();
 // 先清一次 cookie：这个浏览器配置是和本机使用者共用的，残留的 127.0.0.1
 // 会话 cookie 会让登录那一步变成空操作，之后每一页量到的都是登录页（没有

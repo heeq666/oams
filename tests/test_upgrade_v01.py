@@ -15,10 +15,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from workhub.descriptor import validate_descriptor
-from workhub.plugin_cli import main as plugin_main
-from workhub.render import render_read_only
-from workhub.upgrade import (
+from oams.descriptor import validate_descriptor
+from oams.plugin_cli import main as plugin_main
+from oams.render import render_read_only
+from oams.upgrade import (
     CURRENT_SCHEMA_VERSION,
     LEGACY_SCHEMA_VERSION,
     MODULE_MAP,
@@ -105,7 +105,7 @@ def test_input_descriptor_is_not_mutated():
 
 
 def test_every_module_map_value_is_a_registered_v02_module():
-    from workhub.modules import get_module
+    from oams.modules import get_module
 
     for legacy, target in MODULE_MAP.items():
         spec = get_module(target)
@@ -289,7 +289,7 @@ def test_unknown_module_does_not_block_the_rest():
 
 
 def test_capabilities_are_added_and_lifted_from_the_frozen_set():
-    from workhub.descriptor import CAPABILITIES
+    from oams.descriptor import CAPABILITIES
 
     upgraded, _hints = upgrade_descriptor(load_fixture())
     capabilities = upgraded["capabilities"]

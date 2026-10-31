@@ -3,14 +3,14 @@
 It needs a throwaway database that has already been seeded, because it signs in as
 the seeded administrator and as the seeded specialist:
 
-    docker run -d --name workhub-web-test \
-        -e POSTGRES_PASSWORD=change-me -e POSTGRES_DB=workhub_test \
+    docker run -d --name oams-web-test \
+        -e POSTGRES_PASSWORD=oams_test_pw -e POSTGRES_DB=oams_test \
         -p 55433:5432 postgres:16-alpine
-    export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@localhost:55433/workhub_test
-    python -m workhub.cli migrate
-    ADMIN=$(python -m workhub.cli bootstrap-admin --name Admin --employee-code 9999 \
+    export OAMS_DATABASE_URL=postgresql://postgres:oams_test_pw@localhost:55433/workhub_test
+    python -m oams.cli migrate
+    ADMIN=$(python -m oams.cli bootstrap-admin --name Admin --employee-code 9999 \
         --org-code acme --org-name ACME | python -c "import json,sys;print(json.load(sys.stdin)['member_id'])")
-    WORKHUB_MIGRATOR_URL=$WORKHUB_DATABASE_URL WORKHUB_ADMIN_MEMBER_ID=$ADMIN \
+    OAMS_MIGRATOR_URL=$OAMS_DATABASE_URL OAMS_ADMIN_MEMBER_ID=$ADMIN \
         python scripts/load_department_data.py data/seed-hr-department.json --apply
     python tests/test_web_ui_e2e.py
 
@@ -33,9 +33,9 @@ import urllib.request
 import pytest
 
 ROOT = str(__import__("pathlib").Path(__file__).resolve().parents[1])
-# The conftest fixture serves the app on a free port and points WORKHUB_BASE at
+# The conftest fixture serves the app on a free port and points OAMS_BASE at
 # it; BASE is rebound per test inside _script().
-BASE = os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000")
+BASE = os.environ.get("OAMS_BASE", "http://127.0.0.1:8000")
 results = []
 
 
@@ -137,13 +137,13 @@ def _script(base: str) -> None:
     global BASE, admin_token, opener
     BASE = base
     sys.path.insert(0, ROOT + "/app")
-    from workhub.security import issue_session  # noqa: E402
+    from oams.security import issue_session  # noqa: E402
     import psycopg  # noqa: E402
     from psycopg.rows import dict_row  # noqa: E402
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
         people = {row["employee_code"]: row["member_id"]
-                  for row in conn.execute("SELECT employee_code, member_id FROM workhub.workforce_members").fetchall()}
+                  for row in conn.execute("SELECT employee_code, member_id FROM oams.workforce_members").fetchall()}
 
 
     code, body, headers = call("/board")
@@ -179,11 +179,11 @@ def _script(base: str) -> None:
     code, body, _ = call("/admin/work-items")
     check("admin work items page renders", code == 200 and "全部工作项" in body, str(code))
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        real_org = conn.execute("SELECT org_unit_id FROM workhub.org_units LIMIT 1").fetchone()["org_unit_id"]
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        real_org = conn.execute("SELECT org_unit_id FROM oams.org_units LIMIT 1").fetchone()["org_unit_id"]
         # Belongs to the same department: a work item for a post outside the room
         # would be refused, and rightly so -- the test has to ask for something legal.
-        real_pos = conn.execute("SELECT position_id FROM workhub.positions WHERE org_unit_id = %s LIMIT 1",
+        real_pos = conn.execute("SELECT position_id FROM oams.positions WHERE org_unit_id = %s LIMIT 1",
                                 (real_org,)).fetchone()["position_id"]
     code, body, headers = call("/admin/work-items", method="POST", form={
         "csrf": page_token("/admin/work-items"),

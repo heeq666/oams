@@ -5,8 +5,8 @@
 读」），徽章只负责一眼看出「有多少没看」。
 """
 
-import workhub.api  # noqa: F401  -- web imports api；单独 import web 是半成品模块
-from workhub.web import _badge_count
+import oams.api  # noqa: F401  -- web imports api；单独 import web 是半成品模块
+from oams.web import _badge_count
 
 
 def test_zero_and_empty_render_nothing():
