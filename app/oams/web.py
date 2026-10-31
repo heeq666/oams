@@ -196,7 +196,7 @@ def _rollup_gap(state):
     return {
         "counted_unlinked": "本部门算数；关联工作项后才会进公司汇总",
         "unlinked": "还没关联工作项：关联后这条才会进公司汇总",
-        "draft": "这条是试填数据：页面通过审核后才进汇总",
+        "draft": "试填数据：本部门的数也不计它；正式提交后才算",
         "retracted": "这条已撤回，不再参与汇总",
     }.get(state)
 
