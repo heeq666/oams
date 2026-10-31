@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 from pathlib import Path
 from uuid import UUID
 
@@ -107,8 +108,18 @@ def _run_plugin(args):
     return plugin_main(args.plugin_args)
 
 
+def _prog_name():
+    """帮助里的程序名跟着入口走：`oams` 与兼容别名 `workhub` 各自报各自的名字。
+
+    两个入口都指向这里，写死 "workhub" 会让 `oams --help` 冒充成 workhub；
+    其它调用方式（如模块方式、测试里直接调 main()）仍报 workhub。
+    """
+    name = Path(sys.argv[0]).name if sys.argv and sys.argv[0] else ""
+    return name if name in {"oams", "workhub"} else "workhub"
+
+
 def main():
-    parser = argparse.ArgumentParser(prog="workhub")
+    parser = argparse.ArgumentParser(prog=_prog_name())
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("migrate", help="apply the initial migration to the configured database").set_defaults(func=lambda _: migrate())
     bootstrap = commands.add_parser("bootstrap-admin", help="create the first administrator; run once from a trusted operator shell")
