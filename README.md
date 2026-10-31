@@ -48,7 +48,7 @@ oams serve                    # 默认 http://127.0.0.1:8000
 - [身份、岗位与权限底座方案](docs/architecture/workforce-identity-position-permission-plan.md) —— 底座为什么这么设计
 - [身份、岗位与权限底座首期实现契约](docs/architecture/workforce-identity-position-permission-implementation.md) —— 对应的实现口径
 - [Frappe HR / ERPNext 适配评估](docs/architecture/frappe-erpnext-adaptation-assessment.md) —— 与现成 HR 系统的取舍
-- [独立账号中心接入契约（待定）](docs/runbooks/account-center-integration.md) —— 登录认证交给外部账号中心
+- [独立账号中心接入契约（草案，尚未实现）](docs/runbooks/account-center-integration.md) —— 登录认证交给外部账号中心
 - [架构与决策](docs/architecture/) —— 契约、方案与选型记录（含当时为什么这么定）
 
 ## 许可与署名
