@@ -26,6 +26,7 @@ from collections.abc import Collection
 from typing import Any
 
 from oams.metrics import (
+    DEPARTMENT_METRIC_PREFIX,
     METRIC_CATALOG,
     validate_metric_binding,
 )
@@ -111,8 +112,10 @@ REQUIRED_TOP_LEVEL_KEYS = (
     "modules", "fields", "status_map", "rules", "meta",
 )
 
-#: Display modules that read a platform metric through a declared param.
-#: A display module may only ever show a *platform* metric (contract §2).
+#: Display modules that read a metric through a declared param.
+#: 可以引两类：目录里的 platform 指标（将来平台回来还能用），或**本页自己 emit 的指标**
+#: （`dept.<本单位CODE>.` 前缀 + 在本页 metrics[] 以 mode=emit 声明）。别部门的、凭空编的、
+#: 引了但本页没 emit 的一律拒（契约 §2）。
 DISPLAY_METRIC_PARAMS: dict[str, tuple[str, ...]] = {
     "metric_card": ("metric_key",),
     "rank_list": ("metric_key",),
@@ -341,9 +344,39 @@ def _check_modules_legacy(problems: _Problems, modules: list, fields: list[dict]
                          f"type {mtype!r} must be custom or one of {DEFAULT_MODULE_TYPES}")
 
 
+def _org_unit_code(descriptor: dict) -> str:
+    """本单位 CODE；没写或不合法时给空串（呼叫方自己决定怎么报）。"""
+    code = descriptor.get("org_unit_code")
+    return code.strip() if isinstance(code, str) and code.strip() else ""
+
+
+def emitted_metric_keys(descriptor: dict) -> set[str]:
+    """本页 `metrics[]` 里以 mode=emit 声明、且落在本单位命名空间的键。
+
+    只认**本页自己声明**的键：展示一个别部门 emit 的指标等于跨部门读数，那是
+    汇总能力该管的事，不是这个显示参数该管的事（契约 §2）。
+    """
+    org_unit_code = descriptor.get("org_unit_code")
+    if not isinstance(org_unit_code, str) or not org_unit_code:
+        return set()
+    prefix = f"{DEPARTMENT_METRIC_PREFIX}.{org_unit_code}."
+    raw = descriptor.get("metrics")
+    if not isinstance(raw, list):
+        return set()
+    keys: set[str] = set()
+    for binding in raw:
+        if not isinstance(binding, dict) or binding.get("mode") != "emit":
+            continue
+        key = binding.get("metric_key")
+        if isinstance(key, str) and key.strip().startswith(prefix):
+            keys.add(key.strip())
+    return keys
+
+
 def _check_modules_v02(problems: _Problems, modules: Any, fields: list[dict],
                        field_keys: set[str], mapped_fields: set[str],
-                       produced: set[str], strict_v02: bool) -> None:
+                       produced: set[str], strict_v02: bool,
+                       org_unit_code: str = "", emitted: set[str] | None = None) -> None:
     """v0.2 module rules: registry whitelist, nesting, params, field consumption."""
     # Structural gate first (types, versions, container iron law, depth).
     for message in validate_module_tree(modules):
@@ -407,7 +440,11 @@ def _check_modules_v02(problems: _Problems, modules: Any, fields: list[dict],
                 where = f"{path}.params.{name}" if name in nested else f"{path}.{name}"
                 problems.add("DATA_RULE_VIOLATION", where, problem)
 
-        # A display module may only show a platform metric (contract §2).
+        # A display module may show a platform metric **or one this page emits itself**
+        # (contract §2). Cross-department keys are not a display concern: they are
+        # refused here on purpose rather than opened up as "any key that exists".
+        own_prefix = f"{DEPARTMENT_METRIC_PREFIX}.{org_unit_code}." if org_unit_code else ""
+        own_keys = emitted or set()
         for param_name in DISPLAY_METRIC_PARAMS.get(spec.key, ()):
             if param_name not in written:
                 continue
@@ -416,13 +453,27 @@ def _check_modules_v02(problems: _Problems, modules: Any, fields: list[dict],
             for ref in refs:
                 if not isinstance(ref, str) or not ref.strip():
                     problems.add("METRIC_UNDEFINED", f"{path}.params.{param_name}",
-                                 "must reference a platform metric key")
+                                 "must reference a metric key (platform, or one this page emits)")
                     continue
-                metric = METRIC_CATALOG.get(ref)
-                if metric is None or metric.origin != "platform":
+                key = ref.strip()
+                metric = METRIC_CATALOG.get(key)
+                if metric is not None and metric.origin == "platform":
+                    continue  # 平台指标（目录眼下为空，规则留给将来）
+                if key in own_keys:
+                    continue  # 本页自己 emit、本页自己展示
+                if key.startswith(f"{DEPARTMENT_METRIC_PREFIX}.") and own_prefix \
+                        and not key.startswith(own_prefix):
                     problems.add("METRIC_UNDEFINED", f"{path}.params.{param_name}",
-                                 f"{ref!r} is not a platform metric; display modules may only "
-                                 f"reference metrics computed by the data centre")
+                                 f"{key!r} 属于别的部门的指标命名空间；一页只能展示本部门"
+                                 f"（{own_prefix}）自己 emit 的指标")
+                elif own_prefix and key.startswith(own_prefix):
+                    problems.add("METRIC_UNDEFINED", f"{path}.params.{param_name}",
+                                 f"本页把 {key!r} 当展示指标用，但它没有在 metrics[] 里以 "
+                                 f"mode=emit 声明（自产才能自用）")
+                else:
+                    problems.add("METRIC_UNDEFINED", f"{path}.params.{param_name}",
+                                 f"{key!r} 既不是目录里的平台指标，也不是本页 emit 的指标"
+                                 f"（后者须以 {own_prefix or 'dept.<CODE>.'} 开头并在本页声明）")
 
         # source_fields must name fields this interface declares. A container
         # carrying source_fields was already refused by the structural gate; do not
@@ -514,9 +565,8 @@ def _check_metrics(problems: _Problems, descriptor: dict, version: str,
     if not isinstance(raw, list):
         problems.add("METRIC_UNDEFINED", "metrics", "must be a list of metric bindings")
         return
-    org_unit_code = descriptor.get("org_unit_code")
-    if not isinstance(org_unit_code, str) or not org_unit_code:
-        org_unit_code = ""
+    org_unit_code = _org_unit_code(descriptor)
+    own_metrics = emitted_metric_keys(descriptor)
     seen: set[str] = set()
     for index, binding in enumerate(raw):
         if isinstance(binding, dict):
@@ -526,7 +576,8 @@ def _check_metrics(problems: _Problems, descriptor: dict, version: str,
                              "duplicate metric binding")
             if isinstance(metric_key, str):
                 seen.add(metric_key)
-        problems.extend(validate_metric_binding(binding, org_unit_code, fields_map))
+        problems.extend(validate_metric_binding(binding, org_unit_code, fields_map,
+                                               own_metrics))
 
 
 def _check_visibility(problems: _Problems, descriptor: dict) -> None:
@@ -716,7 +767,8 @@ def validate_descriptor(descriptor: dict[str, Any],
     else:
         # v0.2 lets the structural gate speak for itself (empty / non-list trees).
         _check_modules_v02(problems, modules, fields, field_keys, mapped_fields,
-                           produced, strict_v02)
+                           produced, strict_v02, _org_unit_code(descriptor),
+                           emitted_metric_keys(descriptor))
 
     # No executable or credential material anywhere in the document.
     # _walk 收集 (path, key)，由这里决定文案：v0.1 保持原裸格式，v0.2 走
