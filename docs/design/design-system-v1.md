@@ -203,6 +203,10 @@ GROUP · 浮层（在 B2）： Tooltip、 Menu（面板 200 宽、圆角 18 —�
 - 单行规则只作用于**页面数据表**：`white-space:nowrap + overflow:hidden + text-overflow:ellipsis + max-width:320px`，超宽省略不折行；模块内的明细表在窄栏里允许折行（行高随之变大），别为了不折行去缩字号。
 - `.wh-input` 同名冲突**已修（2026-10-26）**：`static/oams-modules.css:289` 原先的 `.wh-input{...}` 会连模块外壳类 `.wh-m.wh-input` 一起命中，把 input 类模块（metric_input、progress_row 编辑态）的外壳内距压成 6/8、圆角压成 12。现在面板那一组改成 `.wh-m.wh-input` 双类名（.wh-container / .wh-display 单列一组）：两个类名同时命中外壳，优先级 0,2,0 高于真控件的单类名，控件仍是 `.wh-input` 的（内距 2026-10-31 起为 12，此前 6/8）+ 12 圆角，外壳回到 padding 18/16/14 + 圆角 18。别改成 `input.wh-input` 那种写法：namespace 测试（`tests/test_render_modules.py`）要求每个选择器以 `.wh-` 开头。
 
+- **`rank_list` 在部门指标下暂不可用（2026-11-02 实测，别指望接线修好）**：它只认 `rank.<指标键>.<标签>` 形状的聚合键（`app/oams/render.py` 的 `rank_rows()`），而部门 emit 指标的聚合键就是 `dept.<部门代码>.<指标键>` 本身，凑不出这种前缀，所以它永远走空态「还没有排行数据」——**即使调用方把 aggregates 传进来也一样**。要它有意义，只能改成「按声明的字段 / 状态分组」（例如按 stage 分「在做多少、已完成多少」），那是分组口径的设计决策，已记进收尾清单，本轮不动。
+- **`flow_strip` 的 `labels` 必填（2026-11-02 定）**：不给 `labels` 时段名回落到指标键（`metric_name()` 的兜底），一屏上露出 `done_count` 这种内部键名，比显示「—」更糟——「—」是没数据，键名是让人读代码。规范要求每条 `flow_strip` 都写 `labels`，段数与 `metrics` 等长；**「缺 labels 就拒」的校验归后端**（`descriptor.py`），本轮只写规则，在其落地前不把这条件算作验收通过。
+- **部门指标的名字只切前缀（2026-11-02 定）**：部门 emit 指标没有目录可查，渲染层只把 `dept.<部门代码>.` 切掉、剩 `done_count`——这是可逆的截断，**不换空格、不大写、不拼中英文**（拼出来的都是编名字）。真名字要等 emit binding 支持可选 `label`，那时 label 优先、切前缀自动退居兜底。单位空着是合理退化（`metric_format` 的 docstring 已写明空串合法），等 `metric_input.params.unit → 指标元数据` 接上会自动生效，规范侧不用提前铺路。
+
 协作室（两栏面板，浮层，走 §7.3 的面板状浮层：`bg/surface` + 唯一投影 + `radius/card`）：
 
 - **它是全局的讨论层，不是导航项**：不新增顶级菜单，全站只有右下角一颗 48 圆的按钮（右下 24 边距）呼出。协作室是独立的一层，**和当前停在哪个页面无关**——左栏会话列表就是全部会话，不分「本页群 / 其他群」。
