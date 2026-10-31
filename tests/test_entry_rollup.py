@@ -63,9 +63,9 @@ DESCRIPTOR = {
          "from_field": "state_word"},
         {"metric_key": "dept.ROLLUPD.private", "mode": "emit", "agg": "count",
          "from_field": "fabric_note"},
-        # A display binding shows a platform number: it must never be treated as
-        # an aggregation of entries, so _descriptor_bindings has to skip it.
-        {"metric_key": "funnel.sample_done", "mode": "display"},
+        # display 引本页自己 emit 的键（契约 §2 自产自用）：它仍然必须被
+        # _descriptor_bindings 跳过，不能当成一条能聚合的绑定。
+        {"metric_key": "dept.ROLLUPD.progress_sum", "mode": "display"},
     ],
 }
 
@@ -107,7 +107,7 @@ def _insert_interface(conn, org_unit_id, member_id, position_id, status="active"
 
 def _insert_entry(conn, interface_id, member_id, note, status="done", progress=None,
                   work_item_id=None, entry_mode="live", status_entry="active",
-                  title="AW24-001", blocked_reason=None):
+                  title="AW24-001", blocked_reason=None, extra=None):
     # The database itself refuses a blocked entry without a reason (migration 0005),
     # so the fixture supplies one rather than working around the CHECK.
     if status == "blocked" and not blocked_reason:
@@ -118,13 +118,14 @@ def _insert_entry(conn, interface_id, member_id, note, status="done", progress=N
     return conn.execute(
         "INSERT INTO oams.interface_entries "
         "(interface_id, work_item_id, title, status, blocked_reason, progress_value, note, "
-        " evidence, reported_by, entry_mode, status_entry, retracted_by, retracted_at) "
+        " evidence, reported_by, entry_mode, status_entry, retracted_by, retracted_at, extra) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, 'SY-2410', %s, %s, %s, "
-        "        CASE WHEN %s THEN %s END, CASE WHEN %s THEN now() END) "
+        "        CASE WHEN %s THEN %s END, CASE WHEN %s THEN now() END, %s::jsonb) "
         "RETURNING entry_id",
         (interface_id, work_item_id, title, status, blocked_reason, progress, note,
          member_id, entry_mode, status_entry,
-         retracted, member_id, retracted)).fetchone()["entry_id"]
+         retracted, member_id, retracted,
+         json.dumps(extra) if extra is not None else "{}")).fetchone()["entry_id"]
 
 
 @contextlib.contextmanager
@@ -246,36 +247,60 @@ def test_rollup_predicate_names_exactly_the_three_conditions():
 
 
 def test_each_broken_condition_gets_its_own_state(world):
-    states = {row["note"]: row["rollup_state"]
-              for row in api.page_entries(world["conn"], world["page"])}
-    assert states["rolled-done-40"] == "rolled"
-    assert states["unlinked-done-97"] == "unlinked"
-    assert states["draft-done-97"] == "draft"
-    assert states["retracted-done-97"] == "retracted"
+    """页面上那一列说的是「这一行在本部门算不算」，不是「进不进公司数」。
+
+    部门一面只问两件事：这行是真的吗（不是草稿、没被撤回）。工作项是公司汇总
+    才需要的门槛，所以没关联的行在部门这里照样算数，只是进不了公司数字。
+    """
+    rows = {row["note"]: row for row in api.page_entries(world["conn"], world["page"])}
+    assert rows["rolled-done-40"]["rollup_state"] == "counted"
+    assert rows["unlinked-done-97"]["rollup_state"] == "counted_unlinked"
+    assert rows["draft-done-97"]["rollup_state"] == "draft"
+    assert rows["retracted-done-97"]["rollup_state"] == "retracted"
+    # 同一个行同时告诉你它进不进公司数：两种「算数」在这里分开
+    assert rows["rolled-done-40"]["feeds_company"] is True
+    assert rows["unlinked-done-97"]["feeds_company"] is False
+    assert rows["draft-done-97"]["feeds_company"] is False
+    assert rows["retracted-done-97"]["feeds_company"] is False
 
 
 def test_retracted_entry_does_not_reach_the_sum(world):
     result = api.aggregate_entries(world["conn"], world["dept"],
                                    "dept.ROLLUPD.progress_sum")
     assert result["available"] is True
-    assert result["entry_count"] == 3, "only the three linked live active entries count"
-    assert result["value"] == 200, "40 + 60 + 100; the retracted 97 must not be added"
-    assert 97 not in [entry["progress_value"] for entry in result["entries"]]
+    # 部门数 = 40 + 60 + 100 + 97（未关联那条），撤回的 97 不加。
+    assert result["entry_count"] == 4
+    assert result["value"] == 297
+    # 97 这个值在三条异常行里重复，所以按 entry_id 判，不按值判。
+    counted = {entry["entry_id"] for entry in result["entries"]}
+    assert world["entries"]["retracted"] not in counted
+    assert world["entries"]["unlinked"] in counted, "未关联的算部门数"
 
 
 def test_draft_entry_does_not_reach_the_sum(world):
     result = api.aggregate_entries(world["conn"], world["dept"],
                                    "dept.ROLLUPD.progress_sum")
-    assert result["value"] == 200
-    assert 97 not in [entry["progress_value"] for entry in result["entries"]]
+    assert result["value"] == 297
+    assert world["entries"]["draft"] not in {entry["entry_id"] for entry in result["entries"]}
 
 
-def test_unlinked_entry_does_not_reach_the_sum(world):
-    result = api.aggregate_entries(world["conn"], world["dept"],
-                                   "dept.ROLLUPD.progress_sum")
-    assert result["value"] == 200
-    assert len(result["entries"]) == 3
-    assert all(entry["work_item_id"] is not None for entry in result["entries"])
+def test_unlinked_entry_counts_here_but_not_in_the_company_number(world):
+    """同一行、同一刻：部门页算它，公司数不算它。
+
+    一条报销不需要先挂项目才叫真实发生。所以部门那一面只问「是真的吗」，
+    公司那一面还要问「挂上工作项了吗」——「未关联」说的是不进公司数，
+    从来没说过「这行不算数」。
+    """
+    department = api.aggregate_entries(world["conn"], world["dept"],
+                                       "dept.ROLLUPD.progress_sum")
+    assert department["value"] == 297, "40 + 60 + 100 + 97：未关联那条在部门数里"
+    assert len(department["entries"]) == 4
+    assert world["entries"]["unlinked"] in {e["entry_id"] for e in department["entries"]}
+
+    company = api.rollup_entries(world["conn"], world["page"], "dept.ROLLUPD.progress_sum")
+    assert company["value"] == 200, "公司数仍要工作项门槛"
+    assert len(company["entries"]) == 3
+    assert all(entry["work_item_id"] is not None for entry in company["entries"])
 
 
 def test_rollup_entries_lists_only_the_entries_that_counted(world):
@@ -322,22 +347,22 @@ def test_count_aggregation_counts_rows(world):
     result = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.finished")
     assert result["agg"] == "count"
     assert result["where_status"] == "done"
-    assert result["value"] == 2, "two entries are done; the blocked one is filtered out"
-    assert result["entry_count"] == 2
+    assert result["value"] == 3, "三条 done（含未关联那条），blocked 被过滤掉"
+    assert result["entry_count"] == 3
 
 
 def test_sum_aggregation_adds_the_values(world):
     result = api.aggregate_entries(world["conn"], world["dept"],
                                    "dept.ROLLUPD.progress_sum")
     assert result["agg"] == "sum"
-    assert result["value"] == 200
+    assert result["value"] == 297, "40 + 60 + 100 + 97"
 
 
 def test_avg_aggregation_averages_the_values(world):
     result = api.aggregate_entries(world["conn"], world["dept"],
                                    "dept.ROLLUPD.progress_avg")
     assert result["agg"] == "avg"
-    assert result["value"] == pytest.approx(200 / 3)
+    assert result["value"] == pytest.approx(297 / 4)
 
 
 def test_count_distinct_aggregation_deduplicates(world):
@@ -452,24 +477,24 @@ def test_build_department_aggregates_reports_real_values(world):
     panel = api.build_department_aggregates(world["conn"], world["dept"])
     assert panel["available"] is True
     values = {metric["metric_key"]: metric["value"] for metric in panel["metrics"]}
-    assert values["dept.ROLLUPD.finished"] == 2
-    assert values["dept.ROLLUPD.progress_sum"] == 200
-    assert values["dept.ROLLUPD.progress_avg"] == pytest.approx(200 / 3)
-    assert values["dept.ROLLUPD.statuses"] == 2
+    assert values["dept.ROLLUPD.finished"] == 3
+    assert values["dept.ROLLUPD.progress_sum"] == 297
+    assert values["dept.ROLLUPD.progress_avg"] == pytest.approx(297 / 4)
+    assert values["dept.ROLLUPD.statuses"] == 2, "done / blocked 两种状态"
     assert values["dept.ROLLUPD.private"] is None
     # render_interface wants exactly this shape for metric_card / metric_grid.
-    assert panel["aggregates"]["dept.ROLLUPD.progress_sum"] == 200
+    assert panel["aggregates"]["dept.ROLLUPD.progress_sum"] == 297
     assert "dept.ROLLUPD.private" not in panel["aggregates"]
     finished = next(metric for metric in panel["metrics"]
                     if metric["metric_key"] == "dept.ROLLUPD.finished")
-    assert finished["formatted"] == "2"
+    assert finished["formatted"] == "3"
     assert finished["label"] == "打样状态"
 
 
-def test_build_department_aggregates_counts_the_three_states(world):
+def test_build_department_aggregates_counts_the_four_states(world):
     panel = api.build_department_aggregates(world["conn"], world["dept"])
-    assert panel["counts"]["rolled"] == 3
-    assert panel["counts"]["unlinked"] == 1
+    assert panel["counts"]["counted"] == 3
+    assert panel["counts"]["counted_unlinked"] == 1
     assert panel["counts"]["draft"] == 1
     assert panel["counts"]["retracted"] == 1
     assert panel["total"] == 6
@@ -488,14 +513,14 @@ def test_build_department_aggregates_for_a_company_picks_up_departments(world):
     panel = api.build_department_aggregates(world["conn"], world["company"])
     assert panel["available"] is True
     values = {metric["metric_key"]: metric["value"] for metric in panel["metrics"]}
-    assert values["dept.ROLLUPD.progress_sum"] == 200, "the department page is picked up"
-    assert values["dept.ROLLUPD.finished"] == 2
-    assert panel["counts"]["rolled"] == 3
+    assert values["dept.ROLLUPD.progress_sum"] == 297, "the department page is picked up"
+    assert values["dept.ROLLUPD.finished"] == 3
+    assert panel["counts"]["counted"] == 3
 
 
 def test_entry_state_counts_matches_the_rows(world):
     counts = api.entry_state_counts(world["conn"], world["page"])
-    assert counts == {"rolled": 3, "unlinked": 1, "draft": 1, "retracted": 1}
+    assert counts == {"counted": 3, "counted_unlinked": 1, "draft": 1, "retracted": 1}
 
 
 # ---------------------------------------------------------------------------
@@ -549,31 +574,40 @@ def test_list_open_work_items_carries_what_the_link_form_shows(world):
         assert row["org_unit_name"] == "汇总测试部门"
 
 
-def test_an_entry_can_be_linked_and_then_it_counts(world):
-    """The whole point, end to end on real rows: linking changes the number."""
+def test_linking_an_entry_moves_it_into_the_company_number_not_the_department_one(world):
+    """关联只改变「进不进公司数」，部门自己的数从头到尾没动过。
 
-    before = api.aggregate_entries(world["conn"], world["dept"],
-                                   "dept.ROLLUPD.progress_sum")
-    assert before["value"] == 200
+    这是两套口径最容易被写错的地方：以前关联前后部门数会从 200 跳到 297，
+    让「关联」看起来像是让数字变真的动作；其实它只决定了这行能不能进公司汇总。
+    """
+
+    def department():
+        return api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.progress_sum")
+
+    def company():
+        return api.rollup_entries(world["conn"], world["page"], "dept.ROLLUPD.progress_sum")
+
+    assert department()["value"] == 297
+    assert company()["value"] == 200
 
     world["conn"].execute(
         "UPDATE oams.interface_entries SET work_item_id = %s WHERE entry_id = %s",
         (world["item_c"], world["entries"]["unlinked"]))
 
-    after = api.aggregate_entries(world["conn"], world["dept"],
-                                  "dept.ROLLUPD.progress_sum")
-    assert after["value"] == 200 + 97, "the newly linked entry now feeds the sum"
-    assert after["entry_count"] == 4
+    assert department()["value"] == 297, "部门数不因关联而变"
+    assert department()["entry_count"] == 4
+    assert company()["value"] == 297, "关联后才进公司数"
+    assert company()["entry_count"] == 4
 
-    states = {row["note"]: row["rollup_state"]
-              for row in api.page_entries(world["conn"], world["page"])}
-    assert states["unlinked-done-97"] == "rolled"
+    rows = {row["note"]: row for row in api.page_entries(world["conn"], world["page"])}
+    assert rows["unlinked-done-97"]["rollup_state"] == "counted"
+    assert rows["unlinked-done-97"]["feeds_company"] is True
 
     world["conn"].execute(
         "UPDATE oams.interface_entries SET work_item_id = NULL WHERE entry_id = %s",
         (world["entries"]["unlinked"],))
-    back = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.progress_sum")
-    assert back["value"] == 200, "unlinking removes it again"
+    assert department()["value"] == 297, "取消关联也不影响部门数"
+    assert company()["value"] == 200, "撤出公司数"
 
 
 # ---------------------------------------------------------------------------
@@ -593,14 +627,14 @@ def test_two_pages_declaring_one_metric_are_pooled_not_first_wins(world):
 
     conn = world["conn"]
 
-    # sum: both pages contribute (200 was page one alone).
+    # sum: both pages contribute (297 was page one alone, 4 rows).
     total = api.aggregate_entries(conn, world["dept"], "dept.ROLLUPD.progress_sum")
-    assert total["value"] == 200 + 80
-    assert total["entry_count"] == 5
+    assert total["value"] == 297 + 80
+    assert total["entry_count"] == 6
 
-    # count: five rows, not two.
+    # count: 部门数按行数，不按页数。
     counted = api.aggregate_entries(conn, world["dept"], "dept.ROLLUPD.finished")
-    assert counted["value"] == 3, "two done rows on page one plus one on page two"
+    assert counted["value"] == 4, "页一三条 done（含未关联），页二一条 done"
 
 
 def test_average_is_weighted_by_rows_not_by_pages(world):
@@ -608,16 +642,16 @@ def test_average_is_weighted_by_rows_not_by_pages(world):
 
     second = _insert_interface(world["conn"], world["dept"], world["member_id"],
                                world["position"], slug="rollup-fixture-two")
-    # Page one pools 40 / 60 / 100 (mean 66.67 over 3 rows); page two adds 30 / 50
-    # (mean 40 over 2 rows). The pooled mean is 280 / 5 = 56.
+    # 页一 40 / 60 / 100 / 97（4 行，部门口径）；页二 30 / 50（2 行）。
+    # 合并均值 377 / 6 = 62.83，不是两页均值的平均。
     _insert_entry(world["conn"], second, world["member_id"], "second-done-30",
                   status="done", progress=30, work_item_id=world["item_a"])
     _insert_entry(world["conn"], second, world["member_id"], "second-wip-50",
                   status="in_progress", progress=50, work_item_id=world["item_b"])
 
     average = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.progress_avg")
-    assert average["value"] == pytest.approx(56.0), (
-        "mean of the page means would be 53.33 -- that is the bug this pins down")
+    assert average["value"] == pytest.approx(377 / 6), (
+        "mean of the page means would be (74.25 + 40) / 2 = 57.13 -- 权重要按行算")
 
 
 def test_count_distinct_takes_the_union_across_pages(world):
@@ -625,8 +659,8 @@ def test_count_distinct_takes_the_union_across_pages(world):
 
     second = _insert_interface(world["conn"], world["dept"], world["member_id"],
                                world["position"], slug="rollup-fixture-two")
-    # Page one contributes done / done / blocked; page two contributes done and
-    # in_progress. Union = 3. Adding the per-page distinct counts would give 4.
+    # 页一 done / done / blocked / done，页二 done / in_progress。
+    # 并集 = 3 种；把两页的 distinct 相加会得到 4。
     _insert_entry(world["conn"], second, world["member_id"], "second-done-30",
                   status="done", progress=30, work_item_id=world["item_a"])
     _insert_entry(world["conn"], second, world["member_id"], "second-wip-50",
@@ -634,7 +668,7 @@ def test_count_distinct_takes_the_union_across_pages(world):
 
     distinct = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.statuses")
     assert distinct["value"] == 3
-    assert {page["entry_count"] for page in distinct["pages"]} == {3, 2}
+    assert {page["entry_count"] for page in distinct["pages"]} == {4, 2}
 
 
 def test_archived_page_still_does_not_count_even_beside_a_live_one(world):
@@ -646,8 +680,85 @@ def test_archived_page_still_does_not_count_even_beside_a_live_one(world):
                   status="done", progress=30, work_item_id=world["item_a"])
 
     total = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.progress_sum")
-    assert total["value"] == 230
+    assert total["value"] == 297 + 30, "归档页那条 30 不进部门数"
     assert {page["interface_id"] for page in total["pages"]} == {world["page"], second}
+
+
+# ---------------------------------------------------------------------------
+# 没有独立列的字段：金额落在 extra 里，仍然要算得出
+# ---------------------------------------------------------------------------
+
+MONEY_DESCRIPTOR = dict(
+    DESCRIPTOR,
+    fields=list(DESCRIPTOR["fields"]) + [
+        {"key": "money", "label": "报销金额", "type": "number", "required": False,
+         "map_to": "amount", "aggregatable": True},
+    ],
+    metrics=[
+        {"metric_key": "dept.ROLLUPD.money_total", "mode": "emit", "agg": "sum",
+         "from_field": "money"},
+        {"metric_key": "dept.ROLLUPD.money_avg", "mode": "emit", "agg": "avg",
+         "from_field": "money"},
+    ],
+)
+
+
+def test_a_field_without_its_own_column_still_sums_from_extra(world):
+    """金额没有独立列，落进 `extra`——但部门长要的总数必须算得出。
+
+    "字段存在但不能求和"不是部门能接受的答案，所以这类标准字段在 extra 里
+    也要参与 sum / avg；写死在列上的口径不该把金额挡在外面。
+    """
+    page = _insert_interface(world["conn"], world["dept"], world["member_id"],
+                             world["position"], slug="rollup-fixture-money",
+                             descriptor=MONEY_DESCRIPTOR)
+    _insert_entry(world["conn"], page, world["member_id"], "money-1205",
+                  status="done", progress=10, work_item_id=world["item_a"],
+                  extra={"amount": "120.50"})
+    _insert_entry(world["conn"], page, world["member_id"], "money-80",
+                  status="done", progress=10, work_item_id=world["item_b"],
+                  extra={"amount": 80})
+
+    total = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.money_total")
+    assert total["available"] is True
+    assert total["value"] == 200.5, "120.50 + 80，字符串也按数字读"
+
+    average = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.money_avg")
+    assert average["value"] == pytest.approx(100.25)
+
+
+def test_a_non_numeric_amount_is_skipped_not_counted_as_zero(world):
+    """写了个「待定」的金额是**没填**，不是 0 元。
+
+    把它当 0 会把部门总和悄悄拉低，而且没人看得见：数字还是个数，只是小了。
+    """
+    page = _insert_interface(world["conn"], world["dept"], world["member_id"],
+                             world["position"], slug="rollup-fixture-money",
+                             descriptor=MONEY_DESCRIPTOR)
+    _insert_entry(world["conn"], page, world["member_id"], "money-ok",
+                  status="done", progress=10, work_item_id=world["item_a"],
+                  extra={"amount": 50})
+    _insert_entry(world["conn"], page, world["member_id"], "money-tbd",
+                  status="done", progress=10, work_item_id=world["item_b"],
+                  extra={"amount": "待定"})
+
+    total = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.money_total")
+    assert total["value"] == 50, "「待定」跳过，不是加 0"
+
+
+def test_a_page_whose_amounts_are_all_unreadable_has_no_total(world):
+    """一条都读不出数字时给「没有值」，不是 0——0 是个会被当真结论看的数。"""
+    page = _insert_interface(world["conn"], world["dept"], world["member_id"],
+                             world["position"], slug="rollup-fixture-money",
+                             descriptor=MONEY_DESCRIPTOR)
+    _insert_entry(world["conn"], page, world["member_id"], "money-tbd",
+                  status="done", progress=10, work_item_id=world["item_a"],
+                  extra={"amount": "待定"})
+
+    total = api.aggregate_entries(world["conn"], world["dept"], "dept.ROLLUPD.money_total")
+    assert total["available"] is True
+    assert total["value"] is None
+    assert total["entry_count"] == 1, "行还在，只是这一列没有可读的数字"
 
 
 def test_work_item_limit_survives_junk_instead_of_raising(world):
