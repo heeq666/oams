@@ -1,9 +1,0 @@
-{
-  "_note": "fictional MVP demo",
-  "org_units": [{"code":"HR","name":"人事部","unit_type":"department","parent_code":"COMPANY"}],
-  "positions": [{"code":"HR_MANAGER","title":"人事经理","org_unit_code":"HR"},{"code":"HR_SPECIALIST","title":"人事专员","org_unit_code":"HR"}],
-  "members": [{"name":"周岚","employee_code":"MVP1001","position_code":"HR_MANAGER"},{"name":"陈默","employee_code":"MVP1002","position_code":"HR_SPECIALIST"}],
-  "grants": [{"subject_code":"HR_MANAGER","resource":"workforce.org_units","action":"read"},{"subject_code":"HR_MANAGER","resource":"workforce.positions","action":"read"},{"subject_code":"HR_MANAGER","resource":"workforce.work_items","action":"read"},{"subject_code":"HR_MANAGER","resource":"workforce.work_items","action":"manage"},{"subject_code":"HR_MANAGER","resource":"workforce.reports","action":"read"},{"subject_code":"HR_MANAGER","resource":"workforce.reports","action":"submit"},{"subject_code":"HR_SPECIALIST","resource":"workforce.org_units","action":"read"},{"subject_code":"HR_SPECIALIST","resource":"workforce.positions","action":"read"},{"subject_code":"HR_SPECIALIST","resource":"workforce.work_items","action":"read"},{"subject_code":"HR_SPECIALIST","resource":"workforce.reports","action":"read"},{"subject_code":"HR_SPECIALIST","resource":"workforce.reports","action":"submit"}],
-  "work_items": [{"position_code":"HR_MANAGER","title":"MVP演示：招聘进度汇报","kind":"project","status":"in_progress"},{"position_code":"HR_MANAGER","title":"MVP演示：合同续签确认","kind":"routine","status":"blocked","blocked_reason":"等待法务确认模板","needs_decision":true}],
-  "reports": [{"employee_code":"MVP1001","position_code":"HR_MANAGER","work_item_title":"MVP演示：招聘进度汇报","submitted_via":"agent","progress_value":60,"note":"已完成候选人初筛，等待面试安排","evidence":"虚构演示：候选人清单 v1"}]
-}
