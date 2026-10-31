@@ -186,6 +186,26 @@ try:  # pragma: no cover - 格式化实现在 metric_format，页面与看板共
 except Exception:
     _real_format_metric = None
 
+try:  # pragma: no cover - 部门指标前缀只写在一处（oams/metrics.py）
+    from oams.metrics import DEPARTMENT_METRIC_PREFIX as _DEPARTMENT_PREFIX
+except Exception:
+    _DEPARTMENT_PREFIX = "dept"
+
+# `dept.<部门代码>.<指标键>`：部门自己 emit 的指标，没有镜像表可查。
+_DEPARTMENT_KEY = re.compile(rf"^{re.escape(_DEPARTMENT_PREFIX)}\.[A-Za-z0-9_]+\..+$")
+
+
+def _metric_tail(metric_key: str) -> str:
+    """`dept.PRODUCTION.done_count` -> `done_count`。
+
+    只切前缀，剩下的仍是键本身（可逆的截断，不是另起名字——不换空格、不大写、
+    不拼中英文）。图表标题上原样写 `dept.PRODUCTION.done_count`，看的人会以为
+    报错了。真名字要等 emit binding 支持可选 `label`，那时 label 优先、这里退居兜底。
+    """
+    if not _DEPARTMENT_KEY.match(metric_key):
+        return metric_key
+    return metric_key.split(".", 2)[2]
+
 
 def metric_meta(metric_key: str | None) -> dict[str, str]:
     """Name and unit for a metric key, without ever trusting the descriptor."""
@@ -202,7 +222,8 @@ def metric_meta(metric_key: str | None) -> dict[str, str]:
                 "name": str(getattr(spec, "name", "") or metric_key),
                 "unit": str(getattr(spec, "unit", "") or "")}
     # 平台指标下线后没有镜像表可查：名字就用键本身，单位交给调用方（空串合法）。
-    return {"key": metric_key, "name": metric_key, "unit": ""}
+    # 部门 emit 指标再多切一层 `dept.<代码>.`（见 _metric_tail）。
+    return {"key": metric_key, "name": _metric_tail(metric_key), "unit": ""}
 
 
 def _number(value: Any) -> float | None:
