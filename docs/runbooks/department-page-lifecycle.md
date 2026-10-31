@@ -32,14 +32,14 @@
 页面描述在贴进 `/setup/interfaces` 之前，可以先在本机验一遍。三个子命令**全部离线**：不连数据库、不联网，只读你给的那个文件——所以随便跑，跑坏了也不影响任何数据。
 
 ```sh
-.venv/bin/python -m workhub.cli plugin check   <描述文件>            # 静态校验
-.venv/bin/python -m workhub.cli plugin preview <描述文件> --out /tmp/preview.html
-.venv/bin/python -m workhub.cli plugin upgrade <旧描述文件> --out /tmp/upgraded.yaml
+.venv/bin/python -m oams.cli plugin check   <描述文件>            # 静态校验
+.venv/bin/python -m oams.cli plugin preview <描述文件> --out /tmp/preview.html
+.venv/bin/python -m oams.cli plugin upgrade <旧描述文件> --out /tmp/upgraded.yaml
 ```
 
 - **check**：静态校验字段映射、状态映射、模块版本、容器深度。通过时输出「OK 通过。字段映射、状态映射、模块版本、容器深度都没问题。」，退出码 0；有问题会逐条列出来，先修这些再贴。加 `--json` 便于接编辑器与 CI。
 - **preview**：本地渲染一份 HTML（用假数据），看一眼排版和字段对不对，不用起服务、不用建页面（产物怎么算「对」，见本节末尾）。
-- **upgrade**：把 schema 0.1 的旧描述升到 0.2（含模块词汇表迁移），并列出「需要人工确认」的条目——那些是机器拿不准、要人看一眼的。升完再跑一次 `check`。
+- **upgrade**：把 schema 0.1 的旧描述升到 0.2（含模块词汇表改写），并列出「需要人工确认」的条目——那些是机器拿不准、要人看一眼的。升完再跑一次 `check`。
 
 ### preview 的产物怎么算「对」
 
@@ -55,7 +55,7 @@
 描述文件支持 `.yaml` / `.yml` / `.json`。仓库里 `examples/` 下有能直接过校验的样本，可以先拿它试手：
 
 ```sh
-.venv/bin/python -m workhub.cli plugin check examples/production-dept.yaml
+.venv/bin/python -m oams.cli plugin check examples/production-dept.yaml
 ```
 
 ## 审核人怎么用
@@ -69,7 +69,7 @@
 
 为什么不用管理员权限：`workforce.grants/manage` 同时允许改授权、改成员状态。为了审核页面而交出管理员权限，等于把"能给任何人开任何权限"也交出去了。所以审核单独拆成一个资源。
 
-当前授予情况：系统管理员岗位（迁移自动回填）+ 设计部负责人、设计部管理员岗位（种子数据后加）。要给别的部门开审核，加同一条 `workforce.interfaces/review` 授权即可。
+当前授予情况：系统管理员岗位（建表时自动回填）+ 设计部负责人、设计部管理员岗位（种子数据后加）。要给别的部门开审核，加同一条 `workforce.interfaces/review` 授权即可。
 
 **审核人与页面是否同部门，服务端目前不校验。** 它只校验 `workforce.interfaces/review` 这一条授权，不看审核人属于哪个部门，所以设计负责人、设计部管理员确实能审自己部门提交的页面。审核时请自觉回避本部门页面，交给系统管理员处理；这条约束等代码补上后，这里和界面会同步收紧。
 

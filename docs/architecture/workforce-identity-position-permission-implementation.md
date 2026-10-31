@@ -4,16 +4,16 @@
 
 ## 1. 已实现的代码
 
-- `app/workhub/api.py`：FastAPI health、个人信息、组织单元、员工、岗位、任职、配置版本、授权和审计 API。
-- `app/workhub/security.py`：数据库会话令牌哈希校验、过期/撤销和令牌版本检查；服务端授权检查拒绝任何未匹配的主体/资源/动作。
-- `app/workhub/cli.py`：迁移、一次性首管理员引导、受控运维令牌签发和 API 服务命令。SQL 迁移作为 Python 包数据随发布包分发。
+- `app/oams/api.py`：FastAPI health、个人信息、组织单元、员工、岗位、任职、配置版本、授权和审计 API。
+- `app/oams/security.py`：数据库会话令牌哈希校验、过期/撤销和令牌版本检查；服务端授权检查拒绝任何未匹配的主体/资源/动作。
+- `app/oams/cli.py`：迁移、一次性首管理员引导、受控运维令牌签发和 API 服务命令。SQL 迁移作为 Python 包数据随发布包分发。
 - `db/migrations/0001_workforce_identity_position_permission.sql`：专用 OAMS schema 的首个迁移。
 
 首管理员从可信运维 shell 建立，账号中心未接入前不允许伪造外部账号登录。当前管理 API 仅通过 `scope_type = 'all'` 授权；工作项/看板/汇报路径已按有效任职做范围过滤，其他管理资源仍不能向普通成员开放。
 
 ## 2. 数据模型
 
-迁移 `db/migrations/0001_workforce_identity_position_permission.sql` 建立 `workhub` schema，包含：
+迁移 `db/migrations/0001_workforce_identity_position_permission.sql` 建立 `oams` schema，包含：
 
 - `workforce_members`：内部稳定员工 ID、雇佣状态和会话版本号。离职时停用并递增 `token_version`，不删除员工。
 - `member_external_identities`：外部登录主体映射，唯一键为账号中心提供方、租户和主体 ID；只允许一个有效映射自然键，解绑采用撤销标记并保留历史。
@@ -81,6 +81,6 @@
 
 ## 7. 迁移前提与验证
 
-迁移要求 PostgreSQL 中可安装 `pgcrypto` 和 `btree_gist` 扩展；扩展安装权限应由数据库管理员预先授予或由迁移管理员执行。扩展显式安装在 `workhub` schema。`workhub` schema 只是专用数据库内部的命名空间，不能替代 README 所要求的独立数据库、专用账号、独立备份和网络隔离。
+迁移要求 PostgreSQL 中可安装 `pgcrypto` 和 `btree_gist` 扩展；扩展安装权限应由数据库管理员预先授予或由迁移管理员执行。扩展显式安装在 `oams` schema。`oams` schema 只是专用数据库内部的命名空间，不能替代 README 所要求的独立数据库、专用账号、独立备份和网络隔离。
 
 已确认可通过本机 SSH 配置的 `win` 别名只读连接到 Windows 服务器；PostgreSQL 16 服务正在运行，数据目录为 `D:\pgdata`，`postgres.exe` 在 `0.0.0.0:5433` 监听且本机 TCP 探测成功。未检查或读取凭据，也未查询数据库内容；本工作区没有 `psql` 客户端或目标数据库连接参数，因此未执行真实迁移。部署前需在目标 PostgreSQL 版本的空白专用数据库执行并做回滚/重放验证；如目标版本不支持扩展安装到指定 schema，应由 DBA 调整扩展策略并确认运行时账号权限。

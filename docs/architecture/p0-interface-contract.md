@@ -9,12 +9,12 @@
 
 | 单元 | 文件 | 归属 | 下游消费者 |
 |---|---|---|---|
-| 契约与注册表 | `app/workhub/modules.py`、`app/workhub/metrics.py`、`app/workhub/descriptor.py` | A | B（渲染）、C（MCP） |
-| 渲染 | `app/workhub/render.py`、`app/workhub/templates/modules/*.html`、`app/workhub/static/workhub-modules.css` | B | 页面路由 |
-| MCP 服务端 | `app/workhub/mcp/` | C | 部门管理员 |
-| 指标计算 | `app/workhub/funnel.py`、`app/workhub/datacenter.py` | D | 首页、部门页 |
+| 契约与注册表 | `app/oams/modules.py`、`app/oams/metrics.py`、`app/oams/descriptor.py` | A | B（渲染）、C（MCP） |
+| 渲染 | `app/oams/render.py`、`app/oams/templates/modules/*.html`、`app/oams/static/oams-modules.css` | B | 页面路由 |
+| MCP 服务端 | `app/oams/mcp/` | C | 部门管理员 |
+| 指标计算 | `app/oams/funnel.py`、`app/oams/datacenter.py` | D | 首页、部门页 |
 
-依赖方向：**B / C / D 可以只按本文的签名写代码，不需要等 A 的文件存在**（缺失时先写 `from workhub.modules import ...`，A 落地即可跑通）。
+依赖方向：**B / C / D 可以只按本文的签名写代码，不需要等 A 的文件存在**（缺失时先写 `from oams.modules import ...`，A 落地即可跑通）。
 
 ---
 
@@ -23,7 +23,7 @@
 **层（layer）**：`container` / `input` / `display`
 
 ```python
-# app/workhub/modules.py
+# app/oams/modules.py
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
@@ -75,7 +75,7 @@ def validate_module_tree(modules: list[dict]) -> list[str]        # 全部结构
 
 **参数写法（2026-10-30 补）**：声明过的参数可以写在 `params` 里，也可以平铺在节点上（`rows: 3` 与 `params: {rows: 3}` 等价；两处都写时以 `params` 为准）。两种写法都按声明校验：`table` 的 `rows` 只能是 1–5 的整数，越界或写错类型**明确报错**（`DATA_RULE_VIOLATION`），不再静默忽略。节点上出现既不是声明参数、也不在节点固定键（`key`/`type`/`order`/`params`/`module_version`/`children`/`source_fields`/`aggregatable`）里的键，同样报错。
 
-**但平铺只对叶子模块成立（2026-10-30 补）**：容器节点只能写在 `params` 里，不许平铺。容器的键白名单是 `CONTAINER_ALLOWED_KEYS`（`key`/`type`/`order`/`children`/`params`/`module_version`），比叶子的窄——`source_fields`、`aggregatable` 一律不许带；在容器上写 `title: "xx"` 会被 `DATA_RULE_VIOLATION` 拒掉，那不是 bug。这个不对称是有意的：容器已经带 `children`，参数再平铺上来，读者分不清哪个键是结构、哪个是参数。锚：`app/workhub/modules.py:73`（白名单）、`:597`（校验）、`app/workhub/descriptor.py:391-397`（为什么不在容器上再查一遍）。
+**但平铺只对叶子模块成立（2026-10-30 补）**：容器节点只能写在 `params` 里，不许平铺。容器的键白名单是 `CONTAINER_ALLOWED_KEYS`（`key`/`type`/`order`/`children`/`params`/`module_version`），比叶子的窄——`source_fields`、`aggregatable` 一律不许带；在容器上写 `title: "xx"` 会被 `DATA_RULE_VIOLATION` 拒掉，那不是 bug。这个不对称是有意的：容器已经带 `children`，参数再平铺上来，读者分不清哪个键是结构、哪个是参数。锚：`app/oams/modules.py:73`（白名单）、`:597`（校验）、`app/oams/descriptor.py:391-397`（为什么不在容器上再查一遍）。
 
 **铁律（校验器必须拦）**：容器节点不允许出现 `source_fields`；容器不允许有 `params.text`；任何文字/数字只能来自 `note_block`、`metric_card` 等预设模块。容器只能有 `children`。
 
@@ -104,7 +104,7 @@ def validate_module_tree(modules: list[dict]) -> list[str]        # 全部结构
 ## 2. 指标目录（C、D 都按这张表写）
 
 ```python
-# app/workhub/metrics.py
+# app/oams/metrics.py
 @dataclass(frozen=True)
 class MetricSpec:
     key: str            # "funnel.sample_done"
@@ -183,7 +183,7 @@ def validate_descriptor(descriptor, known_org_unit_codes=None,
                         require_recorded_approval: bool = False) -> list[str]
 ```
 
-`require_recorded_approval`（默认 `False`）：为 `True` 时要求文档已带**系统写入的**批准记录（见 §4.1）。**只在两条没有审核过程的路上用**——「管理员直接建上线页」（`/setup/interfaces`）和 CLI 自检（`workhub plugin check`）：这两处没有任何人签过字，文件必须自带批准，否则等于用导入绕开审核。部门新建、提交审核、升级自检（`upgrade.py`）**都不传**，走默认口径：校验判断的是「这份文档合不合规」，不是「它被没被批过」——后者是流程状态，不该藏在文档校验里。
+`require_recorded_approval`（默认 `False`）：为 `True` 时要求文档已带**系统写入的**批准记录（见 §4.1）。**只在两条没有审核过程的路上用**——「管理员直接建上线页」（`/setup/interfaces`）和 CLI 自检（`oams plugin check`）：这两处没有任何人签过字，文件必须自带批准，否则等于用导入绕开审核。部门新建、提交审核、升级自检（`upgrade.py`）**都不传**，走默认口径：校验判断的是「这份文档合不合规」，不是「它被没被批过」——后者是流程状态，不该藏在文档校验里。
 
 新增错误码（拒绝原因分类，写进 `meta.reject_codes` 文档用）：
 `FIELD_UNMAPPED` / `STATUS_UNMAPPED` / `METRIC_UNDEFINED` / `CAPABILITY_ESCALATION` / `MODULE_NOT_WHITELISTED` / `LAYOUT_TOO_DEEP` / `DATA_RULE_VIOLATION`。
@@ -199,7 +199,7 @@ aggregate:read:dept      aggregate:read:company  entries:link:work_item
 export:dept
 ```
 
-公司终审只看**三条判据**（`app/workhub/review.py:207` `needs_company_review()`），满足任一条就不能由部门自己签完：
+公司终审只看**三条判据**（`app/oams/review.py:207` `needs_company_review()`），满足任一条就不能由部门自己签完：
 
 | # | 路径 | 作者怎么写 | 代码怎么判 |
 |---|---|---|---|
@@ -207,7 +207,7 @@ export:dept
 | ② | 要进公司汇总 | `capabilities` 里含 `aggregate:read:company` | 与 `REVIEWED_CAPABILITIES` 取交集（今天只这一项） |
 | ③ | 跨部门沿用别部门的页 | `based_on` 指向对方已上线的页 | 查 `based_on` 那行的 `org_unit_id` 与本页是否不同（`web.py` 的 `_cross_department`） |
 
-**什么时候判**：三条都在**部门初审点「通过」那一刻**统一判（`app/workhub/web.py:1528` 调 `needs_company_review`）——不升级就直接启用；升级就把行上的 `review_stage` 翻成 `company`，等公司层再审一次才启用。**提交动作本身不判**，草稿阶段随便改，不占审批资源。
+**什么时候判**：三条都在**部门初审点「通过」那一刻**统一判（`app/oams/web.py:1528` 调 `needs_company_review`）——不升级就直接启用；升级就把行上的 `review_stage` 翻成 `company`，等公司层再审一次才启用。**提交动作本身不判**，草稿阶段随便改，不占审批资源。
 
 §4 原句里「与『**首次上架**』触发二级审批」这半句**未实现、待决定**，见 §4.2。
 
@@ -264,7 +264,7 @@ blocked_reason needs_decision progress_value
 ## 6. 渲染器契约（B 实现）
 
 ```python
-# app/workhub/render.py
+# app/oams/render.py
 class RenderError(Exception): ...
 
 def render_interface(descriptor: dict, values: dict | None = None,
@@ -278,7 +278,7 @@ def render_read_only(descriptor: dict, values: dict | None = None,
 def render_preview(descriptor: dict, sample: bool = True) -> str
     # 审核视角：假数据 + 真实控件，但控件一律 disabled 且 tabindex="-1"（看得见、点不动）
     # 不再标注「进汇总 / 不进汇总」；汇总口径的出口是 preview_descriptor 返回的
-    # aggregates_preview（app/workhub/mcp/tools.py:474）
+    # aggregates_preview（app/oams/mcp/tools.py:474）
 ```
 
 模块 → 片段：每个 key 对应 `templates/modules/<key>.html`，由 `render.py` 用 `jinja2.Environment` 载入并渲染，**上下文固定为** `{module, spec, values, aggregates, mode}`（`mode` ∈ `edit`/`readonly`/`preview`）。
@@ -295,7 +295,7 @@ def render_preview(descriptor: dict, sample: bool = True) -> str
 只读是**公司层看数**的视角，不是审核视角。规则：`aggregatable=False` 的模块在 `readonly` 下**整块不渲染**——不是「渲染出来但不给控件」。
 
 - **为什么**：只读的产物要进公司汇总，进不了汇总的模块留着只占地方；证据区的链接是部门私有的、不出楼，给公司层看既无汇总意义，又多一层外泄面。
-- **现在只有一个**：`evidence_gallery`，`MODULE_REGISTRY` 里唯一的 `aggregatable=False`（`app/workhub/modules.py:249`）。
+- **现在只有一个**：`evidence_gallery`，`MODULE_REGISTRY` 里唯一的 `aggregatable=False`（`app/oams/modules.py:249`）。
 - **审核要看证据，走 `preview`**：真实控件 `disabled`、证据区照常渲染。两个视角分工清楚，不冲突。
 - 代码：`render.py:18-20` 的 docstring 写明 "skipped entirely"、`:732` 的 `state.mode == "readonly" and _hidden_in_readonly(...)`、`:755` `_hidden_in_readonly`；测试 `tests/test_render_modules.py:327` 断言只读下不出现 `data-type="evidence_gallery"`。
 
@@ -304,14 +304,14 @@ def render_preview(descriptor: dict, sample: bool = True) -> str
 ## 7. 指标计算契约（D 实现）
 
 ```python
-# app/workhub/datacenter.py
+# app/oams/datacenter.py
 class DataCenter(Protocol):
     def list_waves(self) -> list[str]: ...
     def list_products(self, *, wave: str | None) -> list[dict]: ...
     def list_development(self, *, wave: str | None) -> dict: ...
     def list_marketing(self, *, wave: str | None) -> dict: ...
 
-# app/workhub/funnel.py
+# app/oams/funnel.py
 SAMPLE_DONE_WORDS: tuple[str, ...]
 SAMPLE_WIP_WORDS: tuple[str, ...]
 

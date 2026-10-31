@@ -1,7 +1,7 @@
 # 生产部 · 插件示例（竖切用的第一个真实插件）
 # 用法：
-#   workhub plugin check examples/production-dept.yaml
-#   workhub plugin preview examples/production-dept.yaml
+#   oams plugin check examples/production-dept.yaml
+#   oams plugin preview examples/production-dept.yaml
 #
 # 三个容易踩的点，这个示例已经踩过了：
 #   1. source_fields 写的是**本插件 fields[].key**，不是标准字段名。

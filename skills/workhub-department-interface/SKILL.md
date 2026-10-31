@@ -1,9 +1,9 @@
 ---
 name: workhub-department-interface
-description: 按 Workhub 插件契约（descriptor v0.2）帮部门负责人制作本部门进度汇报界面，可离线校验、预览、提审
+description: 按 OAMS 插件契约（descriptor v0.2）帮部门负责人制作本部门进度汇报界面，可离线校验、预览、提审
 ---
 
-# 部门插件制作（Workhub 协同底座）
+# 部门插件制作（OAMS 协同底座）
 
 你协助部门负责人制作**本部门的进度汇报界面**。这不是设计自由网页，而是在底座契约内用**预设模块**拼装界面。你产出的是 **descriptor v0.2**（一份 YAML/JSON），由底座校验、渲染、汇总。
 
@@ -24,12 +24,12 @@ description: 按 Workhub 插件契约（descriptor v0.2）帮部门负责人制�
 写完后先自检，不要直接提审：
 
 ```sh
-python -m workhub.cli plugin check  my-dept.yaml          # 校验，逐条列出问题与错误码
-python -m workhub.cli plugin preview my-dept.yaml --out /tmp/p.html   # 渲染预览
-python -m workhub.cli plugin upgrade old.yaml             # 存量 0.1 描述自动升级
+python -m oams.cli plugin check  my-dept.yaml          # 校验，逐条列出问题与错误码
+python -m oams.cli plugin preview my-dept.yaml --out /tmp/p.html   # 渲染预览
+python -m oams.cli plugin upgrade old.yaml             # 存量 0.1 描述自动升级
 ```
 
-也可以走 MCP 通道让 AI 直接写草稿（`app/workhub/mcp/`，12 个工具）：只读 `list_modules` / `list_canonical_fields` / `list_metric_catalog` / `get_plugin` / `list_plugins` / `preview_descriptor`；草稿写入 `create_draft_plugin` / `patch_draft_module` / `set_field_mapping` / `set_status_map` / `get_draft` / `submit_for_review`。
+也可以走 MCP 通道让 AI 直接写草稿（`app/oams/mcp/`，12 个工具）：只读 `list_modules` / `list_canonical_fields` / `list_metric_catalog` / `get_plugin` / `list_plugins` / `preview_descriptor`；草稿写入 `create_draft_plugin` / `patch_draft_module` / `set_field_mapping` / `set_status_map` / `get_draft` / `submit_for_review`。
 
 **AI 令牌只绑 `plugin:write:draft`，永远拿不到 `plugin:approve`。** 上架必须人工在审核页点通过，AI 不能自己让自己上线。
 

@@ -11,7 +11,7 @@
 | 视图 | 谁看 | 应该长什么样 |
 | --- | --- | --- |
 | `edit` 填报 | 填这页的岗位 | 控件 + 我的值 + 私有提示（本部门可见） |
-| `readonly` 只读 | 上级 / 汇总 | 静态文本；**不进公司汇总的模块整块剔除**——`evidence_gallery` 是唯一一个（`aggregatable=False`，`app/workhub/modules.py:249`），只读下不渲染（拍板 4，2026-10-30 改按代码） |
+| `readonly` 只读 | 上级 / 汇总 | 静态文本；**不进公司汇总的模块整块剔除**——`evidence_gallery` 是唯一一个（`aggregatable=False`，`app/oams/modules.py:249`），只读下不渲染（拍板 4，2026-10-30 改按代码） |
 | `preview` 审核 | 部门管理员 / 平台 | **可填形态** + 示例假值 + 控件 `disabled tabindex="-1"`；**不带任何角标** |
 
 preview 不是「只读 + 角标」——那套旧方案**整体作废**，不是只把只读换成可填。审核审的是**这页的定义**：字段对不对、控件类型对不对、表列够不够，只读态看不出来。`disabled` 不参与提交，安全性不降。
@@ -23,7 +23,7 @@ preview 不是「只读 + 角标」——那套旧方案**整体作废**，不�
 1. 三视图 = 填报 / 只读 / preview（可填形态 + 假值 + 控件 disabled）。
 2. **模块层不建「加载失败」态**。模块在服务端一次同步渲染，一次渲染里不存在「某个模块失败」；失败统一归页面级 Alert（Figma `140:3754`）。
 3. 空值统一 **`—`（U+2014）**，`0` 只表示零，两者不许混。
-4. `readonly` **整块剔除**不进公司汇总的模块。现在只有 `evidence_gallery` 一个（`MODULE_REGISTRY` 里唯一的 `aggregatable=False`，`app/workhub/modules.py:249`）。理由：只读是**公司层看数**的视角，证据的链接是部门私有的、不出楼，给公司层看既无汇总意义，又多一层外泄面；**审核要看证据走 `preview`**（真实控件 `disabled`、证据区照常渲染），两个视角分工清楚。2026-10-30 改为按代码现状，先前「保留只读」那条作废。
+4. `readonly` **整块剔除**不进公司汇总的模块。现在只有 `evidence_gallery` 一个（`MODULE_REGISTRY` 里唯一的 `aggregatable=False`，`app/oams/modules.py:249`）。理由：只读是**公司层看数**的视角，证据的链接是部门私有的、不出楼，给公司层看既无汇总意义，又多一层外泄面；**审核要看证据走 `preview`**（真实控件 `disabled`、证据区照常渲染），两个视角分工清楚。2026-10-30 改为按代码现状，先前「保留只读」那条作废。
 5. 图标只 4 枚：`plus` / `trash-2` / `external-link` / `arrow-right`，不给每个模块配语义图标。
 6. 表格编辑态走**单元格内联编辑**（高 28、聚焦才描边），行高从 42 收回 30。
 7. 多列断点两档：**> 1100 原列数 / 900–1100 最多 2 列 / < 900 单列**；5 列退 **2 列**（不退 1 列）。
@@ -178,7 +178,7 @@ preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块�
 
 ### 4.1 文案清单（交给界面，B2 / B3 批次一起改）
 
-矩阵按「目标文案」写，下面这些模板还是旧文案或压根没有空态。表里的路径都在 `app/workhub/templates/modules/` 下，行号按 2026-10-30 的工作区版本。**改完这张表就作废**。
+矩阵按「目标文案」写，下面这些模板还是旧文案或压根没有空态。表里的路径都在 `app/oams/templates/modules/` 下，行号按 2026-10-30 的工作区版本。**改完这张表就作废**。
 
 | 模块 | 视图 | 目标文案 | 模板位置 | 动作 |
 | --- | --- | --- | --- | --- |
@@ -207,7 +207,7 @@ preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块�
 
 ### 4.3 网页端缺一个审核预览页（2026-10-30 记，**未实现**）
 
-审核要看的是「这页的定义」，现在只有两个出口：MCP 的 `preview_descriptor` 工具（`app/workhub/mcp/tools.py:484`）和 CLI 的 `workhub plugin` 子命令（`app/workhub/plugin_cli.py:88`，离线预览）。**`web.py` 里没有任何 preview 路由**，`reviews.html` 也不渲染预览——本文档原先写的「`/preview` 页面 / 侧栏」是不存在的页面，2026-10-30 已按实话改掉。
+审核要看的是「这页的定义」，现在只有两个出口：MCP 的 `preview_descriptor` 工具（`app/oams/mcp/tools.py:484`）和 CLI 的 `oams plugin` 子命令（`app/oams/plugin_cli.py:88`，离线预览）。**`web.py` 里没有任何 preview 路由**，`reviews.html` 也不渲染预览——本文档原先写的「`/preview` 页面 / 侧栏」是不存在的页面，2026-10-30 已按实话改掉。
 
 缺的是一页：网页里选一个 descriptor、按 `render_preview` 渲染（真实控件 `disabled`、假值），旁边一栏显示 `aggregates_preview` 的「进汇总 / 不进汇总」判定。在那之前，审核走 MCP 或 CLI，别按有预览页来设计。
 
@@ -226,7 +226,7 @@ preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块�
 
 第 1 条的具体口径：tabbar 的 `<span role="tab">` 换成 `<input type="radio">` + `<label>`（`id` 用 `module.id` + 序号），面板从 `<details>` 改回 `<div class="wh-tabpanel">`，靠 `:checked` 兄弟选择器切换。**切换控件在 edit / readonly / preview 三视图下都保持可操作**——它只换面板、不动数据；只有面板里的字段控件跟 mode 走。
 
-第 6 条的代码现状：**已下线**。`preview_tag()` / `aggregate_tag()` 已从 `render.py` 与 20 个模块模板中移除，模块不再画角标；汇总口径的出口改在 `preview_descriptor` 返回的 `aggregates_preview`（`app/workhub/mcp/tools.py:474`）。两处测试注释也记了这次下线：`tests/test_render_modules.py:260`、`tests/test_render_interface.py:223`。
+第 6 条的代码现状：**已下线**。`preview_tag()` / `aggregate_tag()` 已从 `render.py` 与 20 个模块模板中移除，模块不再画角标；汇总口径的出口改在 `preview_descriptor` 返回的 `aggregates_preview`（`app/oams/mcp/tools.py:474`）。两处测试注释也记了这次下线：`tests/test_render_modules.py:260`、`tests/test_render_interface.py:223`。
 
 ## 6. 验收怎么跑
 

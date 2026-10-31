@@ -50,7 +50,7 @@
 
 ## 2. 数据模型（迁移 `0011_collab_threads.sql`）
 
-沿用现有约定：schema `workhub`、主键 uuid、`created_at timestamptz`、状态用 text + CHECK 而不是 enum。
+沿用现有约定：schema `oams`、主键 uuid、`created_at timestamptz`、状态用 text + CHECK 而不是 enum。
 
 ### 2.1 会话
 
@@ -152,7 +152,7 @@ CREATE INDEX collab_threads_iface ON collab_threads(interface_id) WHERE status =
 
 ---
 
-## 4. 服务端路由（`app/workhub/web.py`）
+## 4. 服务端路由（`app/oams/web.py`）
 
 全部返回 htmx 片段，主面板一次渲染骨架。沿用 `_require()` / `_denied()` / `connection()`。
 
@@ -220,7 +220,7 @@ SELECT v.*, m.body AS last_body, m.created_at AS last_at,
 - AI 代发时人名后跟浅紫 `model` 徽章；本人发言不带。
 - 点开会话即清零、**不画「以下是新消息」的分界线**。
 
-样式落在**独立样式表** `app/workhub/static/workhub-collab.css`（由 `base.html` 单独引入），不并进 `workhub-modules.css`；它同样只用 `--wh-*` 令牌，不写字面颜色和圆角值。模板在 `templates/collab/` 目录：`panel.html`、`thread_list.html`、`thread.html`、`messages.html`、`composer.html`，另有 `side.html`、`directory.html`、`directory_intro.html`、`earlier.html`、`empty.html`、`error.html`、`icons.html`。
+样式落在**独立样式表** `app/oams/static/oams-collab.css`（由 `base.html` 单独引入），不并进 `oams-modules.css`；它同样只用 `--oams-*` 令牌，不写字面颜色和圆角值。模板在 `templates/collab/` 目录：`panel.html`、`thread_list.html`、`thread.html`、`messages.html`、`composer.html`，另有 `side.html`、`directory.html`、`directory_intro.html`、`earlier.html`、`empty.html`、`error.html`、`icons.html`。
 
 ---
 
