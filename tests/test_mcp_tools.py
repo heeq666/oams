@@ -327,20 +327,24 @@ def test_list_metric_catalog_reads_the_metric_registry(registry):
     metrics = result.payload["metrics"]
     assert metrics == []
     assert result.payload["count"] == 0 == len(metrics_contract.list_metrics())
-    assert result.payload["home"] == []
+    # `home` 字段已随「只要首页默认」那条过滤一起删了：留着它，调用方会以为还有个
+    # 首页默认位可查，而那个概念已经不存在。删掉要能被这条断言看见。
+    assert "home" not in result.payload
+    # 目录空不等于规则空：这工具真正的答案是 can_bind（部门指标怎么写、display 能引谁）。
+    can_bind = result.payload["can_bind"]
+    assert can_bind["platform"]["available"] is False
+    assert can_bind["platform"]["count"] == 0
+    assert can_bind["department"]["aggs"] == ["count", "sum", "avg", "count_distinct"]
+    assert can_bind["department"]["key_pattern"] == "dept.<ORG_UNIT_CODE>.<slug>"
 
 
-def test_list_metric_catalog_filters_follow_the_catalogue(registry):
-    """过滤参数本身仍校验：过滤键在、值不认识就报 INVALID_ARGUMENTS。
+def test_list_metric_catalog_only_takes_origin_and_says_so(registry):
+    """参数表只剩 `origin`：别的键一律判错，不静默返回空表。
 
-    空目录下 `GROUPS` 也是空的，所以 `group="sample"` 现在会被判「不认识的组」；
-    平台指标回来时这里会自动恢复成「返回该组指标」。
+    这条钉的是「静默忽略」那种坏法：`{"home_only": True}` 曾经返回一张空表、
+    调用方以为过滤生效了，其实拿到的是整张（空）目录。分组与「只要首页默认」
+    两条过滤已随平台指标与首页默认值下线，所以现在报错、并把原因说清。
     """
-    home = registry.call("list_metric_catalog", {"home_only": True}, session_id="s")
-    assert home.ok is True
-    assert home.payload["count"] == 0
-    assert home.payload["metrics"] == []
-
     interface = registry.call("list_metric_catalog", {"origin": "interface"}, session_id="s")
     assert interface.ok is True
     assert interface.payload["count"] == 0
@@ -351,14 +355,20 @@ def test_list_metric_catalog_filters_follow_the_catalogue(registry):
     assert platform.error_code == ERR_INVALID_ARGUMENTS
     assert "unknown metric origin" in platform.payload["message"]
 
-    sample = registry.call("list_metric_catalog", {"group": "sample"}, session_id="s")
-    assert sample.ok is False
-    assert sample.error_code == ERR_INVALID_ARGUMENTS
-    assert "unknown metric group" in sample.payload["message"]
+    for args in ({"home_only": True}, {"group": "sample"}, {"group": "nope"}):
+        rejected = registry.call("list_metric_catalog", args, session_id="s")
+        assert rejected.ok is False, args
+        assert rejected.error_code == ERR_INVALID_ARGUMENTS, args
+        key = next(iter(args))
+        assert f"不认识的参数：{key}" in rejected.payload["message"], args
+        # 报错要说清「为什么不能过滤」，别让调用方以为是临时故障。
+        assert "不会静默返回空表" in rejected.payload["message"]
 
-    bad = registry.call("list_metric_catalog", {"group": "nope"}, session_id="s")
-    assert bad.ok is False
-    assert bad.error_code == ERR_INVALID_ARGUMENTS
+    # 一次给两个不认识的键，两个都要点名——只报第一个会让人改两遍。
+    both = registry.call("list_metric_catalog",
+                         {"group": "sample", "home_only": True}, session_id="s")
+    assert both.ok is False
+    assert "group" in both.payload["message"] and "home_only" in both.payload["message"]
 
 
 def test_list_canonical_fields_serves_the_frozen_vocabulary(registry):
