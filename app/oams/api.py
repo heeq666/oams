@@ -1132,16 +1132,21 @@ def _column_value(row, column):
     return None
 
 
-def _aggregate_value(agg, column, rows):
-    """count / sum / avg / count_distinct over one column; NULLs are skipped."""
-    if agg == "count":
-        return len(rows)
-    values = [value for value in (_column_value(row, column) for row in rows)
-              if value is not None]
+def _aggregate_values(agg, values):
+    """count_distinct / sum / avg over values already pulled off the rows.
+
+    单页与多页两个入口共用这一段算术：两处各写一遍时，改一边不改另一边不会
+    报错（2026-11-02 OAMS测试 用变异证明过），所以算术只留一份。
+    `count` 数的是行、与列值是否为 NULL 无关，由调用方自己算。
+
+    NULL 在这里是跳过，不当 0；一个数都读不出来时给 None —— 空与零是两件事
+    （契约 §6.1）。
+    """
+    present = [value for value in values if value is not None]
     if agg == "count_distinct":
-        return len({str(value) for value in values})
+        return len({str(value) for value in present})
     numbers = []
-    for value in values:
+    for value in present:
         try:
             numbers.append(float(value))
         except (TypeError, ValueError):
@@ -1154,6 +1159,13 @@ def _aggregate_value(agg, column, rows):
     if agg == "avg":
         return sum(numbers) / len(numbers)
     return None
+
+
+def _aggregate_value(agg, column, rows):
+    """count / sum / avg / count_distinct over one column; NULLs are skipped."""
+    if agg == "count":
+        return len(rows)
+    return _aggregate_values(agg, [_column_value(row, column) for row in rows])
 
 
 def _combine_pages(agg, page_rows):
@@ -1178,28 +1190,10 @@ def _combine_pages(agg, page_rows):
         return None
     if agg == "count":
         return sum(len(rows) for _, rows in page_rows)
-    values = []
-    for column, rows in page_rows:
-        for row in rows:
-            value = _column_value(row, column)
-            if value is not None:
-                values.append(value)
-    if agg == "count_distinct":
-        return len({str(value) for value in values})
-    numbers = []
-    for value in values:
-        try:
-            numbers.append(float(value))
-        except (TypeError, ValueError):
-            continue
-    if not numbers:
-        return None
-    if agg == "sum":
-        total = sum(numbers)
-        return int(total) if float(total).is_integer() else total
-    if agg == "avg":
-        return sum(numbers) / len(numbers)
-    return None
+    return _aggregate_values(
+        agg,
+        [_column_value(row, column) for column, rows in page_rows for row in rows],
+    )
 
 
 def _format_metric(metric_key, value, unit=""):
