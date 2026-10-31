@@ -1,6 +1,6 @@
 # OAMS
 
-> OAMS = Organizational App Management System，中文「组织应用中台」。作者：[@example-user](https://github.com/example-user) · 许可：AGPL-3.0 或商业授权（见 [LICENSING.md](LICENSING.md)）
+> OAMS = Organizational App Management System，中文「组织应用中台」。作者：[@heeq666](https://github.com/heeq666) · 许可：AGPL-3.0 或商业授权（见 [LICENSING.md](LICENSING.md)）
 
 **OAMS 是组织内 AI 应用的宿主与应用商店，不是工作汇报系统。** 应用由各部门自己用 AI 写，但跑在同一套底座上：身份、岗位、任职、权限、数据范围、字段契约、上架审核、公司汇总都由底座统一提供。部门决定应用长什么样、报什么，底座决定谁能看什么、什么能进汇总——**自由在形式，不自由在语义**。目前仓库里跑着的第一块应用是「部门进度汇报」，它把宿主、契约、审核这条链路先跑通；换个业务就是另一块应用。
 
@@ -111,7 +111,7 @@ workhub serve
 
 ## 许可与署名
 
-- **作者**：[@example-user](https://github.com/example-user)
+- **作者**：[@heeq666](https://github.com/heeq666)
 - **许可**：**GNU AGPL-3.0** 或**商业授权**，二选一。
   - AGPL-3.0：免费，**商用也免费**；但如果你改了它并让别人通过网络使用这个修改版，你要以 AGPL-3.0 公开修改后的源码。
   - 商业授权：想做成闭源产品售卖、或不接受 AGPL 传染的，向作者购买商业授权即可闭源。联系方式见 [LICENSING.md](LICENSING.md)。

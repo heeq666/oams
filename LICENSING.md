@@ -4,7 +4,7 @@
 
 > 本文件是说明，不是法律意见。正式发布或签约前请律师复核。
 
-版权署名 example-user 为作者的 GitHub 账号（https://github.com/example-user）。
+版权署名 heeq666 为作者的 GitHub 账号（https://github.com/heeq666）。
 
 ## 一、开源版：GNU AGPL-3.0
 
