@@ -18,7 +18,9 @@ from pathlib import Path
 
 import pytest
 
-EGO = "/Users/example-user/.local/bin/ego-browser"
+# ego 装在本机哪个路径因机器而异，别把某个人的家目录写进仓库：
+# 优先 WORKHUB_EGO，否则按安装说明的默认位置（~/.local/bin）找。
+EGO = os.environ.get("WORKHUB_EGO") or str(Path("~/.local/bin/ego-browser").expanduser())
 ROOT = Path(__file__).resolve().parents[1]
 DRIVER = ROOT / "scripts" / "ego-measure.mjs"
 PLACEHOLDER = '"__EGO_MEASURE_CONFIG__"'

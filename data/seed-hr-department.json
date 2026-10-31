@@ -2,13 +2,13 @@
   "_note": "FICTIONAL DATA. Names, employee codes and evidence paths are invented. This file exists so the first version can be exercised end to end before real data is collected; replace it, do not extend it.",
 
   "org_units": [
-    { "code": "example-co", "name": "example-co", "unit_type": "company" },
-    { "code": "HR", "name": "人事部", "unit_type": "department", "parent_code": "example-co" }
+    { "code": "acme", "name": "ACME", "unit_type": "company" },
+    { "code": "HR", "name": "人事部", "unit_type": "department", "parent_code": "acme" }
   ],
 
   "positions": [
-    { "code": "GM", "title": "总经理", "org_unit_code": "example-co" },
-    { "code": "SYSADMIN", "title": "系统管理员", "org_unit_code": "example-co" },
+    { "code": "GM", "title": "总经理", "org_unit_code": "acme" },
+    { "code": "SYSADMIN", "title": "系统管理员", "org_unit_code": "acme" },
     { "code": "HR_MANAGER", "title": "人事经理", "org_unit_code": "HR" },
     { "code": "HR_SPECIALIST", "title": "人事专员", "org_unit_code": "HR" },
     { "code": "HR_RECRUITER", "title": "招聘专员", "org_unit_code": "HR" }
@@ -16,7 +16,7 @@
 
   "members": [
     { "name": "韩明远", "employee_code": "1000", "position_code": "GM" },
-    { "name": "example-user", "employee_code": "9999", "position_code": "SYSADMIN" },
+    { "name": "Admin", "employee_code": "9999", "position_code": "SYSADMIN" },
     { "name": "周岚", "employee_code": "1001", "position_code": "HR_MANAGER" },
     { "name": "陈默", "employee_code": "1002", "position_code": "HR_SPECIALIST" }
   ],
