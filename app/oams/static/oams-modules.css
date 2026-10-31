@@ -76,10 +76,10 @@
 }
 
 .wh-container {
-  /* 模块块面一律 bg/surface 白底（Figma 模块 / card 148:5953），不再用灰底：
+  /* 模块块面一律 bg/surface 白底（规范 §6 模块层 · card），不再用灰底：
      灰底叠在白卡里会多出一层看不出用途的框。 */
   background: var(--oams-bg);
-  /* 卡片内距 16（Figma 模块 / card 148:5953） */
+  /* 卡片内距 16（规范 §6 模块层 · card） */
   padding: 16px;
 }
 
@@ -98,7 +98,7 @@
 .wh-card-title {
   font-size: 14px;
   font-weight: 600;
-  /* 卡片的纵向 itemSpacing 12（Figma 模块 / card 148:5953） */
+  /* 卡片子件之间的纵向间距 12（规范 §6 模块层 · card） */
   margin: 0 0 12px;
 }
 
@@ -173,7 +173,7 @@
 /* tabs: a segmented strip, panels collapse so long pages stay readable */
 .wh-tabbar {
   display: flex;
-  /* 芯片间距 8（Figma tabs 148:5967 / Tabbar 224:13455） */
+  /* 芯片间距 8（规范 §6 模块层 · tabs） */
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 12px;
@@ -204,7 +204,7 @@
 }
 
 .wh-tab {
-  /* Tab 芯片对齐控件高 30（Figma tabs 148:5967 / 外壳 3:329） */
+  /* Tab 芯片对齐控件高 30（规范 §6 模块层 · tabs，与 §3 控件基准线同高） */
   order: 1;
   display: inline-flex;
   flex: 0 0 auto;
@@ -278,9 +278,9 @@
 .wh-spacer-md { height: 16px; }
 .wh-spacer-lg { height: 32px; }
 
-/* 跨天日期分隔 · 通用件（Figma `256:15292` DateDivider，协作室与模块层共用）
+/* 跨天日期分隔 · 通用件（规范 §6 的 DateDivider，协作室与模块层共用）
  * 两段 1px 细线 + 12 号日期标签。宽度靠两段线 flex:1 撑开，因此放在任何容器里
- * 都自动铺满，不给死宽度 —— Figma 上实例拉宽也是同一套几何。
+ * 都自动铺满，不给死宽度 —— 组件拉宽也是同一套几何。
  * 用法：<div class="wh-date-divider">2026年10月30日</div>
  * 令牌：线 --oams-line、字 --oams-muted；间距 8（行内）与 16（块间）。 */
 .wh-date-divider {
@@ -362,9 +362,9 @@
   align-items: center;
   /* 链接文字与尾随图标 8（行内档：图标与文字之间就是 8）。
      2026-10-31「全站间距对齐」把这里的 6 收进档内——6 不属于 16 / 12 / 8 / 4 任何一档，
-     也和「标签↔控件」无关（那一档同日按 Figma 实测撤销，标签↔控件就是 8）。 */
+     也和「标签↔控件」无关（那一档同日按实测撤销，标签↔控件就是 8）。 */
   gap: 8px;
-  /* 链接与上一段 8（Figma evidence_gallery 148:6088） */
+  /* 链接与上一段 8（规范 §6 模块层 · evidence_gallery） */
   margin-top: 8px;
   font-size: 13px;
   color: var(--oams-info);
@@ -641,7 +641,7 @@
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr) 72px;
   align-items: center;
-  /* 标签·条·数值之间 8（Figma status_chart 148:6249 / Row） */
+  /* 标签·条·数值之间 8（规范 §6 模块层 · status_chart） */
   gap: 8px;
   font-size: 13px;
   margin-bottom: 8px;
@@ -702,7 +702,7 @@
 .wh-rank-rows > li {
   display: flex;
   align-items: baseline;
-  /* 序号与名称之间 8（Figma rank_list 148:6279 / Row） */
+  /* 序号与名称之间 8（规范 §6 模块层 · rank_list） */
   gap: 8px;
   font-size: 13px;
 }
@@ -783,7 +783,7 @@
 .wh-note-text {
   margin: 0;
   font-size: 13px;
-  /* 正文 13/20（Figma note_block 148:6322 正文 224:13475） */
+  /* 正文 13/20（规范 §6 模块层 · note_block） */
   line-height: 20px;
   color: var(--oams-ink);
   white-space: pre-wrap;

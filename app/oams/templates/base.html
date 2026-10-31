@@ -122,13 +122,13 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .tabs.layers a.on { background: var(--accent); color: var(--on-accent); }
   .tabs.layers a .cnt { font-weight: 600; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-  /* Figma FlowStrip 3:330 的外层 itemSpacing 是 0（stage 与箭头紧贴），
+  /* 流程条的 stage 与箭头本来紧贴（规范 §6 模块层 · flow_strip 记的是外层 0），
      代码这边按「行内小件之间 8」收：箭头是独立元素，留 8 才不会粘住胶囊边框。 */
   .flowstrip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
                background: var(--subtle); border: 0; border-radius: var(--r-small); padding: 12px 12px; }
   .flowstrip .arrow, .flowstrip .fork { color: var(--muted); font-size: 13px; }
   .flowstrip .fork { margin-left: 12px; }
-  /* Label↔Count 8（Figma 的 Stage 内 itemSpacing 就是 8）。 */
+  /* Label↔Count 8（规范 §6 模块层 · flow_strip：stage 内部就是 8）。 */
   /* 内距与高归下面那条 `.flowstrip .stage { height: 36px; padding: 0 16px }`。 */
   .flowstrip .stage { display: inline-flex; align-items: baseline; gap: 8px;
                       border: 1px solid var(--line); border-radius: var(--r-control); background: var(--card);
@@ -179,7 +179,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      the middle cell and overflowed the page, so only the page padding is kept. */
   @media (max-width: 720px) { main { padding: 64px 16px 48px; } .orgnav { flex-wrap: wrap; } }
   /* A department's own pages, as tabs inside the content area. */
-  /* tab 之间 8。Figma Tabs 3:329 的外层是 2（tab 紧贴成一条），2 是档外值，代码按行内小件 8 收。 */
+  /* tab 之间 8。规范 §6 的 Tabs 外层原本是 2（tab 紧贴成一条），2 是档外值，代码按行内小件 8 收。 */
   .page-tabs { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
   .page-tab { padding: 8px 16px; border: 1px solid transparent; border-bottom: none; border-radius: var(--r-small) var(--r-small) 0 0;
     color: var(--muted); text-decoration: none; font-size: 14px; display: flex; align-items: center; gap: 8px; }
@@ -221,7 +221,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     .app-frame > main { height: auto; overflow: visible; padding: 16px 16px 48px; }
   }
 
-  /* ---- shadcn/ui skin (from the Figma screens) ---------------------------
+  /* ---- shadcn/ui skin（照 shadcn 的视觉语言）-------------------------------------
      The token names are the old ones on purpose: the rest of the app already
      speaks --bg/--card/--ink/--line/--accent, so re-pointing the values gives
      every page the new look without touching its markup. Status colours are
@@ -231,9 +231,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     --line: #e5e5e5; --line-soft: #f0f0f0; --subtle: #f5f5f5;
     --accent: #171717; --blocked: #dc2626; --decision: #d97706; --done: #16a34a;
     --info: #2563eb; --agent: #7c3aed; --agent-soft: #f5f3ff;
-    /* 浅紫徽章（AI 代发的模型名）用的描边色，Figma data/agent-line。 */
+    /* 浅紫徽章（AI 代发的模型名）用的描边色，令牌 data/agent-line。 */
     --agent-line: #ddd6fe;
-    /* Secondary ink plus derived values components need; all from Figma. */
+    /* Secondary ink plus derived values components need; 全部来自 §8.1 的令牌对照表。 */
     --ink-2: #525252; --on-accent: #fafafa; --accent-hover: #404040;
     --hover: #e5e5e5; --blocked-strong: #b91c1c; --warning-ink: #92400e;
     --info-soft: #eff6ff;
@@ -433,7 +433,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .btn-ghost:hover, button.ghost:hover { background: var(--subtle); opacity: 1; }
   .btn-danger, button.danger { background: var(--card); color: var(--blocked); border: 1px solid var(--line); }
   .btn-danger:hover, button.danger:hover { background: var(--danger-soft); opacity: 1; }
-  /* 控件基准线 30（见 docs/design/design-system-v1.md §3）：与 Figma Input / Select / Button
+  /* 控件基准线 30（见 docs/design/design-system-v1.md §3）：与 Input / Select / Button
      同高。内距上下 0、左右 12，靠 height 撑高，不要再靠 padding 凑高度——那会算出 35.5 / 36
      这种非整数档，跟按钮排在一行就错位。textarea 例外：高度由 min-height 决定。
      圆角取中等块档 18：输入框/下拉/文本域都长在卡片里，是二级元件，不跟着卡片的容器档 26
@@ -454,7 +454,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      弹层 28 配行 12 时，8 的内距才能让角上的留白明显大于边上的留白。 */
   .wh-list { padding: 16px; max-height: 320px; overflow-y: auto;
              overscroll-behavior: contain; }
-  /* 对勾↔文字 8（Figma Menu Item 在 140:3953 里的 itemSpacing 是 8）。 */
+  /* 对勾↔文字 8（规范 §6 的 Menu 行：勾与文字之间就是 8）。 */
   .wh-list .wh-opt { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px;
                      border-radius: var(--r-small); color: var(--ink); font-size: 13px; line-height: 32px;
                      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
