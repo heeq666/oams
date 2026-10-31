@@ -8,8 +8,10 @@
 
 | 库 | 端口 | Docker 容器 | 连接串 | 谁在用 |
 |---|---|---|---|---|
-| 演示站库 | **55460** | `workhub-live` | `postgresql://postgres:change-me@127.0.0.1:55460/workhub` | `scripts/start-local-trial.sh` 起的演示站，以及本手册下文所有手工命令 |
-| 本机开发库 | **55433** | `workhub-pg` | `postgresql://workhub:change-me@127.0.0.1:55433/workhub` | 项目根目录 `.env` 里那条，`pytest` 默认走它 |
+| 演示站库 | **55460** | `workhub-live` | `postgresql://${WORKHUB_DB_USER}:${WORKHUB_DB_PASSWORD}@127.0.0.1:55460/workhub` | `scripts/start-local-trial.sh` 起的演示站，以及本手册下文所有手工命令 |
+| 本机开发库 | **55433** | `workhub-pg` | `postgresql://${WORKHUB_DB_USER}:${WORKHUB_DB_PASSWORD}@127.0.0.1:55433/workhub` | 项目根目录 `.env` 里那条，`pytest` 默认走它 |
+
+连接串里的用户名和口令**一律用变量拼**：口令只放在你自己的环境变量或项目根目录的 `.env` 里，不写进文档、不提交、不贴群里。两个库的用户名口令各不相同，按你本机的实际值填；变量怎么设见下一节。
 
 规则：
 
@@ -23,17 +25,22 @@
 2. 在项目目录执行（只做一次）：
 
 ```sh
-docker run -d --name workhub-live \
-  -e POSTGRES_PASSWORD=change-me -e POSTGRES_DB=workhub \
-  -p 127.0.0.1:55460:5432 postgres:16-alpine
+# 用户名/口令按你本机的实际值填；口令不要写进文档、不要提交
+export WORKHUB_DB_USER=postgres
+export WORKHUB_DB_PASSWORD="<你的口令>"
+export WORKHUB_DATABASE_URL="postgresql://${WORKHUB_DB_USER}:${WORKHUB_DB_PASSWORD}@127.0.0.1:55460/workhub"
+export WORKHUB_MIGRATOR_URL="$WORKHUB_DATABASE_URL"
 
-export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
-export WORKHUB_MIGRATOR_URL=$WORKHUB_DATABASE_URL
+docker run -d --name workhub-live \
+  -e POSTGRES_PASSWORD="$WORKHUB_DB_PASSWORD" -e POSTGRES_DB=workhub \
+  -p 127.0.0.1:55460:5432 postgres:16-alpine
 
 .venv/bin/python -m workhub.cli migrate
 .venv/bin/python -m workhub.cli bootstrap-admin \
   --name "系统管理员" --employee-code ADMIN001 --org-code COMPANY --org-name "公司"
 ```
+
+上面那四行 `export` 只在当前终端有效：**新开终端要重跑一遍**（口令换成你自己的，或从 `.env` 里读出来再 export）。下文所有命令都默认这几个变量还在。
 
 把 bootstrap 打印的 `member_id` 记下来，下一步要用。
 
@@ -42,8 +49,7 @@ export WORKHUB_MIGRATOR_URL=$WORKHUB_DATABASE_URL
 ## 准备一个部门
 
 ```sh
-export WORKHUB_MIGRATOR_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
-export WORKHUB_DATABASE_URL=$WORKHUB_MIGRATOR_URL
+# 沿用「一次性准备」里 export 的 WORKHUB_DATABASE_URL；新开终端就先把那四行重跑一遍
 export WORKHUB_ADMIN_MEMBER_ID=<上一步的 member_id>
 .venv/bin/python scripts/load_department_data.py data/live-design-department.json --apply
 .venv/bin/python scripts/seed-live-interface.py
@@ -62,7 +68,7 @@ export WORKHUB_ADMIN_MEMBER_ID=<上一步的 member_id>
 **推荐用 `workhub serve`**：它读同一份配置，不用记 uvicorn 的参数。
 
 ```sh
-export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
+# 同上：WORKHUB_DATABASE_URL 要在当前终端里有效
 .venv/bin/python -m workhub.cli serve
 ```
 
@@ -138,7 +144,7 @@ http://127.0.0.1:8000/setup
 免登录开着时这一步可以跳过。需要真实会话时，另开一个终端：
 
 ```sh
-export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@127.0.0.1:55460/workhub
+# 同上：WORKHUB_DATABASE_URL 要在当前终端里有效
 .venv/bin/python -m workhub.cli issue-token --member-id <member_id>
 ```
 
