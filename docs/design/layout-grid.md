@@ -1,6 +1,6 @@
 # 内容区栅格规范 v1
 
-> 状态：**已落地**（2026-10-28 拍板并执行；代码、Figma 模板、验收脚本三处都已就位）。
+> 状态：**已落地**（2026-10-28 拍板并执行；代码、页面模板、验收脚本三处都已就位）。
 > 适用范围：应用外壳里的内容区（`.app-frame > main`）。
 > 不适用：顶部导航、左侧 rail、表格内部列宽、弹层内部排版——它们不在栅格里。
 
@@ -151,7 +151,7 @@
 公司指标与部门指标**不并排**：一个是商品漏斗（已下单 29 款），一个是这项工作项（未完成 12），计数对象不同，同一行会被读成同一把尺子。
 
 
-新页面照抄 Figma 的「页面模板」frame，不自己写 `grid-template-columns`。
+新页面照抄 §10 那三张页面模板（1440 / 1024 / 768），不自己写 `grid-template-columns`。
 
 ## 9. 验收（已可执行）
 
@@ -181,7 +181,7 @@ document.documentElement.scrollWidth > document.documentElement.clientWidth && c
 | 3 | 设置页迁到 8 + 4 + 12 | ✅ | `templates/settings.html:11-60` |
 | 4 | 间距 `.stack-20` → `.stack-16` | ✅ | `templates/base.html:487`、`templates/reviews.html:17` |
 | 5 | `AGENTS.md` 硬规则 | ✅ | 见「做界面之前必读」第三条 |
-| 6 | Figma 三张页面模板（1440 / 1024 / 768） | ✅ | 页面 `03 · 页面稿`，frame `219:13187` / `219:13273` / `219:13359` |
+| 6 | 三张页面模板（1440 / 1024 / 768） | ✅ | 本地画布（已搬出仓库）；规格见本节末段与 §8 |
 | 7 | 验收方式 | ✅ | ego 浏览器三档量测（见 `AGENTS.md`「浏览器自动化」） |
 | 8 | `/progress` `/board` `/reviews` 铺上栅格（此前是单列，栅格检查对它们是空检） | ✅ | `templates/progress.html`、`templates/board_body.html`、`templates/reviews.html`、`templates/base.html:556-580` |
 
@@ -189,10 +189,10 @@ document.documentElement.scrollWidth > document.documentElement.clientWidth && c
 
 2026-10-31 补测三页（`.venv` 脚本 `scripts/ego-grid-check.mjs`，三档 × 5 页共 15 页次，`offenders: []`）：1440 下 `/board` 部门数字 827 + 计分卡 406（两块 172 齐平）、`/reviews` 卡内 806 + 395（709 齐平）、`/progress` 部门卡内 806 + 395；1024 与 768 下三页全部收成单列（`span-8/4` 在 ≤1089 变 12）。
 
-Figma 三张模板放在 `03 · 页面稿` 页面下方 y≈5100 处（Starter 计划只有 3 页，不能新建页面），每张都画了 rail、内容列、12 列标尺、跨度白名单与 8+4 / 12 的样例行。1024 与 768 的样例行按实际行为画成**上下堆叠**，不是并排——模板必须画实现，不能画愿望。
+三张页面模板（1440 / 1024 / 768）各画了 rail、内容列、12 列标尺、跨度白名单与 8+4 / 12 的样例行（画布件随内部画布一起搬出仓库，不在本仓）。1024 与 768 的样例行按实际行为画成**上下堆叠**，不是并排——**模板必须画实现，不能画愿望**。
 
 ## 11. 未决
 
 - 指标行是否也纳入栅格（当前判断：不纳入，数量可变）。
 - 三段式行 `.row-3cell` 是否要抽类、以及"左栏可变宽"是否支持（当前登记为例外 4）。
-- 无。落地时已核对：`radius/card` 在 Figma 变量、`tokens.json:83`、`--r-card` 三处都是 **26**。
+- 无。落地时已核对：`radius/card` 在令牌表、`tokens.json`、`--r-card` 三处都是 **26**。

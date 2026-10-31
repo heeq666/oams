@@ -122,7 +122,7 @@ body.collab-open .collab-panel { transform: translateY(0); }
 .collab-search {
   display: flex;
   align-items: center;
-  /* 放大镜↔输入 8（Figma Search 140:3625 两个变体 itemSpacing 都是 8）。 */
+  /* 放大镜↔输入 8（规范 §6 的 Search：两个形态的间距都是 8）。 */
   gap: 8px;
   flex: 1;
   min-width: 0;
@@ -233,7 +233,7 @@ body.collab-open .collab-panel { transform: translateY(0); }
 /* --- 右栏 --- */
 .collab-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .collab-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-/* 群头 52 高，与 Figma 群头（172:11317）同值，也是整块面板唯一那条额头的右半。
+/* 群头 52 高（规范 §7 协作室），也是整块面板唯一那条额头的右半。
    右边内距 96 = 右上角那两枚图标（84 宽）+ 12 间隙，群名和副标题不会钻到图标底下。
    群头里不再放任何图标——到顶与收起已经浮在面板右上角了。 */
 .collab-thread-head {
