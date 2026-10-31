@@ -1,1 +1,0 @@
-../../app/workhub/migrations/0008_interface_review_permission.sql
