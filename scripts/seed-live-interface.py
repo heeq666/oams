@@ -3,8 +3,9 @@
 Idempotent: rerunning archives the previous live version and enables a new one,
 exactly the way the setup page behaves.
 
-    .venv/bin/python scripts/seed-live-interface.py                          # 默认样本（tests/fixtures 里那份）
-    .venv/bin/python scripts/seed-live-interface.py tests/fixtures/department-weekly-test.json
+    .venv/bin/python scripts/seed-live-interface.py                                # 默认：运维周报
+    .venv/bin/python scripts/seed-live-interface.py data/neutral-demo-ops-weekly.json
+    .venv/bin/python scripts/seed-live-interface.py tests/fixtures/department-weekly-test.json   # 也可以指定别的样本
 
 The slug, the department and the position all come from the descriptor itself, so
 one script seeds every demo page and the file name never has to agree with the slug.
@@ -24,9 +25,10 @@ from psycopg.types.json import Jsonb
 from oams.descriptor import validate_descriptor
 from oams.upgrade import LEGACY_SCHEMA_VERSION, upgrade_descriptor
 
-#: 默认样本放在 `tests/fixtures/` 里：`data/` 只保留新克隆真会种进去的东西，
-#: 否则一份克隆下来没有的路径会让脚本在第一次试用就报错。
-SOURCE = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("tests/fixtures/live-design-interface.json")
+#: 默认样本取 `data/` 里随仓库发布的演示数据——第一次试用的人不带参数跑，看到的
+#: 就该是产品对外展示的那几页之一，而不是某个测试夹具（夹具是测试输入，不该当示例）。
+#: 想种别的样本就显式传路径。
+SOURCE = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("data/neutral-demo-ops-weekly.json")
 descriptor = json.loads(SOURCE.read_text(encoding="utf-8"))
 
 if descriptor.get("schema_version") == LEGACY_SCHEMA_VERSION:
