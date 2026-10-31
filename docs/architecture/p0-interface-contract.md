@@ -118,15 +118,31 @@ class MetricSpec:
     on_home: bool
     home_order: int | None
 
-METRIC_CATALOG: dict[str, MetricSpec]
-HOME_DEFAULT: tuple[str, ...]   # 首页默认 6 格的顺序
+METRIC_CATALOG: dict[str, MetricSpec]   # 商品数据中心下线后为空表
+ORIGINS: tuple[str, ...] = ("interface",)   # 只剩部门条目算的这一种
+GROUPS: tuple[str, ...] = ()                # 平台分组（design/sample/order/money）随之下线
 
 def get_metric(key: str) -> MetricSpec | None
 def list_metrics(group: str | None = None, home_only: bool = False,
-                 origin: str | None = None) -> list[dict]
+                 origin: str | None = None) -> list[dict]   # 目前恒返回 []
 def validate_metric_binding(binding: dict, org_unit_code: str,
-                            fields: dict[str, dict]) -> list[str]
+                            fields: dict[str, dict],
+                            own_metrics: set[str] | None = None) -> list[str]
+    # own_metrics = 本页 metrics[] 里 mode=emit 的键集合；display 绑定可引它（自产自用）
 ```
+
+### display 能引什么（2026-11-02 定，取代「display 只能引 platform」）
+
+`metric_card` / `metric_grid` / `rank_list` / `flow_strip` 的指标参数可以引两类：
+
+1. **platform 指标**——目录里 `origin="platform"` 的键（商品数据中心下线后目录为空，
+   规则保留，平台将来回来还能这么写）；
+2. **本页自己 emit 的指标**——须同时满足 ①键以 `dept.<本单位 org_unit_code>.` 开头、
+   ②该键在**同一个 descriptor 的 `metrics[]` 里以 `mode=emit` 声明过**（自产自用）。
+
+三条一律拒（`METRIC_UNDEFINED`，文案点名是哪一条没满足）：**别的部门**的 `dept.<别人CODE>.*`、
+**凭空编的键**、以及**引了但本页没有 emit 它**。别放宽成「只要键存在就通过」——那等于把
+跨部门读数塞进一个显示参数里。
 
 ### platform 指标（origin=platform，部门只能引用不能改口径）
 
@@ -154,7 +170,9 @@ binding 形状（descriptor `metrics[]` 的一项）：
   agg: count                                   # count | sum | avg | count_distinct
   from_field: status_word                      # 必须是本插件已声明的 field.key
   where_status: done                           # 可选，四态之一
-- metric_key: funnel.sample_done                # display 只能引用 platform 指标
+- metric_key: funnel.sample_done                # display：platform 指标（目录里有才行）
+  mode: display
+- metric_key: dept.PRODUCTION.finished_count   # display：本页自己 emit 的那条（同为 ①②）
   mode: display
 ```
 
