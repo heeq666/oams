@@ -1,8 +1,16 @@
-"""Metric catalogue acceptance tests (contract §2, frozen 11 platform metrics).
+"""Metric catalogue acceptance tests (contract §2).
 
-The catalogue is the whole reason a department cannot invent its own number: the
-platform metrics are frozen, the home page order is frozen, and a department may
-only *emit* into its own namespace.
+平台指标（11 条 `funnel.*`）随商品中心下线一起删掉了，目录现在是**空表**：
+接口指标由部门在自己的描述符里 `emit`，运行时按部门解析，不进这张冻结表。
+
+所以这里断言两件事，别把它们混起来：
+
+1. **目录确实空了**，过滤接口还活着（`group` / `origin` 传不认识的值要抛错）；
+2. **binding 校验的机制还在**——display 只能引用平台指标（现在一个都没有，所以
+   任何 display 都是可读拒绝），emit 必须落在本部门命名空间。对象换了，机制没换。
+
+⚠️ 空集合上循环会「0 次全绿」：凡是「遍历目录里每条 spec 断言什么」的用例都已经删掉，
+换成对着直接构造的 `MetricSpec` 断言，别退回去。
 """
 from __future__ import annotations
 
@@ -19,114 +27,104 @@ from oams.metrics import (  # noqa: E402
     BINDING_MODES,
     DEPARTMENT_METRIC_PREFIX,
     GROUPS,
-    HOME_DEFAULT,
     METRIC_CATALOG,
+    METRIC_UNDEFINED,
     ORIGINS,
+    MetricSpec,
+    _build_catalog,
     department_metric_prefix,
     get_metric,
     list_metrics,
     validate_metric_binding,
 )
 
-FROZEN_KEYS = (
-    "funnel.designed",
-    "funnel.sample_done",
-    "funnel.sample_wip",
-    "funnel.sample_pending",
-    "funnel.sample_open",
-    "funnel.priced",
-    "funnel.ordered",
-    "funnel.not_ordered",
-    "funnel.qty",
-    "funnel.gmv",
-    "funnel.roi",
-)
-
 
 # --------------------------------------------------------------------------- #
-# The frozen catalogue
+# The catalogue is empty now
 # --------------------------------------------------------------------------- #
 
 
-def test_catalogue_holds_exactly_the_eleven_platform_metrics():
-    assert set(METRIC_CATALOG) == set(FROZEN_KEYS)
-    assert len(METRIC_CATALOG) == 11
-    assert ORIGINS == ("platform", "interface")
-    assert all(spec.origin == "platform" for spec in METRIC_CATALOG.values())
+def test_catalogue_is_empty_after_the_product_hub_removal():
+    assert METRIC_CATALOG == {}
+    assert ORIGINS == ("interface",)
+    assert GROUPS == ()
 
 
-def test_metric_groups_and_agg_modes_are_frozen():
-    assert GROUPS == ("design", "sample", "order", "money")
+def test_agg_modes_and_binding_modes_are_frozen():
     assert AGG_MODES == ("count", "sum", "avg", "count_distinct")
     assert BINDING_MODES == ("emit", "display")
-    for spec in METRIC_CATALOG.values():
-        assert spec.group in GROUPS, spec.key
 
 
-def test_every_metric_carries_a_formula_and_a_source():
-    for spec in METRIC_CATALOG.values():
-        assert spec.formula.strip(), spec.key
-        assert spec.source, spec.key
-        assert spec.name.strip(), spec.key
-        assert isinstance(spec.wave_scoped, bool), spec.key
-
-
-def test_home_default_is_the_frozen_six_in_display_order():
-    assert HOME_DEFAULT == (
-        "funnel.sample_done",
-        "funnel.sample_open",
-        "funnel.ordered",
-        "funnel.not_ordered",
-        "funnel.gmv",
-        "funnel.roi",
-    )
-    for order, key in enumerate(HOME_DEFAULT, start=1):
-        assert METRIC_CATALOG[key].on_home is True
-        assert METRIC_CATALOG[key].home_order == order
-
-
-def test_off_home_metrics_have_no_home_order():
-    for spec in METRIC_CATALOG.values():
-        if spec.on_home:
-            assert spec.home_order is not None, spec.key
-        else:
-            assert spec.home_order is None, spec.key
-            assert spec.key not in HOME_DEFAULT
-
-
-def test_to_dict_is_json_serialisable_and_side_effect_free():
-    payload = list_metrics()
-    json.dumps(payload)
-    payload[0]["on_home"] = "tampered"
-    assert isinstance(list_metrics()[0]["on_home"], bool)
-
-
-# --------------------------------------------------------------------------- #
-# Lookup
-# --------------------------------------------------------------------------- #
+def test_list_metrics_returns_nothing_and_still_validates_its_filters():
+    assert list_metrics() == []
+    assert list_metrics(origin="interface") == []
+    assert list_metrics(home_only=True) == []
+    assert list_metrics(group="all") == []
+    # 过滤参数本身仍然要校验：拼错分组不能静默返回空表。
+    with pytest.raises(ValueError):
+        list_metrics(group="profit")
+    with pytest.raises(ValueError):
+        list_metrics(origin="platform")
 
 
 def test_get_metric():
-    assert get_metric("funnel.gmv").name == "下单金额"
-    assert get_metric("funnel.gmv").unit == "元"
+    # 平台指标已删，键查不到就是 None（不是抛错）。
+    assert get_metric("funnel.gmv") is None
     assert get_metric("nope") is None
     assert get_metric(None) is None
+    assert get_metric(123) is None
 
 
-def test_list_metrics_filters():
-    assert len(list_metrics()) == 11
-    assert len(list_metrics(home_only=True)) == 6
-    assert {m["key"] for m in list_metrics(home_only=True)} == set(HOME_DEFAULT)
-    assert [m["key"] for m in list_metrics(group="sample")]
-    assert {m["key"] for m in list_metrics(group="sample")} == {
-        "funnel.sample_done", "funnel.sample_wip", "funnel.sample_pending",
-        "funnel.sample_open", "funnel.priced",
-    }
-    assert {m["key"] for m in list_metrics(group="money")} == {"funnel.gmv", "funnel.roi"}
-    assert len(list_metrics(origin="platform")) == 11
-    assert list_metrics(origin="interface") == []
-    with pytest.raises(ValueError):
-        list_metrics(group="profit")
+# --------------------------------------------------------------------------- #
+# MetricSpec 自己（不依赖目录里有什么）
+# --------------------------------------------------------------------------- #
+
+
+def _interface_spec() -> MetricSpec:
+    return MetricSpec(
+        key="dept.OPS.weeklies",
+        name="提交周报数",
+        unit="份",
+        origin="interface",
+        formula="count(entries where kind='weekly')",
+        source="interface:entries",
+        wave_scoped=False,
+        group="",
+        on_home=False,
+        home_order=None,
+    )
+
+
+def test_metric_spec_carries_a_formula_and_a_source():
+    spec = _interface_spec()
+    assert spec.formula.strip()
+    assert spec.source.strip()
+    assert spec.name.strip()
+    assert isinstance(spec.wave_scoped, bool)
+
+
+def test_to_dict_is_json_serialisable_and_side_effect_free():
+    spec = _interface_spec()
+    payload = spec.to_dict()
+    json.dumps(payload)
+    payload["on_home"] = "tampered"
+    payload["key"] = "tampered"
+    # 每次都从 spec 现取：改返回的 dict 不能污染 spec 本身。
+    assert spec.to_dict()["on_home"] is False
+    assert spec.to_dict()["key"] == "dept.OPS.weeklies"
+
+
+def test_catalog_builder_still_rejects_unknown_origins_and_duplicates():
+    # 目录空着，但建目录时的校验不能跟着一起变空——它挡的是「有人偷偷加回平台指标」。
+    with pytest.raises(RuntimeError):
+        _build_catalog((_interface_spec(),))  # group "" 不在 GROUPS 里
+    platform_ish = MetricSpec(
+        key="funnel.gmv", name="下单金额", unit="元", origin="platform",
+        formula="sum", source="datacenter", wave_scoped=True, group="",
+        on_home=False, home_order=None,
+    )
+    with pytest.raises(RuntimeError):
+        _build_catalog((platform_ish,))
 
 
 # --------------------------------------------------------------------------- #
@@ -148,10 +146,16 @@ def test_department_prefix():
     assert department_metric_prefix("PRODUCTION").startswith(DEPARTMENT_METRIC_PREFIX + ".")
 
 
-def test_display_binding_accepts_a_platform_metric(fields):
-    assert validate_metric_binding(
+def test_display_binding_rejects_a_removed_platform_metric(fields):
+    # 机制：display 只能引用平台指标，而平台指标一个不剩 —— 所以必须是**可读拒绝**，
+    # 不是崩，也不是放行。
+    problems = validate_metric_binding(
         {"metric_key": "funnel.sample_done", "mode": "display"}, "PRODUCTION", fields
-    ) == []
+    )
+    assert len(problems) == 1
+    assert problems[0].startswith(f"[{METRIC_UNDEFINED}] metrics[funnel.sample_done].metric_key:")
+    assert "display may only reference a platform metric" in problems[0]
+    assert "is not in the catalogue" in problems[0]
 
 
 def test_display_binding_rejects_an_unknown_or_interface_metric(fields):
@@ -164,12 +168,11 @@ def test_display_binding_rejects_an_unknown_or_interface_metric(fields):
 
 def test_display_binding_must_not_carry_aggregation(fields):
     problems = validate_metric_binding(
-        {"metric_key": "funnel.gmv", "mode": "display", "agg": "sum", "from_field": "qty"},
+        {"metric_key": "dept.PRODUCTION.qty", "mode": "display", "agg": "sum", "from_field": "qty"},
         "PRODUCTION", fields,
     )
-    coded = {p.split("]")[0] + "]" for p in problems}
-    assert coded == {"[DATA_RULE_VIOLATION]"}
-    assert len(problems) == 2
+    # 带了聚合就是数据规则问题（键本身未定义是另一条，两条各自独立报）。
+    assert sum(1 for p in problems if p.startswith("[DATA_RULE_VIOLATION]")) == 2
 
 
 def test_emit_binding_accepts_a_namespaced_metric(fields):
@@ -189,16 +192,6 @@ def test_emit_binding_must_live_in_the_department_namespace(fields):
     assert len(problems) == 1
     assert problems[0].startswith("[DATA_RULE_VIOLATION] metrics[dept.DESIGN.done].metric_key:")
     assert "dept.PRODUCTION." in problems[0]
-
-
-def test_emit_binding_cannot_shadow_a_platform_metric(fields):
-    problems = validate_metric_binding(
-        {"metric_key": "funnel.gmv", "mode": "emit", "agg": "sum", "from_field": "qty"},
-        "PRODUCTION", fields,
-    )
-    messages = " | ".join(problems)
-    assert "namespace" in messages
-    assert "is a platform metric and cannot be redefined" in messages
 
 
 def test_emit_binding_requires_a_declared_field_and_known_agg(fields):
@@ -231,7 +224,7 @@ def test_binding_mode_and_shape_errors():
         "[METRIC_UNDEFINED] metrics: metric_key is required"
     ]
     bad_mode = validate_metric_binding(
-        {"metric_key": "funnel.gmv", "mode": "publish"}, "PRODUCTION", {}
+        {"metric_key": "dept.PRODUCTION.x", "mode": "publish"}, "PRODUCTION", {}
     )
     assert len(bad_mode) == 1
     assert ".mode:" in bad_mode[0]
