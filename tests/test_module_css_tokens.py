@@ -1,6 +1,6 @@
 """模块层 CSS 令牌锁：把照 Figma 核过的间距/尺寸值钉成断言。
 
-上一轮照着 `docs/design/design-system-v1.md` 与 Figma 模块层（主库 `140:3438`）
+上一轮照着 `docs/design/design-system-v1.md` §6（组件清单 · 模块层规格）
 逐个核了 13 处值，但核完只写进了 CSS 注释里：谁手滑把 `.wh-tab` 的 height 从 30
 改回 32，全量 pytest 依然是绿的，只有人再看一遍才能发现。这个文件把那些值变成红绿。
 
@@ -241,7 +241,7 @@ def test_every_locked_selector_resolves_to_a_real_rule():
 
 
 def test_card_title_bottom_margin_is_12():
-    """模块卡片标题与内容之间 12（Figma 模块 / card 148:5953 的纵向 itemSpacing）。"""
+    """模块卡片标题与内容之间 12（设计规范 §6 模块层：块面纵向 gap 12）。"""
     rule = only_rule(".wh-card-title")
     assert side_px(rule, "margin", "bottom") == 12
     assert side_px(rule, "margin", "top") == 0
