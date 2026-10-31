@@ -85,7 +85,9 @@ def good_descriptor(**overrides):
         "org_unit_code": "PRODUCTION",
         "position_codes": ["PROD_MGR"],
         "capabilities": ["entries:write", "entries:read:dept", "aggregate:read:dept"],
-        "metrics": [{"metric_key": "funnel.sample_done", "mode": "display"}],
+        # 平台目录现在是空表（商品中心下线），指标只能「本页 emit、本页展示」（契约 §2）。
+        "metrics": [{"metric_key": "dept.PRODUCTION.sample_done", "mode": "emit",
+                     "agg": "count", "from_field": "status", "where_status": "done"}],
         "modules": [
             {"key": "row", "type": "progress_row", "source_fields": ["title", "status"]},
             {"key": "note", "type": "note_block", "params": {"text": "备注"}},
@@ -315,25 +317,44 @@ def test_list_modules_layer_filter_and_bad_layer(registry):
 
 
 def test_list_metric_catalog_reads_the_metric_registry(registry):
+    """目录现在是空表：商品中心下线时那 11 个 platform 指标一起删了。
+
+    这条钉住「空目录也如实报空」，而不是报错或凭空列出旧指标——工具曾经把
+    `funnel.*` 写死在自己的描述里，目录空了还照报，那才是最坏的结果。
+    """
     result = registry.call("list_metric_catalog", {}, session_id="s")
     assert result.ok is True
     metrics = result.payload["metrics"]
-    assert len(metrics) == len(metrics_contract.list_metrics()) == 11
-    assert ([m["key"] for m in metrics]
-            == [m["key"] for m in metrics_contract.list_metrics()])
-    assert result.payload["home"] == [m["key"] for m in metrics if m["on_home"]]
-    assert set(result.payload["home"]) == set(metrics_contract.HOME_DEFAULT)
+    assert metrics == []
+    assert result.payload["count"] == 0 == len(metrics_contract.list_metrics())
+    assert result.payload["home"] == []
 
 
-def test_list_metric_catalog_filters(registry):
+def test_list_metric_catalog_filters_follow_the_catalogue(registry):
+    """过滤参数本身仍校验：过滤键在、值不认识就报 INVALID_ARGUMENTS。
+
+    空目录下 `GROUPS` 也是空的，所以 `group="sample"` 现在会被判「不认识的组」；
+    平台指标回来时这里会自动恢复成「返回该组指标」。
+    """
     home = registry.call("list_metric_catalog", {"home_only": True}, session_id="s")
     assert home.ok is True
-    assert home.payload["count"] == len(metrics_contract.HOME_DEFAULT)
-    assert all(m["on_home"] for m in home.payload["metrics"])
+    assert home.payload["count"] == 0
+    assert home.payload["metrics"] == []
+
+    interface = registry.call("list_metric_catalog", {"origin": "interface"}, session_id="s")
+    assert interface.ok is True
+    assert interface.payload["count"] == 0
+
+    # platform 这一档随商品中心一起没了：现在只剩 interface 一种来源。
+    platform = registry.call("list_metric_catalog", {"origin": "platform"}, session_id="s")
+    assert platform.ok is False
+    assert platform.error_code == ERR_INVALID_ARGUMENTS
+    assert "unknown metric origin" in platform.payload["message"]
 
     sample = registry.call("list_metric_catalog", {"group": "sample"}, session_id="s")
-    assert sample.ok is True
-    assert {m["group"] for m in sample.payload["metrics"]} == {"sample"}
+    assert sample.ok is False
+    assert sample.error_code == ERR_INVALID_ARGUMENTS
+    assert "unknown metric group" in sample.payload["message"]
 
     bad = registry.call("list_metric_catalog", {"group": "nope"}, session_id="s")
     assert bad.ok is False
@@ -402,7 +423,12 @@ def test_preview_reports_every_contract_problem_with_a_code_prefix(registry):
     assert registry.context.store.all_versions() == []
 
 
-def test_preview_resolves_metric_bindings_against_the_catalog(registry):
+def test_preview_reports_every_binding_as_unresolved_while_the_catalog_is_empty(registry):
+    """空目录下，「解析不出来」必须如实说，不能假装解析到了。
+
+    目录里的 platform 指标已随商品中心一起删掉，所以 `funnel.*` 与任何键都解析
+    不出来；这条钉住 tools 层不会自己编一个 spec 顶上。
+    """
     descriptor = good_descriptor()
     descriptor["metrics"] = [
         {"metric_key": "funnel.sample_done", "mode": "display"},
@@ -410,8 +436,41 @@ def test_preview_resolves_metric_bindings_against_the_catalog(registry):
     ]
     result = registry.call("preview_descriptor", {"descriptor": descriptor})
     preview = result.payload["aggregates_preview"]
+    assert preview["count"] == 0
+    assert preview["resolved"] == []
+    assert preview["unresolved"] == ["funnel.sample_done",
+                                     "dept.PRODUCTION.not_a_real_metric"]
+
+
+def test_preview_still_resolves_a_binding_when_the_catalog_has_one(registry, monkeypatch):
+    """解析那段分支现在是死路（目录空），但平台指标回来时要能立刻用。
+
+    所以这里给 `oams.metrics.get_metric` 塞一个 spec，只验 tools 层「有 spec 就
+    resolved、没有就 unresolved」这一层判断，不验目录内容——目录内容由
+    `tests/test_metrics_catalog.py` 管。
+    """
+    spec = metrics_contract.MetricSpec(
+        key="dept.PRODUCTION.sample_done", name="已出样", unit="款", origin="interface",
+        formula="count(stage = done)", source="interface:prod-sample-board",
+        wave_scoped=False, group="sample", on_home=False, home_order=None,
+    )
+    real_get_metric = metrics_contract.get_metric
+
+    def fake_get_metric(key):
+        return spec if key == spec.key else real_get_metric(key)
+
+    monkeypatch.setattr(metrics_contract, "get_metric", fake_get_metric)
+
+    descriptor = good_descriptor()
+    descriptor["metrics"] = [
+        {"metric_key": "dept.PRODUCTION.sample_done", "mode": "emit",
+         "agg": "count", "from_field": "status", "where_status": "done"},
+        {"metric_key": "dept.PRODUCTION.not_a_real_metric", "mode": "display"},
+    ]
+    result = registry.call("preview_descriptor", {"descriptor": descriptor})
+    preview = result.payload["aggregates_preview"]
     assert preview["count"] == 1
-    assert preview["resolved"][0]["metric_key"] == "funnel.sample_done"
+    assert preview["resolved"][0]["metric_key"] == "dept.PRODUCTION.sample_done"
     assert preview["resolved"][0]["spec"]["unit"] == "款"
     assert preview["unresolved"] == ["dept.PRODUCTION.not_a_real_metric"]
 

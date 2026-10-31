@@ -15,6 +15,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
+import oams.metrics as metrics_contract
+import oams.upgrade as upgrade
 from oams.descriptor import validate_descriptor
 from oams.plugin_cli import main as plugin_main
 from oams.render import render_read_only
@@ -314,7 +316,22 @@ def test_metrics_are_added_for_the_inferred_department_metric():
     assert any("dept.DESIGN.finished" in hint for hint in hints)
 
 
-def test_metrics_display_binding_is_inferred_from_a_metric_card_param():
+def test_a_platform_metric_the_page_names_becomes_a_display_binding(monkeypatch):
+    """0.1 的 metric_card 若点名了一个平台指标，升级时要把它记成 display 绑定。
+
+    平台目录现在是空表（商品中心下线），这条分支在真实数据上不会命中，所以要
+    给 `oams.upgrade.get_metric` 塞一个 platform 指标才验得到；不塞的话它只是
+    一段没人走的分支，等于没测。目录本身由 `tests/test_metrics_catalog.py` 管。
+    """
+    spec = metrics_contract.MetricSpec(
+        key="funnel.sample_done", name="已出样", unit="款", origin="platform",
+        formula="count(styles where sample_done)", source="datacenter:styles",
+        wave_scoped=True, group="sample", on_home=True, home_order=2,
+    )
+    real_get_metric = upgrade.get_metric
+    monkeypatch.setattr(upgrade, "get_metric",
+                        lambda key: spec if key == spec.key else real_get_metric(key))
+
     descriptor = with_modules([
         {"key": "state", "type": "metric_card", "order": 1, "title": "状态",
          "source_fields": ["state_word"], "aggregatable": True,
@@ -322,6 +339,17 @@ def test_metrics_display_binding_is_inferred_from_a_metric_card_param():
     ])
     upgraded, _hints = upgrade_descriptor(descriptor)
     assert {"metric_key": "funnel.sample_done", "mode": "display"} in upgraded["metrics"]
+
+
+def test_a_metric_key_the_catalogue_does_not_know_is_not_turned_into_a_binding():
+    """认不出的键不猜：宁可少一条 display 绑定，也不要凭空造一条读不到数的。"""
+    descriptor = with_modules([
+        {"key": "state", "type": "metric_card", "order": 1, "title": "状态",
+         "source_fields": ["state_word"], "aggregatable": True,
+         "params": {"metric_key": "funnel.sample_done"}},
+    ])
+    upgraded, _hints = upgrade_descriptor(descriptor)
+    assert all(binding["mode"] != "display" for binding in upgraded["metrics"])
 
 
 def test_no_status_field_means_no_emit_metric():

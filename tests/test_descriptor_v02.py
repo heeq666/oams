@@ -84,7 +84,14 @@ def base(**overrides):
             field("fabric_note", "display_only", aggregatable=False),
         ],
         "status_map": {"待排产": "planned", "打样中": "in_progress", "已完成": "done"},
-        "metrics": [{"metric_key": "funnel.sample_done", "mode": "display"}],
+        # 平台目录现在是空表（商品中心下线时那 11 条 funnel.* 一起删了），所以
+        # 参考夹具走「本页自己 emit、本页自己展示」这条路（契约 §2 第二条）。
+        # 注意 metrics[] 里同一个键只能出现一次（重复绑定会被判 METRIC_UNDEFINED），
+        # 「展示自己 emit 的指标」是写在模块参数上的，不是再写一条 display 绑定。
+        "metrics": [
+            {"metric_key": "dept.PRODUCTION.sample_done", "mode": "emit",
+             "agg": "count", "from_field": "stage", "where_status": "done"},
+        ],
         "rules": {"evidence_required": True},
         "meta": {"visibility": "department", "review": {"status": "draft"}},
     }
@@ -294,13 +301,53 @@ def test_public_visibility_is_allowed_at_creation():
 # --------------------------------------------------------------------------- #
 
 
-def test_display_metric_must_be_platform():
+def test_a_page_may_show_a_metric_it_emits_itself():
+    """契约 §2 第二条：展示可以引本页自己 emit 的指标（自产自用）。
+
+    平台目录现在是空表，所以「先在本页 emit、再在本页展示」是部门页唯一还能
+    展示指标的写法。展示写在模块参数上，metrics[] 里只有那条 emit 声明。
+    """
+    page = base()
+    assert validate_descriptor(page) == []
+    page["modules"][0]["children"][0]["children"].append(
+        {"key": "cards", "type": "metric_card",
+         "params": {"metric_key": "dept.PRODUCTION.sample_done"}}
+    )
+    assert validate_descriptor(page) == []
+
+
+# --- 三条反例：拒绝要能读出是哪一条没满足 ------------------------------------ #
+
+
+def test_display_metric_must_have_been_emitted_by_this_page():
+    """本部门命名空间，但本页没在 metrics[] 里 emit 过它 → 「自产才能自用」。"""
     broken = base(metrics=[{"metric_key": "dept.PRODUCTION.x", "mode": "display"}])
     problems = validate_descriptor(broken)
     assert codes(problems) == ["METRIC_UNDEFINED"]
+    assert "mode=emit 声明" in problems[0]
+    assert "dept.PRODUCTION.x" in problems[0]
 
 
-def test_display_module_param_must_reference_a_platform_metric():
+def test_display_metric_may_not_borrow_another_department_s_emit():
+    """别的部门的命名空间 → 拒，文案要点名本部门前缀。"""
+    broken = base(metrics=[{"metric_key": "dept.FIN.x", "mode": "display"}])
+    problems = validate_descriptor(broken)
+    assert codes(problems) == ["METRIC_UNDEFINED"]
+    assert "属于别的部门的指标命名空间" in problems[0]
+    assert "dept.PRODUCTION." in problems[0]
+
+
+def test_display_metric_with_an_invented_key_is_refused():
+    """凭空编的键（既不在目录、也不是 emit 形态）→ 拒。"""
+    broken = base(metrics=[{"metric_key": "stuff.total", "mode": "display"}])
+    problems = validate_descriptor(broken)
+    assert codes(problems) == ["METRIC_UNDEFINED"]
+    assert "既不是目录里的平台指标" in problems[0]
+    assert "stuff.total" in problems[0]
+
+
+def test_display_module_param_follows_the_same_rule():
+    """模块参数（metric_card 这类）与 metrics[] 走同一套判据，不是两套。"""
     broken = base()
     broken["modules"][0]["children"][0]["children"].append(
         {"key": "cards", "type": "metric_card", "params": {"metric_key": "dept.PRODUCTION.x"}}
@@ -308,11 +355,24 @@ def test_display_module_param_must_reference_a_platform_metric():
     problems = validate_descriptor(broken)
     assert codes(problems) == ["METRIC_UNDEFINED"]
     assert "dept.PRODUCTION.x" in problems[0]
+    assert "mode=emit 声明" in problems[0]
+
+
+def test_display_binding_may_not_carry_its_own_aggregation():
+    """display 只引用，不聚合；带 agg/from_field 会被判数据规则违规。"""
+    broken = base(metrics=[
+        {"metric_key": "dept.PRODUCTION.sample_done", "mode": "emit",
+         "agg": "count", "from_field": "stage"},
+        {"metric_key": "dept.PRODUCTION.sample_done", "mode": "display",
+         "from_field": "stage"},
+    ])
+    problems = validate_descriptor(broken)
+    assert "DATA_RULE_VIOLATION" in codes(problems)
+    assert any("must not carry its own aggregation" in p for p in problems)
 
 
 def test_emit_metric_must_use_the_department_namespace():
-    broken = base(metrics=[{"metric_key": "funnel.gmv", "mode": "display"},
-                           {"metric_key": "other.x", "mode": "emit", "agg": "count",
+    broken = base(metrics=[{"metric_key": "other.x", "mode": "emit", "agg": "count",
                             "from_field": "stage"}])
     problems = validate_descriptor(broken)
     assert "DATA_RULE_VIOLATION" in codes(problems)
@@ -320,8 +380,12 @@ def test_emit_metric_must_use_the_department_namespace():
 
 
 def test_duplicate_metric_binding_is_reported():
-    broken = base(metrics=[{"metric_key": "funnel.gmv", "mode": "display"},
-                           {"metric_key": "funnel.gmv", "mode": "display"}])
+    broken = base(metrics=[
+        {"metric_key": "dept.PRODUCTION.sample_done", "mode": "emit",
+         "agg": "count", "from_field": "stage"},
+        {"metric_key": "dept.PRODUCTION.sample_done", "mode": "emit",
+         "agg": "count", "from_field": "stage"},
+    ])
     problems = validate_descriptor(broken)
     assert any("duplicate metric binding" in p for p in problems)
 

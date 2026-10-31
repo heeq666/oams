@@ -147,15 +147,40 @@ def test_department_prefix():
 
 
 def test_display_binding_rejects_a_removed_platform_metric(fields):
-    # 机制：display 只能引用平台指标，而平台指标一个不剩 —— 所以必须是**可读拒绝**，
+    # 机制：display 只认两种键——目录里的平台指标，或本页自己 emit 的指标。
+    # 平台指标一个不剩了，`funnel.*` 两边都不占，所以必须是**可读拒绝**，
     # 不是崩，也不是放行。
     problems = validate_metric_binding(
         {"metric_key": "funnel.sample_done", "mode": "display"}, "PRODUCTION", fields
     )
     assert len(problems) == 1
     assert problems[0].startswith(f"[{METRIC_UNDEFINED}] metrics[funnel.sample_done].metric_key:")
-    assert "display may only reference a platform metric" in problems[0]
-    assert "is not in the catalogue" in problems[0]
+    assert "既不是目录里的平台指标" in problems[0]
+    assert "dept.PRODUCTION." in problems[0]
+
+
+def test_display_may_reference_a_metric_the_page_emits(fields):
+    """自产自用：同页 emit 过它，display 就合法（契约 §2 第二条）。"""
+    problems = validate_metric_binding(
+        {"metric_key": "dept.PRODUCTION.blocked_count", "mode": "display"},
+        "PRODUCTION", fields, own_metrics={"dept.PRODUCTION.blocked_count"},
+    )
+    assert problems == []
+
+
+def test_display_may_not_borrow_another_department_s_emit(fields):
+    # `own_metrics` 里只会有本页 emit 的键——`descriptor.emitted_metric_keys`
+    # 已按本单位前缀过滤过（discussion 见契约 §2），所以这里传本页自己的键：
+    # dept.DESIGN.done 不在其中，必须被当成「别部门的命名空间」拒掉。
+    problems = validate_metric_binding(
+        {"metric_key": "dept.DESIGN.done", "mode": "display"},
+        "PRODUCTION", fields, own_metrics={"dept.PRODUCTION.blocked_count"},
+    )
+    assert len(problems) == 1
+    assert "[METRIC_UNDEFINED]" in problems[0]
+    assert "属于别的部门的指标命名空间" in problems[0]
+    # 文案点名本部门命名空间，读者才知道该改成什么
+    assert "dept.PRODUCTION." in problems[0]
 
 
 def test_display_binding_rejects_an_unknown_or_interface_metric(fields):
