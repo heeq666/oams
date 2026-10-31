@@ -7,6 +7,7 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 1. `docs/design/design-system-v1.md` —— **界面唯一口径**：颜色/圆角/间距/字号令牌、三层结构（骨架层 / 组件层 / 模块层）与 38 个组件组 + 14 个模块组件的 Figma 节点 id、八条硬规则、验收清单。
 2. `docs/design/tokens.json` —— 令牌机器可读镜像（从 Figma 变量导出 85 项）。
 3. Figma：页面 `02 · 组件 Components`（`0:1`）是**组件与视觉的唯一真源**（主库 frame `140:3438`，自上而下：骨架层 → 图层组（基础件 / 表单 / 反馈 / 数据）→ 浮层 → 协作室 → 模块层）；令牌表与规格板在 `01 · 规范 Specs`（`3:89`），整页稿在 `03 · 页面 Pages`（`3:88`）。**三页分工：规则 / 积木 / 成品；Starter 计划只有 3 页，别再新建页面**，命名与归档规则见 `docs/design/figma-workspace-rules.md`。改视觉先改 Figma，再改代码。
+4. `docs/design/brand-assets.md` —— 品牌标志：开源版用的中性标、9 张回归图、以及怎么换回内部版。
 
 六条最容易犯的错：
 
