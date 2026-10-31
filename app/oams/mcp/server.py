@@ -1,4 +1,4 @@
-"""stdio MCP server for the Workhub interface generator.
+"""stdio MCP server for the OAMS interface generator.
 
 This file is deliberately thin: it owns *only* the MCP SDK adaptation.
 
@@ -37,7 +37,7 @@ SERVER_VERSION = "0.1.0"
 
 #: Instruction block a client shows to the AI before the first call.
 SERVER_INSTRUCTIONS = (
-    "Workhub 部门界面插件服务端。你可以：读模块注册表/指标目录/标准字段，"
+    "OAMS 部门界面插件服务端。你可以：读模块注册表/指标目录/标准字段，"
     "在 draft 上创建与修改插件描述符，预览渲染结果。"
     "你不能批准任何插件：submit_for_review 只接受人类调用（插件描述符的每次上架都必须人工评审）。"
 )

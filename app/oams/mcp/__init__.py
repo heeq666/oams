@@ -1,4 +1,4 @@
-"""Workhub MCP server: the AI's only door into the interface generator.
+"""OAMS MCP server: the AI's only door into the interface generator.
 
 Public surface (what other code may import):
 

@@ -17,7 +17,7 @@ from oams.schemas import (AssignmentCreate, GrantCreate, MemberCreate, MemberSta
 from oams.security import (active_org_unit_ids, current_principal, has_company_scope,
                               has_permission, require_org_unit_access, require_permission, revoke_session)
 
-app = FastAPI(title="Company Workhub API", version="0.1.0")
+app = FastAPI(title="Company OAMS API", version="0.1.0")
 
 
 def audit(conn, actor_id: UUID, event_type: str, subject_type: str, subject_id: UUID, reason: str,

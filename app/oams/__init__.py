@@ -1,1 +1,1 @@
-"""Company Workhub workforce service."""
+"""Company OAMS workforce service."""

@@ -1,4 +1,4 @@
-"""Validate a department interface descriptor against the Workhub constraint layer.
+"""Validate a department interface descriptor against the OAMS constraint layer.
 
 This is the gate that keeps an AI-authored interface honest: a descriptor is data,
 never code. Anything that tries to smuggle in logic, queries or credentials is

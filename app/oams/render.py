@@ -1,4 +1,4 @@
-"""Turn a Workhub interface descriptor into HTML -- three viewpoints, one template set.
+"""Turn an OAMS interface descriptor into HTML -- three viewpoints, one template set.
 
 The renderer is still deliberately dumb: it reads a descriptor and paints it. It
 never executes descriptor content, never runs a query, and never treats a string
