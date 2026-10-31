@@ -21,6 +21,11 @@ if [[ ! -x "$PYTHON" ]]; then
   PYTHON="$(command -v python3)"
 fi
 
+# 口令不进仓库：先看环境变量，再看本机 .env（.env 已被 git 忽略）。都没有就用占位串，
+# 这时带库的用例会按「没有可用数据库」跳过——别把跳过当绿灯，把 WORKHUB_DATABASE_URL 配上。
+if [[ -z "${WORKHUB_DATABASE_URL:-}" && -f "$ROOT/.env" ]]; then
+  set -a; . "$ROOT/.env"; set +a
+fi
 export WORKHUB_DATABASE_URL="${WORKHUB_DATABASE_URL:-postgresql://workhub:change-me@127.0.0.1:55433/workhub}"
 export PYTHONPATH="$ROOT/app${PYTHONPATH:+:$PYTHONPATH}"
 
