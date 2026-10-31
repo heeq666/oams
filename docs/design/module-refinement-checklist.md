@@ -32,7 +32,7 @@
 
 外加两条不算缺口但要一起拍的：
 
-- **G16** preview 在 MCP `preview_descriptor` 与 `workhub plugin preview` 里是**一段没有样式的 HTML 片段**（没有 `<link>`、没有 token 的 `:root`），拿到浏览器里看是裸的。审核页（走 `base.html`）里才有样式。要不要给预览产出自带一份最小 token 外壳？
+- **G16** preview 在 MCP `preview_descriptor` 与 `oams plugin preview` 里是**一段没有样式的 HTML 片段**（没有 `<link>`、没有 token 的 `:root`），拿到浏览器里看是裸的。审核页（走 `base.html`）里才有样式。要不要给预览产出自带一份最小 token 外壳？
 - **G17** `.wh-input` 的 `padding:6px 8px` / 圆角 9 与外壳的「控件 30 高 / 内距 0·12 / 圆角 18」是两套值，现在靠 `base.html` 的 `input:not(…)` 提优先级盖住（`base.html:11-13` 的注释就是这么写的）。2026-10-31 收口：`.wh-input` 的内距从 `6px 8px` 改为 `12px 12px`（与外壳 textarea 的 `12px 12px` 同档，模块里的 textarea 不再和外壳文本域一高一矮）；input/select 仍由外壳那条 `height: 30 + padding: 0 12` 接管，不靠这一行。换到没有外壳的宿主时，input/select 会落到 12 内距——那也比 6/8 与外壳分叉更容易发现。
 
 ## 2. 三个口径（这三个定了，20 条才有落点）
