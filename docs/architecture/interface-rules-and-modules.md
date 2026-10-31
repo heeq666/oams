@@ -61,7 +61,7 @@ AI 拼部门界面时，只能从这些模块里选（可组合、可排序）�
 | 视角 | 入口 | 控件 | 要点 |
 | --- | --- | --- | --- |
 | `edit` 填报 | `render_interface()` | 可填，控件可操作 | 部门视角；展示件读 `aggregates`，不读描述符里的值 |
-| `readonly` 只读 | `render_read_only()` | **一个 `input` / `select` / `textarea` 都不许出现** | 六个填报模块（`blocker_list` / `evidence_gallery` / `metric_input` / `progress_row` / `table` / `timeline`）在只读里连控件壳子都没有——`tests/test_render_modules.py:282` 按 `INPUT_KEYS` 逐个模块断言；容器与展示件同样不许漏出 `wh-input`（同文件 `:293`）。另外 **`aggregatable=False` 的模块整块不渲染**（现只有 `evidence_gallery`，`app/workhub/modules.py:249`）：只读是公司汇总视角，进不了汇总的模块留着没意义，证据只在 `preview` 里看（`render.py:732`、`tests/test_render_modules.py:327`） |
+| `readonly` 只读 | `render_read_only()` | **一个 `input` / `select` / `textarea` 都不许出现** | 六个填报模块（`blocker_list` / `evidence_gallery` / `metric_input` / `progress_row` / `table` / `timeline`）在只读里连控件壳子都没有——`tests/test_render_modules.py:282` 按 `INPUT_KEYS` 逐个模块断言；容器与展示件同样不许漏出 `wh-input`（同文件 `:293`）。另外 **`aggregatable=False` 的模块整块不渲染**（现只有 `evidence_gallery`，`app/oams/modules.py:249`）：只读是公司汇总视角，进不了汇总的模块留着没意义，证据只在 `preview` 里看（`render.py:732`、`tests/test_render_modules.py:327`） |
 | `preview` 审核 | `render_preview()` | 真实控件，但 `disabled` 且 `tabindex="-1"` | 假数据；看得见、点不动。审核看的是这页的**定义**——字段对不对、控件类型对不对、表列够不够，所以控件必须在场；`disabled` 不参与提交，安全性不降（`render.py:452-453`） |
 
 `mode` 是三个入口唯一的差别（`render.py:16`），三种视角共用同一份模板，所以任何模板都别按视角写两套结构。

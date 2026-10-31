@@ -19,15 +19,15 @@ python -m venv .venv
 . .venv/bin/activate
 pip install -e .
 cp .env.example .env          # 再把库地址填进 .env（口令别提交进仓库）
-export WORKHUB_DATABASE_URL="postgresql://<账号>:<口令>@127.0.0.1:5432/<库名>"
-oams migrate                  # 建表：把库结构建出来
+export OAMS_DATABASE_URL="postgresql://<账号>:<口令>@127.0.0.1:5432/<库名>"
+oams db init                  # 建表：把库结构建出来
 oams bootstrap-admin --name "系统管理员" --employee-code "ADMIN001" --org-code "COMPANY" --org-name "公司"
 oams serve                    # 默认 http://127.0.0.1:8000
 ```
 
-起来后打开 <http://127.0.0.1:8000> 就能用。本机试用可以设 `WORKHUB_DEV_AUTOLOGIN=1` 免登录（页面右下角会出现身份切换角标），**部署到任何共享环境前必须去掉**。
+起来后打开 <http://127.0.0.1:8000> 就能用。本机试用可以设 `OAMS_DEV_AUTOLOGIN=1` 免登录（页面右下角会出现身份切换角标），**部署到任何共享环境前必须去掉**。
 
-命令主名是 `oams`，`workhub` 作为兼容别名保留，两条命令等价。完整步骤与常见报错见[在你电脑上跑起来（本地试用）](docs/runbooks/local-trial.md)。
+命令是 `oams`。完整步骤与常见报错见[在你电脑上跑起来（本地试用）](docs/runbooks/local-trial.md)。
 
 ## 建第一页
 

@@ -9,7 +9,7 @@
 
 ## 一、先划清「推倒重来」的边界
 
-现在的 1509 行模板 + 255 行内联 CSS（全部挤在 `app/workhub/templates/base.html:8-262`）是「能用但不像产品」的形态：无独立样式表、`.topbar` 定义了两遍（base.html:28 与 251）、`:root` 定义了两遍（9 与 232）、`button` 与 `.btn` 两套 padding、9 张表缺 `<th scope>`、flash 无 `role=status`、进度条无 `progressbar` 角色、无 skip-link。
+现在的 1509 行模板 + 255 行内联 CSS（全部挤在 `app/oams/templates/base.html:8-262`）是「能用但不像产品」的形态：无独立样式表、`.topbar` 定义了两遍（base.html:28 与 251）、`:root` 定义了两遍（9 与 232）、`button` 与 `.btn` 两套 padding、9 张表缺 `<th scope>`、flash 无 `role=status`、进度条无 `progressbar` 角色、无 skip-link。
 
 重做的定义：
 
@@ -130,7 +130,7 @@ Figma 五屏顶部都是 6 格指标（坑位定稿 / 定稿 / 打样中 / 待�
 ### 缺口 3 · 登录口径冲突（需裁决）
 
 - **设计稿**：登录屏 3:1472 是「公司分配的邮箱 + 密码」两字段，LoginCard 400x496。
-- **后端**：`workforce_members` 表（0001 迁移）**根本没有 password 字段**，全仓 grep `password` 在 `app/workhub/*.py` 与 `migrations/*.sql` 里 0 命中。现有 `login.html` 是「粘贴会话令牌」单字段，`POST /login` 收 `token: str = Form(...)` 走 `principal_for_token`。
+- **后端**：`workforce_members` 表（0001 迁移）**根本没有 password 字段**，全仓 grep `password` 在 `app/oams/*.py` 与 `migrations/*.sql` 里 0 命中。现有 `login.html` 是「粘贴会话令牌」单字段，`POST /login` 收 `token: str = Form(...)` 走 `principal_for_token`。
 - **文档口径**：`docs/architecture/v1-ui-scope.md:91-95` 明确 v1 用 CLI 令牌登录（`GET /login?token=` 一次性链接为首选）；`v1-hr-department-scope.md:103` 写「不做员工自助登录，独立账号中心后续接入」。
 
 三条路，必须选一条：
@@ -176,8 +176,8 @@ Figma 五屏顶部都是 6 格指标（坑位定稿 / 定稿 / 打样中 / 待�
 ## 八、这份方案的可验证性
 
 方案里每条判断都有对应证据：
-- 模板行数 / 内联 style 数 / `<th>` 缺失数 —— 遍历 `app/workhub/templates/` 所得
-- build_board 返回键 —— `app/workhub/api.py:929-1021` 实读
+- 模板行数 / 内联 style 数 / `<th>` 缺失数 —— 遍历 `app/oams/templates/` 所得
+- build_board 返回键 —— `app/oams/api.py:929-1021` 实读
 - 登录无密码字段 —— 0001 迁移表定义 + 全仓 grep
 - metric 无聚合 —— 全仓 grep `metric` 仅命中 `descriptor.py:20`
 - entries 不写 work_item_id —— `web.py:495`、`web.py:813`

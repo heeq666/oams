@@ -110,7 +110,7 @@ Cookie 要求：`HttpOnly` + `SameSite=Lax`。**不加 `Secure`**——内网是
 ### 4.1 目录与依赖
 
 ```
-app/workhub/
+app/oams/
   web.py           # 界面路由（新增），返回 HTML
   api.py           # JSON API（保持现状，MCP 与界面共用）
   templates/       # Jinja2（新增）
@@ -156,7 +156,7 @@ FastAPI 单进程同时提供 `/v1/*`（JSON）、MCP 与 `/board`、`/admin/*`�
 
 这一节原来记录的是「办公室外壳延后到第二个部门进来之后」以及它的定形方案（部门区域
 坐标 + 工位卡片、拖拽录入、两级画布）。2026-10-22 到 10-25 之间它确实被实现了：
-「/office」、「/office/zoom」、「/admin/spaces」三个页面，加 「workhub.spaces」表与
+「/office」、「/office/zoom」、「/admin/spaces」三个页面，加 「oams.spaces」表与
 「/v1/office」、「/v1/spaces」三个接口。
 
 **10-26 全部删除**，连同 0004_office_spaces.sql 建的表（见 0010_drop_office_spaces.sql）。

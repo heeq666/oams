@@ -1,11 +1,11 @@
 ---
 name: workhub-design-system
-description: 按 Workhub 设计规范 v1 做页面/组件（shadcn 语义色、hairline、五档圆角、控件 30、令牌化），含 Figma 组件库定位与八条硬规则
+description: 按 OAMS 设计规范 v1 做页面/组件（shadcn 语义色、hairline、五档圆角、控件 30、令牌化），含 Figma 组件库定位与八条硬规则
 ---
 
-# Workhub 设计规范（做界面前加载）
+# OAMS 设计规范（做界面前加载）
 
-你在给 Workhub（全公司工作进度与岗位协同系统）做界面。它的视觉口径是 **shadcn 的语义色 + 白底 / hairline 分界 / 五档圆角 / 无阴影 / 一个强调色**。你不需要、也不应该安装 shadcn/ui（它要 React + Tailwind，本项目是 FastAPI + Jinja2 + htmx 服务端渲染，无前端构建链）。
+你在给 OAMS（组织内 AI 应用的宿主与应用商店）做界面。它的视觉口径是 **shadcn 的语义色 + 白底 / hairline 分界 / 五档圆角 / 无阴影 / 一个强调色**。你不需要、也不应该安装 shadcn/ui（它要 React + Tailwind，本项目是 FastAPI + Jinja2 + htmx 服务端渲染，无前端构建链）。
 
 ## 先读这两个
 
@@ -16,7 +16,7 @@ Figma 是唯一真源：页面 `0:1`（`02 · 组件库`），主库 frame `140:
 
 ## 令牌钩子（代码里用这些，不写字面值）
 
-颜色：`--wh-bg` `--wh-bg-muted` `--wh-line` `--wh-line-strong` `--wh-ink` `--wh-muted` `--wh-accent` `--wh-hover`；状态 `--wh-done` `--wh-blocked` `--wh-decision`。
+颜色：`--oams-bg` `--oams-bg-muted` `--oams-line` `--oams-line-strong` `--oams-ink` `--oams-muted` `--oams-accent` `--oams-hover`；状态 `--oams-done` `--oams-blocked` `--oams-decision`。
 圆角按尺寸分档：容器 `26` / 中等块 `18`（含**输入框、下拉、文本域** —— 它们都长在卡片里）/ 行与高亮 `9`（菜单行、chip、侧栏行）/ 方框 `4` / 胶囊 `999` 只给按钮·搜索框·徽章·开关·页码（表格本体 0）。间距只记三个数：块与块 `16`、元素与元素 `12`、行内 `8`（**标签↔控件也是 8**，没有 6 这一档；Figma `Field 表单行` `140:3688` 两个变体 `itemSpacing` 都是 8，2026-10-31 撤销「6」）。控件基准线高 `30`（input / select / button 同高，内距 0·12），textarea 最小高 `120`。连续曲率（cornerSmoothing 0.6）只有 Figma 有，CSS 保持圆弧。字号：11~32，字重只有 Regular / Medium / Semibold。
 
 ## 八条硬规则（违反就是返工）
@@ -34,7 +34,7 @@ Figma 是唯一真源：页面 `0:1`（`02 · 组件库`），主库 frame `140:
 
 1. **先找现成的**：38 个组件组 + 14 个模块组件（模块层 `148:5948`，与 `MODULE_REGISTRY` 的 20 个 key 一一对应）里有的，直接复用 Figma 实例 / 对应模板片段，不要重画。
 2. **先判断属于哪一层**：骨架层（页面外壳）/ 组件层（卡片面板里的控件与数据件）/ 浮层（Modal、Menu、Tooltip）/ 协作室（右下角圆按钮呼出的全局讨论层，底部两栏弹层，分「管理群 / 汇报群 / 私聊」）/ 模块层（与 `MODULE_REGISTRY` 的 20 个 key 对齐的内容块）。新组件先归类再落位。
-3. **改 Figma 再改代码**：视觉改动先落到 `0:1` 页，再改 `app/workhub/static/workhub-modules.css` 与模板。
+3. **改 Figma 再改代码**：视觉改动先落到 `0:1` 页，再改 `app/oams/static/oams-modules.css` 与模板。
 4. **三档截图自检**：1440 / 1024 / 768，窄屏不许横向滚动。
 5. **对照验收清单**：见 `docs/design/design-system-v1.md` §10。
 

@@ -60,7 +60,7 @@
 
 ## 4. 需要新建的东西（按依赖顺序）
 
-1. **迁移 0002：工作项与申报** ✅ **已完成**。文件 `app/workhub/migrations/0002_work_items_reports_and_policy_gaps.sql`，已在临时 PostgreSQL **16.14** 上实测通过，12 项约束逐条验证（`db/verify/0002_constraints.sql`，全部 PASS）
+1. **迁移 0002：工作项与申报** ✅ **已完成**。文件 `app/oams/migrations/0002_work_items_reports_and_policy_gaps.sql`，已在临时 PostgreSQL **16.14** 上实测通过，12 项约束逐条验证（`db/verify/0002_constraints.sql`，全部 PASS）
    - `work_items`：`org_unit_id`、`position_id`、`title`、`kind`、`status`、`blocked_reason`、`needs_decision`、时间戳
    - `work_item_reports`：`work_item_id`、`reported_by_member_id`、`submitted_via`（`human` / `agent`）、`progress_value`、`note`、`evidence`、`reported_at`
    - 补齐：主岗唯一性、审批记录表（双签）、`acting` 90 天 CHECK、字段级脱敏

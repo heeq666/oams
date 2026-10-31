@@ -296,7 +296,7 @@ draft ──提交──▶ pending ──通过──▶ active ──新版本
 
 只针对两类：① 申请 `aggregate:read:company`；② 首次上架（后续改版单人审即可）。
 
-> **② 首次上架这条未实现、待决定**（2026-10-31 记）。代码只认「公开 / 公司汇总能力 / 跨部门」三条判据（`app/workhub/review.py:207` `needs_company_review()`），没有「首次上架」这一条；真做会把每个部门的第一页都推到公司终审，属流程变更，等老大拍。现状与三种现实路径见 `p0-interface-contract.md` §4 与 §4.2。
+> **② 首次上架这条未实现、待决定**（2026-10-31 记）。代码只认「公开 / 公司汇总能力 / 跨部门」三条判据（`app/oams/review.py:207` `needs_company_review()`），没有「首次上架」这一条；真做会把每个部门的第一页都推到公司终审，属流程变更，等老大拍。现状与三种现实路径见 `p0-interface-contract.md` §4 与 §4.2。
 
 **二级就是两级节点，点通过即可。**（需求方定：不写意见、不设冷却、不要求不同人）
 
@@ -311,7 +311,7 @@ draft ──提交──▶ pending ──通过──▶ active ──新版本
 
 ### 4.6 已知缺口：审核主体未区分平台与部门（下一轮）
 
-评审页 `app/workhub/web.py:1041`（队列）、`:1086`（通过）、`:1137`（退回）三处取的都是同一条授权 `workforce.interfaces/review`，`has_permission` 只看 grant 的 effect、不看审核人属于哪个部门；`/reviews` 队列也是全量 `pending`，不按审核主体过滤。也就是说：拿到这条授权的部门管理员，能审自己部门提交的页面。
+评审页 `app/oams/web.py:1041`（队列）、`:1086`（通过）、`:1137`（退回）三处取的都是同一条授权 `workforce.interfaces/review`，`has_permission` 只看 grant 的 effect、不看审核人属于哪个部门；`/reviews` 队列也是全量 `pending`，不按审核主体过滤。也就是说：拿到这条授权的部门管理员，能审自己部门提交的页面。
 
 按本节共识「**部门管理员编写，平台审核**」，缺的不是「部门互斥」，而是**审核主体没分家**——加一条「审核人部门 ≠ 页面部门」的互斥判断反而会把设计意图改歪（平台审核员本来就不属于任何业务部门）。下一轮按「平台审核」建模：把平台审核员与部门管理员区分成不同主体，队列按主体过滤；在那之前，部门侧唯一的约束是自觉回避，runbook 里已如实写明（`docs/runbooks/department-page-lifecycle.md`）。
 
@@ -412,8 +412,8 @@ AI 每改一次，页面右侧预览就重渲染一次，用的是**真实模块
 部门管理员是「开发者同事」，但不能要求他们懂平台内部。给两条命令：
 
 ```bash
-workhub plugin check ./my-dept.yaml      # 静态校验：字段映射、状态映射、模块版本、容器深度
-workhub plugin preview ./my-dept.yaml    # 本地起一个假的渲染预览
+oams plugin check ./my-dept.yaml      # 静态校验：字段映射、状态映射、模块版本、容器深度
+oams plugin preview ./my-dept.yaml    # 本地起一个假的渲染预览
 ```
 
 **校验错误必须指到行号并给修复建议**，不能只说 descriptor 无效。

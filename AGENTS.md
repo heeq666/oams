@@ -1,6 +1,6 @@
 # AGENTS.md — OAMS 协作约定
 
-OAMS（Organizational App Management System，组织应用中台）：组织内 AI 应用的宿主与应用商店——应用由部门用 AI 写，跑在同一套底座上。Python 3.11 + FastAPI + Jinja2 + htmx 服务端渲染，PostgreSQL。**没有前端构建链**（无 package.json / 无 tailwind / 无 React）：前端资产只有 `app/workhub/static/vendor/htmx.min.js`、`static/workhub-modules.css` 和各模板里的内联样式。
+OAMS（Organizational App Management System，组织应用中台）：组织内 AI 应用的宿主与应用商店——应用由部门用 AI 写，跑在同一套底座上。Python 3.11 + FastAPI + Jinja2 + htmx 服务端渲染，PostgreSQL。**没有前端构建链**（无 package.json / 无 tailwind / 无 React）：前端资产只有 `app/oams/static/vendor/htmx.min.js`、`static/oams-modules.css` 和各模板里的内联样式。
 
 ## 做界面（UI / 样式 / 组件）之前必读
 
@@ -12,7 +12,7 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 六条最容易犯的错：
 
 - **别引 shadcn/ui 的代码**。它要求 React + Tailwind + npx，本项目没有也不该有；我们只借它的**视觉语言**（白底、hairline、语义色、五档圆角、无阴影、一个强调色）。
-- **别写字面颜色/圆角**。一律用 `--wh-*` 变量，值与 Figma 变量对齐；新增值先加令牌。
+- **别写字面颜色/圆角**。一律用 `--oams-*` 变量，值与 Figma 变量对齐；新增值先加令牌。
 - **圆角按元件尺寸分档（学苹果）**：容器 **26**（卡片/弹窗/外壳浮层：账号菜单、开发模式菜单）、中等块 **18**（分段外框/组织导航/提示条/模块块/字段行）、行与高亮 **9**（菜单行/chip/侧栏行/骨架条）、**输入框/下拉/文本域走 18**（它们都在卡片里，是二级控件；30 高时被截到 15，看起来接近胶囊）、方框 **4**（复选框）；**卡片里拉出来的浮层（下拉框展开层、卡片内菜单）走 18**，不要跟着卡片再用 26；**999 只给按钮、搜索框、徽章、开关、页码；输入框/下拉/文本域别写 999**（它们写 18，30 高的盒子上自然渲染成胶囊，那是要的效果）；表格本体 0。不要出现第六种值（见 `docs/design/design-system-v1.md` §3）。连续曲率（`cornerSmoothing 0.6`）只有 Figma 有，CSS 保持圆弧。
 - **排多列只用内容区 12 栅格**：模板里包 `.grid-12`，子元素标 `.span-12/8/6/4/3`（白名单五档，gap 固定 16），**不许手写 `grid-template-columns` / 任意 `fr` 比例**；有底的面板同行等高、无底的区块不撑高（两条选择器已写在外壳里）。口径、断点与例外见 `docs/design/layout-grid.md`，验收用 ego 浏览器跑（见「浏览器自动化」）。
 - **间距三个数**：块与块 16、元素与元素 12、行内 8（**标签↔控件也是 8**，没有 6 这一档）。别写 10 / 14 / 18 这种（见同文件 §4）。依据：Figma `Field 表单行`（`140:3688`）两个变体 `itemSpacing` 都是 8，`Label Row` 高 20 → `Input` 顶 28、`Input` 底 58 → `Hint` 顶 66，全是 8；代码 `.field` 本来就是 8，2026-10-31 撤销「6」这一档，改的是文档不是代码。
@@ -21,16 +21,16 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 
 ## 做部门界面（descriptor）之前必读
 
-`skills/workhub-department-interface/SKILL.md` + `docs/architecture/p0-interface-contract.md`。硬约束：容器只排版不做数据；字段必须映射标准字段（至少 `title` / `status` / `evidence`）；状态必须映射到 `planned / in_progress / blocked / done`；模块只能从 `app/workhub/modules.py` 的 `MODULE_REGISTRY` 白名单（20 个 key）里选。
+`skills/workhub-department-interface/SKILL.md` + `docs/architecture/p0-interface-contract.md`。硬约束：容器只排版不做数据；字段必须映射标准字段（至少 `title` / `status` / `evidence`）；状态必须映射到 `planned / in_progress / blocked / done`；模块只能从 `app/oams/modules.py` 的 `MODULE_REGISTRY` 白名单（20 个 key）里选。
 
 ## 运行
 
 ```sh
 python -m venv .venv && . .venv/bin/activate && pip install -e .
-oams migrate                       # 需要 WORKHUB_DATABASE_URL；命令主名 oams，workhub 是兼容别名
+oams db init                       # 需要 OAMS_DATABASE_URL；建表
 oams bootstrap-admin --name ... --employee-code ... --org-code ... --org-name ...
 oams serve
-scripts/start-local-trial.sh          # 本机试用，默认开 WORKHUB_DEV_AUTOLOGIN=1
+scripts/start-local-trial.sh          # 本机试用，默认开 OAMS_DEV_AUTOLOGIN=1
 pytest                                # 带 db 标记的用例在没数据库时跳过
 ```
 
@@ -46,7 +46,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 
 ## 目录
 
-- `app/workhub/` —— 应用本体：`modules.py`（模块注册表）、`templates/`、`static/`、`mcp/`（12 个 MCP 工具）、`cli.py`
+- `app/oams/` —— 应用本体：`modules.py`（模块注册表）、`templates/`、`static/`、`mcp/`（12 个 MCP 工具）、`cli.py`
 - `docs/architecture/` —— 契约与方案（`plugin-host-concept.md` 是现行主线，`v1-ui-redesign-plan.md` 已作废）；`collab-room-implementation-plan.md` 是协作室的实现清单（设计稿见 Figma 与 `docs/design/design-system-v1.md` §7）
 - `docs/design/` —— 界面规范与令牌
 - `db/migrations/` —— SQL 迁移；`examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill
@@ -56,7 +56,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 - 中文优先：注释、文档、界面文案都用中文。
 - 提交前跑 `pytest`；改 UI 要截图自检（1440 / 1024 / 768 三档，窄屏不许横向滚动），工具与命令见「浏览器自动化」。
 - **验收 pytest 要两种机器状态都跑，并且看 skip 数**：本机有库 → **0 skipped**，这才是真绿；故意指向不存在的库 → 允许 skip，那只证明「无库不炸」。skip 数一涨就说明有库没被用上，别拿 `0 failed` 当验收口径。
-- db 用例不许在 import 期写 `WORKHUB_DATABASE_URL`，地址一律由 fixture 注入。
+- db 用例不许在 import 期写 `OAMS_DATABASE_URL`，地址一律由 fixture 注入。
 - 不往生产库写、不连公网暴露 PostgreSQL；改动 `.env` 前先看 `.env.example`。
 - **谁的写区谁提交**：改完自己 `git add` 自己写区内的文件、自己 commit、把哈希报上来。别攒着等统一提交——攒着会让线上跑旧代码。
 - **共享分支上不许改写别人的提交**：不用 `--amend` / rebase 去补别人已经提交的东西，要补内容就另开一笔。就算事后还原成功也不行——哈希没变，但那段时间别人拉到的历史并不存在。
@@ -86,7 +86,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 
   `S=状态;T=主题≤10字;F=文件路径;V=验证命令:结果;C=提交哈希;Q=要谁拍板什么;P=详情文件路径`
 
-  状态只有四个：`done` / `doing` / `blocked` / `need`。例：`S=done;T=descriptor禁词;F=app/workhub/descriptor.py;V=pytest:649/0/0;C=82331b5;Q=none`
+  状态只有四个：`done` / `doing` / `blocked` / `need`。例：`S=done;T=descriptor禁词;F=app/oams/descriptor.py;V=pytest:649/0/0;C=82331b5;Q=none`
   派活用同一套：`S=task;T=任务;F=写区;V=验收;D=时限`。
   例行进度、交付回执、验收结果一律用这个；细节走 `P=docs/reports/<日期>-<主题>.md`。
   **例外**：有分歧、要在方案里选、需要解释判断的，用自然语言三句以内，别硬压成机器格式——压错返工更贵。
