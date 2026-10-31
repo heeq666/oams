@@ -21,8 +21,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 import psycopg
 from psycopg.types.json import Jsonb
-from workhub.descriptor import validate_descriptor
-from workhub.upgrade import LEGACY_SCHEMA_VERSION, upgrade_descriptor
+from oams.descriptor import validate_descriptor
+from oams.upgrade import LEGACY_SCHEMA_VERSION, upgrade_descriptor
 
 SOURCE = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("data/live-design-interface.json")
 descriptor = json.loads(SOURCE.read_text(encoding="utf-8"))
@@ -37,32 +37,32 @@ slug = descriptor["interface_id"]
 org_code = descriptor["org_unit_code"]
 position_code = (descriptor.get("position_codes") or [None])[0]
 
-with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=psycopg.rows.dict_row) as conn:
-    org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code = %s",
+with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=psycopg.rows.dict_row) as conn:
+    org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code = %s",
                        (org_code,)).fetchone()["org_unit_id"]
-    admin = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'ADMIN001'").fetchone()["member_id"]
+    admin = conn.execute("SELECT member_id FROM oams.workforce_members WHERE employee_code = 'ADMIN001'").fetchone()["member_id"]
     position = None
     if position_code:
-        position = conn.execute("SELECT position_id FROM workhub.positions WHERE position_code = %s",
+        position = conn.execute("SELECT position_id FROM oams.positions WHERE position_code = %s",
                                 (position_code,)).fetchone()["position_id"]
-    codes = {row["org_code"] for row in conn.execute("SELECT org_code FROM workhub.org_units").fetchall()}
-    positions = {row["position_code"] for row in conn.execute("SELECT position_code FROM workhub.positions").fetchall()}
+    codes = {row["org_code"] for row in conn.execute("SELECT org_code FROM oams.org_units").fetchall()}
+    positions = {row["position_code"] for row in conn.execute("SELECT position_code FROM oams.positions").fetchall()}
     problems = validate_descriptor(descriptor, known_org_unit_codes=codes, known_position_codes=positions)
     if problems:
         raise SystemExit("descriptor rejected: " + "; ".join(problems))
     version = conn.execute(
-        """SELECT COALESCE(max(version_no), 0) + 1 FROM workhub.interfaces
+        """SELECT COALESCE(max(version_no), 0) + 1 FROM oams.interfaces
             WHERE org_unit_id = %s AND slug = %s""", (org, slug)).fetchone()["?column?"]
     previous = conn.execute(
-        """SELECT interface_id FROM workhub.interfaces
+        """SELECT interface_id FROM oams.interfaces
             WHERE org_unit_id = %s AND slug = %s AND status = 'active'""", (org, slug)).fetchone()
     # Archive before insert: the schema allows one active row per (org, slug), and
     # both statements sit in one transaction, so the page is never observably blank.
     conn.execute(
-        """UPDATE workhub.interfaces SET status = 'archived'
+        """UPDATE oams.interfaces SET status = 'archived'
             WHERE org_unit_id = %s AND slug = %s AND status = 'active'""", (org, slug))
     row = conn.execute(
-        """INSERT INTO workhub.interfaces
+        """INSERT INTO oams.interfaces
                (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                 position_id, version_no, based_on, created_by, updated_by)
            VALUES (%s, %s, %s, 'active', 'department', %s, %s, %s, %s, %s, %s, %s)

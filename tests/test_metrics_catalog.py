@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from workhub.metrics import (  # noqa: E402
+from oams.metrics import (  # noqa: E402
     AGG_MODES,
     BINDING_MODES,
     DEPARTMENT_METRIC_PREFIX,

@@ -21,8 +21,8 @@ from html.parser import HTMLParser
 
 import pytest
 
-import workhub.api  # noqa: F401  —— 先装配好路由
-from workhub import web
+import oams.api  # noqa: F401  —— 先装配好路由
+from oams import web
 
 #: 气泡模板直接渲染（不需要数据库，也不进 db 标记）。
 MEMBER = {"display_name": "周岚"}

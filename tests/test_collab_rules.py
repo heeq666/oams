@@ -20,8 +20,8 @@ from typing import Any
 import pytest
 from starlette.testclient import TestClient
 
-import workhub.api  # noqa: F401  —— 先装配好路由，TestClient 才拿得到 app
-from workhub import collab, web
+import oams.api  # noqa: F401  —— 先装配好路由，TestClient 才拿得到 app
+from oams import collab, web
 
 pytestmark = pytest.mark.db
 
@@ -44,7 +44,7 @@ class Room:
         self.people = people
         self._database = database
         names = database.all(
-            "SELECT employee_code, display_name FROM workhub.workforce_members"
+            "SELECT employee_code, display_name FROM oams.workforce_members"
             " WHERE employee_code = ANY(%s)",
             (list(people),),
         )
@@ -85,7 +85,7 @@ class Room:
 
     def interface_id(self, slug: str) -> uuid.UUID:
         row = self.conn.execute(
-            "SELECT interface_id FROM workhub.interfaces WHERE slug = %s AND status = 'active'",
+            "SELECT interface_id FROM oams.interfaces WHERE slug = %s AND status = 'active'",
             (slug,),
         ).fetchone()
         if row is None:  # pragma: no cover - 种子不对时给一句人话，不是 KeyError
@@ -109,7 +109,7 @@ class Room:
 
     def message_count(self, thread: dict[str, Any], client_msg_id: str) -> int:
         row = self.conn.execute(
-            "SELECT count(*) AS n FROM workhub.collab_messages"
+            "SELECT count(*) AS n FROM oams.collab_messages"
             " WHERE thread_id = %s AND client_msg_id = %s",
             (thread["thread_id"], client_msg_id),
         ).fetchone()
@@ -120,7 +120,7 @@ class Room:
 
     def active_threads(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(
-            "SELECT thread_id FROM workhub.collab_threads WHERE status = 'active'"
+            "SELECT thread_id FROM oams.collab_threads WHERE status = 'active'"
             " ORDER BY created_at, thread_id",
         ).fetchall()
         return [self.thread(row["thread_id"]) for row in rows]
@@ -137,7 +137,7 @@ class Room:
             if not self.can_see(code, thread):
                 continue
             row = self.conn.execute(
-                "SELECT count(*) AS n FROM workhub.collab_messages"
+                "SELECT count(*) AS n FROM oams.collab_messages"
                 " WHERE thread_id = %s AND seq > %s AND author_id IS DISTINCT FROM %s",
                 (
                     thread["thread_id"],
@@ -193,7 +193,7 @@ def _served_as(monkeypatch, room: Room, code: str):
 
     monkeypatch.setattr(web, "_member", lambda request: room.principal(code))
     monkeypatch.setattr(web, "connection", lambda: _shares(room.conn))
-    yield TestClient(workhub.api.app)
+    yield TestClient(oams.api.app)
 
 
 # --------------------------------------------------------------------------
@@ -396,7 +396,7 @@ def _send(client, thread_id, body: str, *, key: str | None = None,
 
 def _bodies(room, thread, body: str) -> int:
     row = room.conn.execute(
-        "SELECT count(*) AS n FROM workhub.collab_messages"
+        "SELECT count(*) AS n FROM oams.collab_messages"
         " WHERE thread_id = %s AND body = %s",
         (thread["thread_id"], body),
     ).fetchone()
@@ -500,7 +500,7 @@ def test_mark_read_never_moves_the_read_position_backwards(room):
     room.post(thread, HR_MANAGER, "一")
     room.post(thread, HR_MANAGER, "二")
     room.conn.execute(
-        "INSERT INTO workhub.collab_reads (thread_id, member_id, last_seq)"
+        "INSERT INTO oams.collab_reads (thread_id, member_id, last_seq)"
         " VALUES (%s, %s, 99)"
         " ON CONFLICT (thread_id, member_id) DO UPDATE SET last_seq = 99",
         (thread["thread_id"], room.uid(HR_MANAGER)),
@@ -512,12 +512,12 @@ def test_mark_read_writes_the_read_timestamp(room):
     thread = room.manage("HR")
     room.post(thread, HR_MANAGER, "一")
     room.conn.execute(
-        "DELETE FROM workhub.collab_reads WHERE thread_id = %s AND member_id = %s",
+        "DELETE FROM oams.collab_reads WHERE thread_id = %s AND member_id = %s",
         (thread["thread_id"], room.uid(HR_MANAGER)),
     )
     collab.mark_read(room.conn, thread["thread_id"], room.uid(HR_MANAGER))
     row = room.conn.execute(
-        "SELECT read_at FROM workhub.collab_reads WHERE thread_id = %s AND member_id = %s",
+        "SELECT read_at FROM oams.collab_reads WHERE thread_id = %s AND member_id = %s",
         (thread["thread_id"], room.uid(HR_MANAGER)),
     ).fetchone()
     assert row is not None and row["read_at"] is not None

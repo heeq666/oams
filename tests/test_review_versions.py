@@ -1,7 +1,7 @@
 """版本审批：新旧两版并存、改动可读、退回原因可统计。
 
 拆成两半：
-* 纯逻辑部分是 `workhub.review` 的 diff 与拒绝码，不碰数据库，任何机器都能跑；
+* 纯逻辑部分是 `oams.review` 的 diff 与拒绝码，不碰数据库，任何机器都能跑；
 * `@pytest.mark.db` 部分用真实的 PostgreSQL 和已启动的站点，验证三条硬规则：
   1. 新版本进入待审时，线上那一版仍然是 active（旧版永不中断）；
   2. 待审页面带着基于哪一版的血缘（based_on），审核页读得出「改了什么」；
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from workhub import review as review_rules
+from oams import review as review_rules
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # 描述符快照放 tests/fixtures/：`data/live-design-*.json` 是 .gitignore 里的本机数据，
@@ -236,10 +236,10 @@ def test_versions_side_by_side(site) -> None:
     import psycopg
     from psycopg.rows import dict_row
 
-    from workhub.security import issue_session
+    from oams.security import issue_session
 
-    base = os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000")
-    url = os.environ["WORKHUB_DATABASE_URL"]
+    base = os.environ.get("OAMS_BASE", "http://127.0.0.1:8000")
+    url = os.environ["OAMS_DATABASE_URL"]
     failures: list[str] = []
 
     def check(name: str, ok: bool, detail: object = "") -> None:
@@ -249,18 +249,18 @@ def test_versions_side_by_side(site) -> None:
 
     with psycopg.connect(url, row_factory=dict_row) as conn:
         admin = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'ADMIN001'").fetchone()["member_id"]
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code = 'ADMIN001'").fetchone()["member_id"]
         # The reviewer is somebody other than the author on purpose: a page is
         # reviewed by a second pair of eyes or it is not reviewed at all, and the
         # queue refuses to show a reviewer their own submission.
         reviewer_member = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'DESIGN001'").fetchone()["member_id"]
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code = 'DESIGN001'").fetchone()["member_id"]
         org = conn.execute(
-            "SELECT org_unit_id FROM workhub.org_units WHERE org_code = 'DESIGN'").fetchone()["org_unit_id"]
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug = %s", (PROBE_SLUG,))
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug = %s", (PROBE_SLUG + "-other",))
+            "SELECT org_unit_id FROM oams.org_units WHERE org_code = 'DESIGN'").fetchone()["org_unit_id"]
+        conn.execute("DELETE FROM oams.interfaces WHERE slug = %s", (PROBE_SLUG,))
+        conn.execute("DELETE FROM oams.interfaces WHERE slug = %s", (PROBE_SLUG + "-other",))
         live = conn.execute(
-            """INSERT INTO workhub.interfaces
+            """INSERT INTO oams.interfaces
                    (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                     version_no, created_by, updated_by)
                VALUES (%s, %s, %s, 'active', 'department', '0.2', %s, 1, %s, %s)
@@ -295,7 +295,7 @@ def test_versions_side_by_side(site) -> None:
 
         with psycopg.connect(url, row_factory=dict_row) as conn:
             versions = conn.execute(
-                """SELECT interface_id, version_no, status, based_on FROM workhub.interfaces
+                """SELECT interface_id, version_no, status, based_on FROM oams.interfaces
                    WHERE org_unit_id = %s AND slug = %s ORDER BY version_no""",
                 (org, PROBE_SLUG)).fetchall()
         check("two versions now exist", [row["version_no"] for row in versions] == [1, 2], versions)
@@ -336,7 +336,7 @@ def test_versions_side_by_side(site) -> None:
 
         with psycopg.connect(url, row_factory=dict_row) as conn:
             live_status = conn.execute(
-                "SELECT status FROM workhub.interfaces WHERE interface_id = %s", (live,)).fetchone()["status"]
+                "SELECT status FROM oams.interfaces WHERE interface_id = %s", (live,)).fetchone()["status"]
         check("the live version keeps serving while the new one waits", live_status == "active", live_status)
 
         csrf = _token_of(html)
@@ -346,7 +346,7 @@ def test_versions_side_by_side(site) -> None:
         check("an unknown rejection code is refused", status == 303 and "error=" in location, location[:120])
         with psycopg.connect(url, row_factory=dict_row) as conn:
             row = conn.execute(
-                "SELECT status, review_code FROM workhub.interfaces WHERE interface_id = %s", (draft,)).fetchone()
+                "SELECT status, review_code FROM oams.interfaces WHERE interface_id = %s", (draft,)).fetchone()
         check("the refused decision changed nothing", row["status"] == "pending" and row["review_code"] is None,
               dict(row))
 
@@ -357,7 +357,7 @@ def test_versions_side_by_side(site) -> None:
               headers.get("location", "")[:120])
         with psycopg.connect(url, row_factory=dict_row) as conn:
             row = conn.execute(
-                "SELECT status, review_code, review_note FROM workhub.interfaces WHERE interface_id = %s",
+                "SELECT status, review_code, review_note FROM oams.interfaces WHERE interface_id = %s",
                 (draft,)).fetchone()
         check("the page goes back to draft", row["status"] == "draft", row["status"])
         check("the reason code is recorded", row["review_code"] == "STATUS_UNMAPPED", row["review_code"])
@@ -372,7 +372,7 @@ def test_versions_side_by_side(site) -> None:
         check("it shows the rejection code by name", "状态词没有映射" in page or "退回原因类型" in page)
     finally:
         with psycopg.connect(url, row_factory=dict_row) as conn:
-            conn.execute("DELETE FROM workhub.interfaces WHERE slug IN (%s, %s)",
+            conn.execute("DELETE FROM oams.interfaces WHERE slug IN (%s, %s)",
                          (PROBE_SLUG, PROBE_SLUG + "-other"))
 
     if failures:

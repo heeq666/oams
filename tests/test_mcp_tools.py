@@ -1,4 +1,4 @@
-"""Tests for the Workhub MCP server tool layer.
+"""Tests for the OAMS MCP server tool layer.
 
 Scope: everything that decides *what an AI may do* through MCP.
 
@@ -24,12 +24,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from workhub import descriptor as descriptor_contract
-from workhub import metrics as metrics_contract
-from workhub import modules as modules_contract
-from workhub.mcp import server
-from workhub.mcp.audit import ACTOR_AGENT, ACTOR_HUMAN
-from workhub.mcp.capabilities import (
+from oams import descriptor as descriptor_contract
+from oams import metrics as metrics_contract
+from oams import modules as modules_contract
+from oams.mcp import server
+from oams.mcp.audit import ACTOR_AGENT, ACTOR_HUMAN
+from oams.mcp.capabilities import (
     CAP_PLUGIN_APPROVE,
     CAP_PLUGIN_READ,
     CAP_PLUGIN_WRITE_DRAFT,
@@ -37,8 +37,8 @@ from workhub.mcp.capabilities import (
     issue_agent_capability,
     issue_human_capability,
 )
-from workhub.mcp.store import MemoryDraftStore
-from workhub.mcp.tools import (
+from oams.mcp.store import MemoryDraftStore
+from oams.mcp.tools import (
     ERR_CAPABILITY_DENIED,
     ERR_HUMAN_CONFIRMATION_REQUIRED,
     ERR_INVALID_ARGUMENTS,

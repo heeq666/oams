@@ -5,7 +5,7 @@ tree (containers plus the frozen module registry) as real pytest assertions
 instead of the old print("PASS") script. Each test keeps the meaning of the
 check it replaces.
 
-Semantic descriptor validation lives in workhub.descriptor and is covered by
+Semantic descriptor validation lives in oams.descriptor and is covered by
 unit A own suite. The renderer only gates on what it needs in order to paint,
 so "the sample descriptor is valid" is asserted here as "the renderer accepts
 it" -- duplicating A rulebook from B suite would couple the two units release
@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from workhub.render import (  # noqa: E402
+from oams.render import (  # noqa: E402
     MAX_RENDER_DEPTH,
     RenderError,
     known_module_keys,
@@ -237,7 +237,7 @@ def test_preview_renders_disabled_widgets():
 
 
 def test_every_registered_module_has_a_template():
-    import workhub.render as render
+    import oams.render as render
 
     missing = [key for key in known_module_keys() if not render.has_template(key)]
     assert missing == []
@@ -245,10 +245,10 @@ def test_every_registered_module_has_a_template():
 
 def test_registry_comes_from_the_shared_module_table():
     # The renderer must not own a second copy of the module contract: once unit A
-    # lands workhub.modules it is the only source of truth.
+    # lands oams.modules it is the only source of truth.
     keys = set(known_module_keys())
     assert len(keys) == 20
-    assert registry_source() in ("workhub.modules", "contract-mirror")
+    assert registry_source() in ("oams.modules", "contract-mirror")
     assert resolve_spec("metric_card") is not None
     assert resolve_spec("does_not_exist") is None
 

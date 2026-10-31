@@ -19,8 +19,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from workhub.descriptor import validate_descriptor  # noqa: E402
-from workhub.render import RenderError, render_interface, render_read_only  # noqa: E402
+from oams.descriptor import validate_descriptor  # noqa: E402
+from oams.render import RenderError, render_interface, render_read_only  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEMO_PAGES = [

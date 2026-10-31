@@ -1,4 +1,4 @@
-"""`workhub plugin check` 的另一半：签字人是不是库里真有的那个人。
+"""`oams plugin check` 的另一半：签字人是不是库里真有的那个人。
 
 离线校验能证明的东西到此为止——字段、状态、模块、容器都验完了，唯独「谁签的」
 这一条只有数据库答得上来。这一组用例钉住三件事：
@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from workhub import plugin_cli
+from oams import plugin_cli
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "production-dept.yaml"
 

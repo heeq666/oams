@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from workhub.modules import (  # noqa: E402
+from oams.modules import (  # noqa: E402
     CONTAINER_DEPTH_LIMIT,
     LAYERS,
     MODULE_REGISTRY,

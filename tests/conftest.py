@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the Workhub test suite.
+"""Shared pytest fixtures for the OAMS test suite.
 
 Design rules (deliberate):
 
@@ -9,16 +9,16 @@ Design rules (deliberate):
 * Tests that *do* need a database are marked ``@pytest.mark.db``.  Their
   fixtures connect lazily and ``pytest.skip`` (not error) when no database
   is reachable, so ``pytest -q`` stays usable on a laptop without Docker.
-* The e2e scripts expect an HTTP server to talk to.  ``workhub_server``
+* The e2e scripts expect an HTTP server to talk to.  ``oams_server``
   boots the real ASGI app in a background thread on a free port and points
-  every ``WORKHUB_*_BASE`` environment variable at it, so the legacy
+  every ``OAMS_*_BASE`` environment variable at it, so the legacy
   scripts keep working unchanged.
 
 Environment:
 
-    WORKHUB_DATABASE_URL   service connection string (defaults to the local
+    OAMS_DATABASE_URL   service connection string (defaults to the local
                            docker ``workhub-pg`` instance on port 55433)
-    WORKHUB_TEST_PORT      preferred port for the in-process server
+    OAMS_TEST_PORT      preferred port for the in-process server
 """
 
 from __future__ import annotations
@@ -39,12 +39,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = REPO_ROOT / "app"
 
 # 口令不写进仓库：这里只留形状，真口令来自环境变量或本机 .env（.env 已被 git 忽略）。
-# 优先级：WORKHUB_DATABASE_URL → .env 里的同名项 → 下面这条占位串（连不上就按无库处理）。
-DEFAULT_DATABASE_URL = "postgresql://workhub:change-me@127.0.0.1:55433/workhub"
+# 优先级：OAMS_DATABASE_URL → .env 里的同名项 → 下面这条占位串（连不上就按无库处理）。
+# 占位串只在 ``database_url()`` 的末位兜底里用；测试**不会**把它注入进程环境（干净 clone 也不注入）。
+DEFAULT_DATABASE_URL = "postgresql://oams:change-me@127.0.0.1:55433/oams"
 
 
 def _url_from_dotenv() -> str | None:
-    """本机 .env 里的 WORKHUB_DATABASE_URL（.env 不进仓库，见 .gitignore）。"""
+    """本机 .env 里的 OAMS_DATABASE_URL（.env 不进仓库，见 .gitignore）。"""
 
     env_file = REPO_ROOT / ".env"
     if not env_file.is_file():
@@ -54,22 +55,22 @@ def _url_from_dotenv() -> str | None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        if key.strip() == "WORKHUB_DATABASE_URL":
+        if key.strip() == "OAMS_DATABASE_URL":
             return value.strip().strip('"').strip("'") or None
     return None
 
 BASE_ENV_VARS = (
-    "WORKHUB_BASE",
-    "WORKHUB_IFACE_BASE",
-    "WORKHUB_PILOT_BASE",
-    "WORKHUB_DEMO_BASE",
+    "OAMS_BASE",
+    "OAMS_IFACE_BASE",
+    "OAMS_PILOT_BASE",
+    "OAMS_DEMO_BASE",
 )
 
 
 def database_url() -> str:
     """Service connection string used by the DB-backed tests."""
 
-    return os.environ.get("WORKHUB_DATABASE_URL") or _url_from_dotenv() or DEFAULT_DATABASE_URL
+    return os.environ.get("OAMS_DATABASE_URL") or _url_from_dotenv() or DEFAULT_DATABASE_URL
 
 
 def free_port() -> int:
@@ -90,22 +91,13 @@ def http_ok(url: str, timeout: float = 1.0) -> bool:
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "db: needs a live PostgreSQL (set WORKHUB_DATABASE_URL); skipped when unreachable",
+        "db: needs a live PostgreSQL (set OAMS_DATABASE_URL); skipped when unreachable",
     )
-    # ``workhub`` lives in ``app/``; make plain ``import workhub`` work no matter
+    # ``oams`` lives in ``app/``; make plain ``import oams`` work no matter
     # how pytest was invoked.
     app = str(APP_DIR)
     if app not in os.sys.path:
         os.sys.path.insert(0, app)
-    # 干净 clone 里没有 ``.env``：``workhub.config.Settings`` 要求 ``database_url``
-    # 必须在场，缺了会在 ``import workhub.api`` 时抛 ValidationError，整个套件连
-    # 收集都过不去（外面的人 clone 下来第一件事就是撞它）。
-    #
-    # 这里补一个**占位串**（``change-me``，本来就连不上），不是真库地址：
-    # db 用例照旧走「连不上就 skip」，真地址仍由 fixture 注入（见 ``database_url()``）。
-    # 本机有 ``.env`` 或真环境变量时这段不生效，行为与改动前完全一样。
-    if not os.environ.get("WORKHUB_DATABASE_URL") and _url_from_dotenv() is None:
-        os.environ["WORKHUB_DATABASE_URL"] = DEFAULT_DATABASE_URL
 
 
 # ---------------------------------------------------------------------------
@@ -137,9 +129,9 @@ def database_usable() -> tuple[bool, str]:
             with psycopg.connect(url, connect_timeout=3) as conn:
                 conn.execute("SELECT 1")
                 migrated = conn.execute(
-                    "SELECT to_regclass('workhub.schema_migrations')").fetchone()
+                    "SELECT to_regclass('oams.schema_migrations')").fetchone()
             if not migrated or migrated[0] is None:
-                result = (False, "workhub schema is not migrated in this database")
+                result = (False, "oams schema is not migrated in this database")
             else:
                 result = (True, url)
         except Exception as exc:  # pragma: no cover - depends on the machine
@@ -184,13 +176,13 @@ class Database:
 
     def member_id(self, employee_code: str):
         return self.scalar(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
             (employee_code,),
         )
 
     def org_unit_id(self, org_code: str):
         return self.scalar(
-            "SELECT org_unit_id FROM workhub.org_units WHERE org_code = %s",
+            "SELECT org_unit_id FROM oams.org_units WHERE org_code = %s",
             (org_code,),
         )
 
@@ -239,12 +231,12 @@ def db_ready() -> Database:
     database = Database(url)
     try:
         database.scalar("SELECT 1")
-        database.scalar("SELECT to_regclass('workhub.schema_migrations')")
+        database.scalar("SELECT to_regclass('oams.schema_migrations')")
     except Exception as exc:  # pragma: no cover - depends on the machine
         pytest.skip(f"no usable PostgreSQL at {url}: {exc.__class__.__name__}: {exc}")
 
-    if database.scalar("SELECT to_regclass('workhub.schema_migrations')") is None:
-        pytest.skip("workhub schema is not migrated in this database")
+    if database.scalar("SELECT to_regclass('oams.schema_migrations')") is None:
+        pytest.skip("oams schema is not migrated in this database")
 
     return database
 
@@ -260,24 +252,24 @@ def admin_member_id(db_ready: Database):
 
 
 @pytest.fixture(scope="session")
-def workhub_server(db_ready: Database):
+def oams_server(db_ready: Database):
     """Boot the real ASGI app in a background thread and return its base URL."""
 
     import uvicorn
 
-    os.environ.setdefault("WORKHUB_DATABASE_URL", db_ready.url)
-    port = int(os.environ.get("WORKHUB_TEST_PORT") or 0) or free_port()
+    os.environ.setdefault("OAMS_DATABASE_URL", db_ready.url)
+    port = int(os.environ.get("OAMS_TEST_PORT") or 0) or free_port()
     base = f"http://127.0.0.1:{port}"
 
     config = uvicorn.Config(
-        "workhub.api:app",
+        "oams.api:app",
         host="127.0.0.1",
         port=port,
         log_level="warning",
         access_log=False,
     )
     server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, name="workhub-test-server", daemon=True)
+    thread = threading.Thread(target=server.run, name="oams-test-server", daemon=True)
     thread.start()
 
     deadline = time.time() + 45
@@ -310,7 +302,7 @@ def isolated_database(tmp_path: Path, db_ready: Database):
 
     import psycopg
 
-    name = f"workhub_pytest_{os.getpid()}_{int(time.time() * 1000) % 100000}"
+    name = f"oams_pytest_{os.getpid()}_{int(time.time() * 1000) % 100000}"
     admin_url = _replace_dbname(db_ready.url, "postgres")
     with psycopg.connect(admin_url, autocommit=True) as conn:
         conn.execute(f'DROP DATABASE IF EXISTS "{name}"')
@@ -357,7 +349,7 @@ def _admin_connection(db_ready):
 
 
 def _create_database(db_ready) -> tuple[str, str]:
-    name = f"workhub_pytest_{os.getpid()}_{int(time.time() * 1000) % 1000000}"
+    name = f"oams_pytest_{os.getpid()}_{int(time.time() * 1000) % 1000000}"
     with _admin_connection(db_ready) as conn:
         conn.execute(f'DROP DATABASE IF EXISTS "{name}"')
         conn.execute(f'CREATE DATABASE "{name}"')
@@ -378,17 +370,17 @@ def _drop_database(db_ready, name: str) -> None:
 
 
 def _cli(args: list[str], url: str) -> str:
-    """Run one workhub.cli subcommand against the given database URL."""
+    """Run one oams.cli subcommand against the given database URL."""
 
     import subprocess
 
     env = dict(os.environ)
-    env["WORKHUB_DATABASE_URL"] = url
+    env["OAMS_DATABASE_URL"] = url
     env["PYTHONPATH"] = str(APP_DIR) + (
         os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
     )
     completed = subprocess.run(
-        [os.sys.executable, "-m", "workhub.cli", *args],
+        [os.sys.executable, "-m", "oams.cli", *args],
         cwd=str(REPO_ROOT),
         env=env,
         capture_output=True,
@@ -397,61 +389,61 @@ def _cli(args: list[str], url: str) -> str:
     )
     if completed.returncode != 0:  # pragma: no cover - environment problem
         raise RuntimeError(
-            "workhub.cli " + " ".join(args) + " failed: " + completed.stderr[-800:]
+            "oams.cli " + " ".join(args) + " failed: " + completed.stderr[-800:]
         )
     return completed.stdout
 
 
 SEED_SQL = """
 -- bootstrap-admin already created the company unit; only add it when it did not.
-INSERT INTO workhub.org_units (org_code, name, unit_type)
+INSERT INTO oams.org_units (org_code, name, unit_type)
 SELECT 'COMPANY', '公司', 'company'
- WHERE NOT EXISTS (SELECT 1 FROM workhub.org_units WHERE org_code = 'COMPANY');
+ WHERE NOT EXISTS (SELECT 1 FROM oams.org_units WHERE org_code = 'COMPANY');
 
-INSERT INTO workhub.org_units (org_code, name, unit_type, parent_org_unit_id)
+INSERT INTO oams.org_units (org_code, name, unit_type, parent_org_unit_id)
 SELECT 'DESIGN', '设计部', 'department', org_unit_id
-  FROM workhub.org_units WHERE org_code = 'COMPANY';
-INSERT INTO workhub.org_units (org_code, name, unit_type, parent_org_unit_id)
+  FROM oams.org_units WHERE org_code = 'COMPANY';
+INSERT INTO oams.org_units (org_code, name, unit_type, parent_org_unit_id)
 SELECT 'HR', '人事部', 'department', org_unit_id
-  FROM workhub.org_units WHERE org_code = 'COMPANY';
-INSERT INTO workhub.org_units (org_code, name, unit_type, parent_org_unit_id)
+  FROM oams.org_units WHERE org_code = 'COMPANY';
+INSERT INTO oams.org_units (org_code, name, unit_type, parent_org_unit_id)
 SELECT 'SALES', '业务部', 'department', org_unit_id
-  FROM workhub.org_units WHERE org_code = 'COMPANY';
+  FROM oams.org_units WHERE org_code = 'COMPANY';
 
-INSERT INTO workhub.positions (position_code, title, org_unit_id)
+INSERT INTO oams.positions (position_code, title, org_unit_id)
 SELECT 'DESIGN_LEAD', '设计负责人', org_unit_id
-  FROM workhub.org_units WHERE org_code = 'DESIGN';
-INSERT INTO workhub.positions (position_code, title, org_unit_id)
+  FROM oams.org_units WHERE org_code = 'DESIGN';
+INSERT INTO oams.positions (position_code, title, org_unit_id)
 SELECT 'HR_MANAGER', '人事经理', org_unit_id
-  FROM workhub.org_units WHERE org_code = 'HR';
-INSERT INTO workhub.positions (position_code, title, org_unit_id)
+  FROM oams.org_units WHERE org_code = 'HR';
+INSERT INTO oams.positions (position_code, title, org_unit_id)
 SELECT 'HR_SPECIALIST', '人事专员', org_unit_id
-  FROM workhub.org_units WHERE org_code = 'HR';
-INSERT INTO workhub.positions (position_code, title, org_unit_id)
+  FROM oams.org_units WHERE org_code = 'HR';
+INSERT INTO oams.positions (position_code, title, org_unit_id)
 SELECT 'SALES_LEAD', '业务负责人', org_unit_id
-  FROM workhub.org_units WHERE org_code = 'SALES';
+  FROM oams.org_units WHERE org_code = 'SALES';
 
-INSERT INTO workhub.workforce_members (employee_code, display_name, employment_status, joined_at)
+INSERT INTO oams.workforce_members (employee_code, display_name, employment_status, joined_at)
 VALUES ('DESIGN001', '设计负责人', 'active', current_date - 30)
      , ('MVP1001', '周岚', 'active', current_date - 30)
      , ('MVP1002', '陈默', 'active', current_date - 30)
      , ('MVP2001', '林溪', 'active', current_date - 30);
 
-INSERT INTO workhub.position_assignments
+INSERT INTO oams.position_assignments
        (member_id, position_id, assignment_type, status, starts_at, reason)
 SELECT m.member_id, p.position_id, 'primary', 'active', now() - interval '30 days', 'seed'
-  FROM workhub.workforce_members m
-  JOIN workhub.positions p
+  FROM oams.workforce_members m
+  JOIN oams.positions p
     ON (m.employee_code, p.position_code) IN (
          ('DESIGN001', 'DESIGN_LEAD'),
          ('MVP1001', 'HR_MANAGER'),
          ('MVP1002', 'HR_SPECIALIST'),
          ('MVP2001', 'SALES_LEAD'));
 
-INSERT INTO workhub.permission_grants
+INSERT INTO oams.permission_grants
        (subject_type, position_id, resource, action, scope_type, valid_from, reason)
 SELECT 'position', p.position_id, g.resource, g.action, 'all', now(), 'seed'
-  FROM workhub.positions p
+  FROM oams.positions p
   JOIN (VALUES
          ('DESIGN_LEAD', 'workforce.org_units', 'read'),
          ('DESIGN_LEAD', 'workforce.positions', 'read'),
@@ -479,69 +471,69 @@ SELECT 'position', p.position_id, g.resource, g.action, 'all', now(), 'seed'
 -- Migration 0008 derives the interface-review grant from workforce.grants/manage,
 -- but it runs before bootstrap-admin ever creates that grant, so a freshly
 -- bootstrapped administrator would not be able to review pages.  Grant it here.
-INSERT INTO workhub.permission_grants
+INSERT INTO oams.permission_grants
        (subject_type, position_id, resource, action, scope_type, valid_from, reason)
 SELECT 'position', p.position_id, 'workforce.interfaces', 'review', 'all', now(), 'seed'
-  FROM workhub.positions p WHERE p.position_code = 'SYSADMIN';
+  FROM oams.positions p WHERE p.position_code = 'SYSADMIN';
 
 -- The platform side of the page-review split (0012): the administrator signs
 -- what a department passed up. Department leads get only the first level.
-INSERT INTO workhub.permission_grants
+INSERT INTO oams.permission_grants
        (subject_type, position_id, resource, action, scope_type, valid_from, reason)
 SELECT 'position', p.position_id, 'workforce.interfaces', 'review_company', 'all', now(), 'seed'
-  FROM workhub.positions p WHERE p.position_code = 'SYSADMIN';
+  FROM oams.positions p WHERE p.position_code = 'SYSADMIN';
 
 
 -- A department that has drawn a screen, so the workbench and the review queue
 -- have something real to show.  The descriptor is the current schema; the
 -- database stores it as data and never as code.
-INSERT INTO workhub.interfaces
+INSERT INTO oams.interfaces
        (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
         position_id, version_no, created_by, updated_by, reviewed_by, reviewed_at)
 SELECT o.org_unit_id, 'design-sampling', '设计部打样进度', 'active', 'department', '0.2',
        '{"schema_version":"0.2","interface_id":"design-sampling","name":"设计部打样进度","org_unit_code":"DESIGN","position_codes":["DESIGN_LEAD"],"capabilities":["entries:write","entries:read:dept","aggregate:read:dept"],"modules":[{"key":"layout","type":"rows","params":{"gap":"md"},"children":[{"key":"progress","type":"progress_row","module_version":"^1.0","source_fields":["title","status","progress_value","note","evidence"]}]}],"fields":[{"key":"title","label":"款号","type":"text","required":true,"map_to":"title","aggregatable":true,"example":"AW24-001"},{"key":"status","label":"打样状态","type":"enum","required":true,"map_to":"status","aggregatable":true,"example":"打样中","options":["待打样","打样中","等面料","已完成"]},{"key":"progress_value","label":"完成打样数","type":"number","required":true,"map_to":"progress_value","aggregatable":true,"example":"40"},{"key":"note","label":"备注","type":"text","required":false,"map_to":"note","aggregatable":false,"example":"已完成初版打样"},{"key":"evidence","label":"打样单号","type":"text","required":true,"map_to":"evidence","aggregatable":true,"example":"SY-2410"}],"status_map":{"待打样":"planned","打样中":"in_progress","等面料":"blocked","已完成":"done"},"rules":{"evidence_required":true,"progress_range":[0,100]},"meta":{"author_position_code":"DESIGN_LEAD","version":1,"visibility":"department","review":{"status":"active"}}}'::jsonb,
        p.position_id, 1, m.member_id, m.member_id, a.member_id, now()
-  FROM workhub.org_units o
-  JOIN workhub.positions p ON p.position_code = 'DESIGN_LEAD'
-  JOIN workhub.workforce_members m ON m.employee_code = 'DESIGN001'
-  JOIN workhub.workforce_members a ON a.employee_code = 'ADMIN001'
+  FROM oams.org_units o
+  JOIN oams.positions p ON p.position_code = 'DESIGN_LEAD'
+  JOIN oams.workforce_members m ON m.employee_code = 'DESIGN001'
+  JOIN oams.workforce_members a ON a.employee_code = 'ADMIN001'
  WHERE o.org_code = 'DESIGN';
 
-INSERT INTO workhub.interface_entries
+INSERT INTO oams.interface_entries
        (interface_id, title, status, blocked_reason, needs_decision, progress_value,
         note, evidence, extra, reported_by, submitted_via, entry_mode)
 SELECT i.interface_id, 'AW24-001', 'blocked', '等面料到仓，供应商承诺 10-20', true, 40,
        '已完成初版打样', '样衣确认单 SY-2410', '{"fabric_note": "待补货"}'::jsonb,
        m.member_id, 'human', 'live'
-  FROM workhub.interfaces i
-  JOIN workhub.workforce_members m ON m.employee_code = 'DESIGN001'
+  FROM oams.interfaces i
+  JOIN oams.workforce_members m ON m.employee_code = 'DESIGN001'
  WHERE i.slug = 'design-sampling' AND i.status = 'active';
 
-INSERT INTO workhub.work_items (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision)
+INSERT INTO oams.work_items (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision)
 SELECT p.org_unit_id, p.position_id, 'MVP演示：招聘进度汇报', 'project', 'in_progress', NULL, false
-  FROM workhub.positions p WHERE p.position_code = 'HR_MANAGER';
-INSERT INTO workhub.work_items (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision)
+  FROM oams.positions p WHERE p.position_code = 'HR_MANAGER';
+INSERT INTO oams.work_items (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision)
 SELECT p.org_unit_id, p.position_id, 'MVP演示：合同续签确认', 'routine', 'blocked', '等待法务确认模板', true
-  FROM workhub.positions p WHERE p.position_code = 'HR_MANAGER';
-INSERT INTO workhub.work_items (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision)
+  FROM oams.positions p WHERE p.position_code = 'HR_MANAGER';
+INSERT INTO oams.work_items (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision)
 SELECT p.org_unit_id, p.position_id, 'MVP演示：客户需求确认', 'project', 'blocked', '等待客户反馈需求清单', true
-  FROM workhub.positions p WHERE p.position_code = 'SALES_LEAD';
+  FROM oams.positions p WHERE p.position_code = 'SALES_LEAD';
 
-INSERT INTO workhub.work_item_reports
+INSERT INTO oams.work_item_reports
        (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence)
 SELECT i.work_item_id, m.member_id, 'agent', 60, '已完成候选人初筛，等待面试安排', '虚构演示：候选人清单 v1'
-  FROM workhub.work_items i, workhub.workforce_members m
+  FROM oams.work_items i, oams.workforce_members m
  WHERE i.title = 'MVP演示：招聘进度汇报' AND m.employee_code = 'MVP1001';
-INSERT INTO workhub.work_item_reports
+INSERT INTO oams.work_item_reports
        (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence)
 SELECT i.work_item_id, m.member_id, 'agent', 30, '已发出需求确认清单', '虚构演示：需求邮件摘要'
-  FROM workhub.work_items i, workhub.workforce_members m
+  FROM oams.work_items i, oams.workforce_members m
  WHERE i.title = 'MVP演示：客户需求确认' AND m.employee_code = 'MVP2001';
 """
 
 
 @pytest.fixture(scope="session")
-def seeded_workhub(db_ready) -> dict:
+def seeded_oams(db_ready) -> dict:
     """A migrated, bootstrapped and seeded database of its own."""
 
     name, url = _create_database(db_ready)
@@ -573,10 +565,10 @@ def seeded_workhub(db_ready) -> dict:
 
 
 @pytest.fixture(scope="session")
-def seeded_database(seeded_workhub) -> Database:
+def seeded_database(seeded_oams) -> Database:
     """The seeded database handle, for scripts that only need rows."""
 
-    return seeded_workhub["database"]
+    return seeded_oams["database"]
 
 @pytest.fixture(scope="session")
 def bootstrapped_database(db_ready) -> Database:
@@ -614,7 +606,7 @@ def bootstrapped_database(db_ready) -> Database:
 # Serving the application against a chosen database
 # ---------------------------------------------------------------------------
 #
-# workhub.config.settings is one mutable object shared by workhub.db, so a test
+# oams.config.settings is one mutable object shared by oams.db, so a test
 # can point the running process at a different database simply by swapping
 # settings.database_url before the server handles a request.  That lets every
 # e2e script run against its own pristine database without restarting Python.
@@ -626,14 +618,14 @@ SERVED: dict[str, str] = {}
 def point_settings_at(url: str) -> str:
     """Repoint the process-wide settings at *url*; returns the previous URL."""
 
-    import workhub.config as config_module
-    import workhub.db as db_module
+    import oams.config as config_module
+    import oams.db as db_module
 
     previous = config_module.settings.database_url
     config_module.settings.database_url = url
-    if hasattr(db_module, "settings"):  # workhub.db imports the same object
+    if hasattr(db_module, "settings"):  # oams.db imports the same object
         db_module.settings.database_url = url
-    os.environ["WORKHUB_DATABASE_URL"] = url
+    os.environ["OAMS_DATABASE_URL"] = url
     return previous
 
 
@@ -645,7 +637,7 @@ def serve(url: str):
 
     previous = point_settings_at(url)
     # Several served instances coexist in one session (a session-scoped site,
-    # plus a per-test migrated_site).  Each one rebinds the WORKHUB_*_BASE
+    # plus a per-test migrated_site).  Each one rebinds the OAMS_*_BASE
     # variables, so it has to put them back on the way out -- otherwise the
     # scripts that read them straight from the environment would keep aiming at
     # a server that has already shut down.
@@ -653,14 +645,14 @@ def serve(url: str):
     port = free_port()
     base = f"http://127.0.0.1:{port}"
     config = uvicorn.Config(
-        "workhub.api:app",
+        "oams.api:app",
         host="127.0.0.1",
         port=port,
         log_level="warning",
         access_log=False,
     )
     server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, name="workhub-test-server", daemon=True)
+    thread = threading.Thread(target=server.run, name="oams-test-server", daemon=True)
     thread.start()
     try:
         deadline = time.time() + 60
@@ -696,10 +688,10 @@ def load_seed(spec, url: str, admin_member_id: str) -> str:
     )
     env.update(
         {
-            "WORKHUB_DATABASE_URL": url,
-            "WORKHUB_MIGRATOR_URL": url,
-            "WORKHUB_ADMIN_MEMBER_ID": str(admin_member_id),
-            "WORKHUB_LOADER_PORT": str(free_port()),
+            "OAMS_DATABASE_URL": url,
+            "OAMS_MIGRATOR_URL": url,
+            "OAMS_ADMIN_MEMBER_ID": str(admin_member_id),
+            "OAMS_LOADER_PORT": str(free_port()),
         }
     )
     completed = subprocess.run(
@@ -723,10 +715,10 @@ def load_seed(spec, url: str, admin_member_id: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def site(seeded_workhub):
+def site(seeded_oams):
     """The app served against the seeded database (ADMIN001, DESIGN001, MVP...)."""
 
-    with serve(seeded_workhub["url"]) as base:
+    with serve(seeded_oams["url"]) as base:
         yield base
 
 
@@ -780,14 +772,14 @@ def hr_site(db_ready):
 def no_dev_autologin():
     """The design-stage shortcut is always off unless a test turns it on.
 
-    WORKHUB_DEV_AUTOLOGIN signs in session-less requests.  A suite that asserts
+    OAMS_DEV_AUTOLOGIN signs in session-less requests.  A suite that asserts
     "the board redirects an unauthenticated caller" would pass for the wrong
     reason with it on -- and worse, a logout that clears nothing would look fine.
     The conversation between the two is exactly the regression nobody notices, so
     the switch is forced off here; tests/test_dev_autologin.py sets it back itself.
     """
 
-    from workhub.config import settings
+    from oams.config import settings
 
     previous = getattr(settings, "dev_autologin", None)
     settings.dev_autologin = None
@@ -800,7 +792,7 @@ def settings_follow_the_test(request):
     """Point the process-wide settings at the database of the server in use.
 
     Two served instances coexist inside one pytest session, and
-    workhub.db.connection() reads settings.database_url on every request.  So
+    oams.db.connection() reads settings.database_url on every request.  So
     before a test body runs, settings has to name the database behind the server
     that test is about to talk to -- otherwise one file's requests would land in
     another file's database.

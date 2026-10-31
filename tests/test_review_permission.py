@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest  # noqa: E402  (test-module wrapper)
 
-from workhub.upgrade import upgrade_descriptor  # noqa: E402
+from oams.upgrade import upgrade_descriptor  # noqa: E402
 
 
 pytestmark = pytest.mark.db  # needs a live PostgreSQL and a served app
@@ -24,9 +24,9 @@ def _script() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
     import psycopg
     from psycopg.rows import dict_row
-    from workhub.security import issue_session
+    from oams.security import issue_session
 
-    base = os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000")
+    base = os.environ.get("OAMS_BASE", "http://127.0.0.1:8000")
     failures = []
 
     def check(name, ok, detail=""):
@@ -66,33 +66,33 @@ def _script() -> None:
     # testing the flow instead of the migration.
     descriptor, _ = upgrade_descriptor(descriptor)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        design = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code='DESIGN001'").fetchone()["member_id"]
-        org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code='DESIGN'").fetchone()["org_unit_id"]
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        design = conn.execute("SELECT member_id FROM oams.workforce_members WHERE employee_code='DESIGN001'").fetchone()["member_id"]
+        org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code='DESIGN'").fetchone()["org_unit_id"]
         # The page has to be written by somebody other than its reviewer: a page
         # nobody else looked at is not a reviewed page, and the queue will not
         # offer a reviewer their own submission.  A second person takes a DESIGN
         # seat for the length of this script, and gives it back in the cleanup.
         writer = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code='MVP1001'").fetchone()["member_id"]
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code='MVP1001'").fetchone()["member_id"]
         design_position = conn.execute(
-            "SELECT position_id FROM workhub.positions WHERE position_code='DESIGN_LEAD'").fetchone()["position_id"]
-        conn.execute("DELETE FROM workhub.position_assignments WHERE member_id=%s AND position_id=%s",
+            "SELECT position_id FROM oams.positions WHERE position_code='DESIGN_LEAD'").fetchone()["position_id"]
+        conn.execute("DELETE FROM oams.position_assignments WHERE member_id=%s AND position_id=%s",
                      (writer, design_position))
         conn.execute(
-            """INSERT INTO workhub.position_assignments
+            """INSERT INTO oams.position_assignments
                    (member_id, position_id, assignment_type, status, starts_at, reason, created_by)
                VALUES (%s, %s, 'concurrent', 'active', now() - interval '1 day',
                        '权限拆分用例：临时给第二个设计部席位', %s)""",
             (writer, design_position, design))
         # This member must NOT be a security administrator: that is the whole point.
         grants_admin = conn.execute(
-            """SELECT count(*) AS n FROM workhub.permission_grants
+            """SELECT count(*) AS n FROM oams.permission_grants
                 WHERE resource = 'workforce.grants' AND action = 'manage' AND revoked_at IS NULL
                   AND (member_id = %s OR position_id IN (
-                        SELECT position_id FROM workhub.position_assignments WHERE member_id = %s))""",
+                        SELECT position_id FROM oams.position_assignments WHERE member_id = %s))""",
             (design, design)).fetchone()["n"]
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug = 'design-permission-split'")
+        conn.execute("DELETE FROM oams.interfaces WHERE slug = 'design-permission-split'")
     check("design lead is not a security administrator", grants_admin == 0, grants_admin)
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -150,8 +150,8 @@ def _script() -> None:
         "position_id": "", "descriptor_text": json.dumps(descriptor)})
     check("page created", status == 303 and "saved=1" in headers.get("location", ""), headers.get("location"))
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        iid = conn.execute("SELECT interface_id FROM workhub.interfaces WHERE slug='design-permission-split'").fetchone()["interface_id"]
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        iid = conn.execute("SELECT interface_id FROM oams.interfaces WHERE slug='design-permission-split'").fetchone()["interface_id"]
 
     status, html, _ = draft(f"/departments/{org}/{iid}")
     status, _, headers = draft(f"/departments/{org}/{iid}/submit-review", "POST",
@@ -166,10 +166,10 @@ def _script() -> None:
     check("non-administrator reviewer can approve", status == 303 and "saved=approved" in headers.get("location", ""),
           headers.get("location", "")[:160])
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        row = conn.execute("SELECT status, reviewed_by FROM workhub.interfaces WHERE interface_id=%s", (iid,)).fetchone()
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug='design-permission-split'")
-        conn.execute("DELETE FROM workhub.position_assignments WHERE member_id=%s AND position_id=%s",
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        row = conn.execute("SELECT status, reviewed_by FROM oams.interfaces WHERE interface_id=%s", (iid,)).fetchone()
+        conn.execute("DELETE FROM oams.interfaces WHERE slug='design-permission-split'")
+        conn.execute("DELETE FROM oams.position_assignments WHERE member_id=%s AND position_id=%s",
                      (writer, design_position))
     check("approval recorded the reviewer", row["status"] == "active" and row["reviewed_by"] == design, row)
 

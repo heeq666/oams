@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest  # noqa: E402  (test-module wrapper)
 
-from workhub.upgrade import upgrade_descriptor  # noqa: E402
+from oams.upgrade import upgrade_descriptor  # noqa: E402
 
 
 pytestmark = pytest.mark.db  # needs a live PostgreSQL and a served app
@@ -28,9 +28,9 @@ def _script() -> None:
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
     import psycopg
-    from workhub.security import issue_session
+    from oams.security import issue_session
 
-    base = os.environ.get("WORKHUB_IFACE_BASE", "http://127.0.0.1:8145")
+    base = os.environ.get("OAMS_IFACE_BASE", "http://127.0.0.1:8145")
     failures = []
 
     def check(name, condition, detail=""):
@@ -81,9 +81,9 @@ def _script() -> None:
     # testing the flow instead of the migration.
     descriptor, _ = upgrade_descriptor(descriptor)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
-        admin = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'ADMIN001'").fetchone()[0]
-        org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code = 'DESIGN'").fetchone()[0]
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
+        admin = conn.execute("SELECT member_id FROM oams.workforce_members WHERE employee_code = 'ADMIN001'").fetchone()[0]
+        org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code = 'DESIGN'").fetchone()[0]
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -137,9 +137,9 @@ def _script() -> None:
     status, page, _ = request(admin_client, "/interfaces")
     check("interface listed for the department", status == 200 and "设计部打样进度" in page, status)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
         interface_id = conn.execute(
-            """SELECT interface_id FROM workhub.interfaces
+            """SELECT interface_id FROM oams.interfaces
                 WHERE slug='design-sampling' AND status='active'""").fetchone()[0]
 
     status, page, _ = request(admin_client, f"/interfaces/{interface_id}")
@@ -165,10 +165,10 @@ def _script() -> None:
     check("valid entry accepted", status == 303 and "saved=1" in headers.get("location", ""),
           headers.get("location", "")[:200])
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
         entry = conn.execute(
             """SELECT title, status, blocked_reason, evidence, extra, reported_by
-                 FROM workhub.interface_entries WHERE interface_id = %s""", (interface_id,)).fetchone()
+                 FROM oams.interface_entries WHERE interface_id = %s""", (interface_id,)).fetchone()
     check("standard fields stored", entry[0] == "AW24-001" and entry[1] == "blocked" and entry[3] == "SY-2410", entry)
     check("department-private field kept aside", entry[4].get("fabric_note") == "待补货", entry[4])
     check("reporter recorded", str(entry[5]) == str(admin))

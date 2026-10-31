@@ -24,9 +24,9 @@ def _script() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
     import psycopg
     from psycopg.types.json import Jsonb
-    from workhub.descriptor import validate_descriptor
-    from workhub.render import render_interface, render_read_only
-    from workhub.upgrade import upgrade_descriptor
+    from oams.descriptor import validate_descriptor
+    from oams.render import render_interface, render_read_only
+    from oams.upgrade import upgrade_descriptor
 
     failures = []
 
@@ -84,41 +84,41 @@ def _script() -> None:
           validate_descriptor(descriptor))
 
     def ensure_unit(conn, code, name):
-        row = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code = %s", (code,)).fetchone()
+        row = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code = %s", (code,)).fetchone()
         if row:
             return row[0]
         return conn.execute(
-            "INSERT INTO workhub.org_units (org_code, name, unit_type) VALUES (%s, %s, 'department') RETURNING org_unit_id",
+            "INSERT INTO oams.org_units (org_code, name, unit_type) VALUES (%s, %s, 'department') RETURNING org_unit_id",
             (code, name)).fetchone()[0]
 
     def ensure_member(conn, code, name):
-        row = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s", (code,)).fetchone()
+        row = conn.execute("SELECT member_id FROM oams.workforce_members WHERE employee_code = %s", (code,)).fetchone()
         if row:
             return row[0]
         return conn.execute(
-            "INSERT INTO workhub.workforce_members (employee_code, display_name, employment_status) VALUES (%s, %s, 'active') RETURNING member_id",
+            "INSERT INTO oams.workforce_members (employee_code, display_name, employment_status) VALUES (%s, %s, 'active') RETURNING member_id",
             (code, name)).fetchone()[0]
 
     def ensure_position(conn, code, title, org):
-        row = conn.execute("SELECT position_id FROM workhub.positions WHERE position_code = %s", (code,)).fetchone()
+        row = conn.execute("SELECT position_id FROM oams.positions WHERE position_code = %s", (code,)).fetchone()
         if row:
             return row[0]
         return conn.execute(
-            "INSERT INTO workhub.positions (position_code, title, org_unit_id) VALUES (%s, %s, %s) RETURNING position_id",
+            "INSERT INTO oams.positions (position_code, title, org_unit_id) VALUES (%s, %s, %s) RETURNING position_id",
             (code, title, org)).fetchone()[0]
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
         org = ensure_unit(conn, "DESIGN", "设计部")
         member = ensure_member(conn, "IFACE001", "设计负责人")
         position = ensure_position(conn, "DESIGN_LEAD", "设计负责人", org)
         # A rerun should add a new version rather than trip over the previous one.
-        conn.execute("UPDATE workhub.interfaces SET status='archived' WHERE slug='design-sampling' AND status='active'")
+        conn.execute("UPDATE oams.interfaces SET status='archived' WHERE slug='design-sampling' AND status='active'")
         next_version = conn.execute(
-            """SELECT COALESCE(max(version_no), 0) + 1 FROM workhub.interfaces
+            """SELECT COALESCE(max(version_no), 0) + 1 FROM oams.interfaces
                 WHERE org_unit_id = %s AND slug = 'design-sampling'""", (org,)).fetchone()[0]
 
         iface = conn.execute(
-            """INSERT INTO workhub.interfaces
+            """INSERT INTO oams.interfaces
                    (org_unit_id, slug, name, status, visibility, schema_version, descriptor, position_id, created_by, version_no)
                VALUES (%s,'design-sampling','设计部打样进度','active','department','0.2',%s,%s,%s,%s)
                RETURNING interface_id, version_no""",
@@ -126,12 +126,12 @@ def _script() -> None:
     check("interface saved", iface[0] is not None)
     check("interface version recorded", iface[1] >= 1)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
         # Only one live screen per department slug: a department can draft freely but
         # cannot have two drawings claiming to be the current one.
         try:
             conn.execute(
-                """INSERT INTO workhub.interfaces
+                """INSERT INTO oams.interfaces
                        (org_unit_id, slug, name, status, visibility, schema_version, descriptor, version_no)
                    VALUES (%s,'design-sampling','第二版','active','department','0.2',%s,2)""",
                 (org, Jsonb(descriptor)))
@@ -148,7 +148,7 @@ def _script() -> None:
         # the application: the constraint survives a direct SQL write.
         try:
             conn.execute(
-                """INSERT INTO workhub.interfaces
+                """INSERT INTO oams.interfaces
                        (org_unit_id, slug, name, status, visibility, schema_version, descriptor, version_no)
                    VALUES (%s,'public-no-review','公共未审','draft','public','0.2',%s,1)""",
                 (org, Jsonb(descriptor)))
@@ -161,9 +161,9 @@ def _script() -> None:
             conn.rollback()
             check("public template without review rejected", False, repr(exc))
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
         entry = conn.execute(
-            """INSERT INTO workhub.interface_entries
+            """INSERT INTO oams.interface_entries
                    (interface_id, title, status, blocked_reason, needs_decision, progress_value,
                     note, evidence, extra, reported_by, submitted_via)
                VALUES (%s,'AW24-001','blocked','等面料到仓，供应商承诺 10-20',true,40,
@@ -172,17 +172,17 @@ def _script() -> None:
             (iface[0], Jsonb({"fabric_note": "待补货"}), member)).fetchone()
     check("entry saved with standard fields", entry[1] == "blocked" and entry[2] == 40)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
-        row = conn.execute("SELECT title, status, evidence, extra, submitted_via FROM workhub.interface_entries WHERE entry_id=%s", (entry[0],)).fetchone()
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
+        row = conn.execute("SELECT title, status, evidence, extra, submitted_via FROM oams.interface_entries WHERE entry_id=%s", (entry[0],)).fetchone()
     check("standard field readable for aggregate", row[0] == "AW24-001" and row[1] == "blocked")
     check("unmapped field kept beside it", row[3].get("fabric_note") == "待补货")
 
     # Blocked without a reason is rejected: the whole point of the aggregate is
     # that a manager can read why something is stuck.
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
         try:
             conn.execute(
-                """INSERT INTO workhub.interface_entries
+                """INSERT INTO oams.interface_entries
                        (interface_id, title, status, evidence, reported_by)
                    VALUES (%s,'AW24-002','blocked','单号 SY-2',%s)""", (iface[0], member))
             conn.commit()
@@ -194,17 +194,17 @@ def _script() -> None:
             conn.rollback()
             check("blocked without reason rejected", False, repr(exc))
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
-        stored = conn.execute("SELECT descriptor FROM workhub.interfaces WHERE interface_id=%s", (iface[0],)).fetchone()[0]
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
+        stored = conn.execute("SELECT descriptor FROM oams.interfaces WHERE interface_id=%s", (iface[0],)).fetchone()[0]
     html = render_interface(stored, values={"title": "AW24-001", "sample_done": "40"})
     check("saved descriptor renders", "设计部打样进度" in html and "AW24-001" in html)
     readonly = render_read_only(stored, values={"title": "AW24-001", "fabric_note": "待补货"})
     check("manager view hides private field", "AW24-001" in readonly and "待补货" not in readonly)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"]) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"]) as conn:
         used = conn.execute(
-            """SELECT count(DISTINCT i.org_unit_id) FROM workhub.interface_entries e
-                 JOIN workhub.interfaces i USING (interface_id)
+            """SELECT count(DISTINCT i.org_unit_id) FROM oams.interface_entries e
+                 JOIN oams.interfaces i USING (interface_id)
                 WHERE e.extra ? 'fabric_note'""").fetchone()[0]
     check("evolution scan can count departments using a key", used >= 1)
 

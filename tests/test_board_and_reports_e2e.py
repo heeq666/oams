@@ -3,11 +3,11 @@
 It needs a throwaway database, because it creates organisations, positions, members
 and an administrator. Never point it at a real deployment.
 
-    docker run -d --name workhub-board-test \
-        -e POSTGRES_PASSWORD=change-me -e POSTGRES_DB=workhub_test \
+    docker run -d --name oams-board-test \
+        -e POSTGRES_PASSWORD=oams_test_pw -e POSTGRES_DB=oams_test \
         -p 55433:5432 postgres:16-alpine
-    export WORKHUB_DATABASE_URL=postgresql://postgres:change-me@localhost:55433/workhub_test
-    python -m workhub.cli migrate
+    export OAMS_DATABASE_URL=postgresql://postgres:oams_test_pw@localhost:55433/oams_test
+    python -m oams.cli migrate
     python tests/test_board_and_reports_e2e.py
 
 Exit code 0 means every assertion passed.
@@ -28,7 +28,7 @@ sys.path.insert(0, "app")
 import psycopg  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
-from workhub.security import issue_session  # noqa: E402
+from oams.security import issue_session  # noqa: E402
 
 # Never write to ``os.environ`` here.  pytest imports every test module during
 # collection, so a module-level ``setdefault`` used to plant this script's docker
@@ -36,7 +36,7 @@ from workhub.security import issue_session  # noqa: E402
 # rest of the suite then probed *that* URL and skipped, even on a machine with a
 # perfectly good database.  ``_script()`` rebinds DATABASE_URL from the fixture;
 # importing the module must stay side-effect free.
-DATABASE_URL = os.environ.get("WORKHUB_DATABASE_URL", "")
+DATABASE_URL = os.environ.get("OAMS_DATABASE_URL", "")
 
 PORT = 8124
 BASE = f"http://127.0.0.1:{PORT}"
@@ -76,28 +76,28 @@ def api(method: str, path: str, body: dict | None = None, token: str | None = No
 def seed(conn) -> dict:
     cur = conn.cursor()
     company = cur.execute(
-        "SELECT org_unit_id FROM workhub.org_units WHERE unit_type = 'company' LIMIT 1"
+        "SELECT org_unit_id FROM oams.org_units WHERE unit_type = 'company' LIMIT 1"
     ).fetchone()["org_unit_id"]
     dept = cur.execute(
-        "INSERT INTO workhub.org_units (org_code, name, parent_org_unit_id, unit_type) VALUES ('HR', '人事部', %s, 'department') RETURNING org_unit_id",
+        "INSERT INTO oams.org_units (org_code, name, parent_org_unit_id, unit_type) VALUES ('HR', '人事部', %s, 'department') RETURNING org_unit_id",
         (company,),
     ).fetchone()["org_unit_id"]
 
     positions = {}
     for code, title in [("HRMGR", "人事经理"), ("HRSPC", "人事专员")]:
         positions[code] = cur.execute(
-            "INSERT INTO workhub.positions (position_code, title, org_unit_id) VALUES (%s, %s, %s) RETURNING position_id",
+            "INSERT INTO oams.positions (position_code, title, org_unit_id) VALUES (%s, %s, %s) RETURNING position_id",
             (code, title, dept),
         ).fetchone()["position_id"]
 
     members = {}
     for code, name, position_code in [("E1001", "李经理", "HRMGR"), ("E1002", "王专员", "HRSPC")]:
         member_id = cur.execute(
-            "INSERT INTO workhub.workforce_members (employee_code, display_name, employment_status) VALUES (%s, %s, 'active') RETURNING member_id",
+            "INSERT INTO oams.workforce_members (employee_code, display_name, employment_status) VALUES (%s, %s, 'active') RETURNING member_id",
             (code, name),
         ).fetchone()["member_id"]
         cur.execute(
-            """INSERT INTO workhub.position_assignments (member_id, position_id, assignment_type, status, starts_at, reason)
+            """INSERT INTO oams.position_assignments (member_id, position_id, assignment_type, status, starts_at, reason)
                VALUES (%s, %s, 'primary', 'active', now() - interval '30 days', 'seeding for board test')""",
             (member_id, positions[position_code]),
         )
@@ -106,22 +106,22 @@ def seed(conn) -> dict:
     items = {}
     # Blocked, awaiting a decision: the first thing management should see.
     items["blocked"] = cur.execute(
-        """INSERT INTO workhub.work_items (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision)
+        """INSERT INTO oams.work_items (org_unit_id, position_id, title, kind, status, blocked_reason, needs_decision)
            VALUES (%s, %s, '校园招聘宣讲会场地未确认', 'project', 'blocked', '行政部未回复场地审批', true) RETURNING work_item_id""",
         (dept, positions["HRMGR"]),
     ).fetchone()["work_item_id"]
     items["in_progress"] = cur.execute(
-        """INSERT INTO workhub.work_items (org_unit_id, position_id, title, kind, status)
+        """INSERT INTO oams.work_items (org_unit_id, position_id, title, kind, status)
            VALUES (%s, %s, '员工入职材料电子化', 'project', 'in_progress') RETURNING work_item_id""",
         (dept, positions["HRSPC"]),
     ).fetchone()["work_item_id"]
     items["silent"] = cur.execute(
-        """INSERT INTO workhub.work_items (org_unit_id, position_id, title, kind, status)
+        """INSERT INTO oams.work_items (org_unit_id, position_id, title, kind, status)
            VALUES (%s, %s, '月度考勤核对', 'routine', 'in_progress') RETURNING work_item_id""",
         (dept, positions["HRSPC"]),
     ).fetchone()["work_item_id"]
     items["done"] = cur.execute(
-        """INSERT INTO workhub.work_items (org_unit_id, position_id, title, kind, status)
+        """INSERT INTO oams.work_items (org_unit_id, position_id, title, kind, status)
            VALUES (%s, %s, '上季度绩效归档', 'routine', 'done') RETURNING work_item_id""",
         (dept, positions["HRMGR"]),
     ).fetchone()["work_item_id"]
@@ -131,12 +131,12 @@ def seed(conn) -> dict:
     # report_id -- a random uuid. That is deterministic but arbitrary, so an
     # assertion about which report wins must not depend on it.
     cur.execute(
-        """INSERT INTO workhub.work_item_reports (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence, reported_at)
+        """INSERT INTO oams.work_item_reports (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence, reported_at)
            VALUES (%s, %s, 'human', 40, '已联系三家外包', '邮件 thread 2026-10-08', now() - interval '1 hour')""",
         (items["in_progress"], members["E1002"]),
     )
     cur.execute(
-        """INSERT INTO workhub.work_item_reports (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence, reported_at)
+        """INSERT INTO oams.work_item_reports (work_item_id, reported_by_member_id, submitted_via, progress_value, note, evidence, reported_at)
            VALUES (%s, %s, 'agent', 60, 'AI 汇总本周邮件后填报', 'AI 依据：mailbox export 2026-10-10', now())""",
         (items["in_progress"], members["E1002"]),
     )
@@ -153,16 +153,16 @@ def _script(base: str, url: str) -> None:
     BASE = base
     DATABASE_URL = url
     boot = subprocess.run(
-        [sys.executable, "-m", "workhub.cli", "bootstrap-admin", "--name", "Admin", "--employee-code", "9999",
+        [sys.executable, "-m", "oams.cli", "bootstrap-admin", "--name", "Admin", "--employee-code", "9999",
          "--org-code", "acme", "--org-name", "ACME"],
         capture_output=True, text=True, cwd=".", env={**os.environ, "PYTHONPATH": "app"},
     )
     with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
         admin_row = conn.execute(
             """SELECT DISTINCT COALESCE(g.member_id, m.member_id) AS member_id
-                 FROM workhub.permission_grants g
-                 LEFT JOIN workhub.position_assignments a ON a.position_id = g.position_id
-                 LEFT JOIN workhub.workforce_members m ON m.member_id = a.member_id
+                 FROM oams.permission_grants g
+                 LEFT JOIN oams.position_assignments a ON a.position_id = g.position_id
+                 LEFT JOIN oams.workforce_members m ON m.member_id = a.member_id
                 WHERE g.resource = 'workforce.grants' AND g.action = 'manage'
                   AND g.scope_type = 'all' AND g.revoked_at IS NULL
                   AND COALESCE(g.member_id, m.member_id) IS NOT NULL"""
@@ -175,11 +175,11 @@ def _script(base: str, url: str) -> None:
         fixtures = seed(conn)
         # Simulate a deployment created before migration 0003 existed.
         legacy_position = conn.execute(
-            "INSERT INTO workhub.positions (position_code, title, org_unit_id) VALUES ('LEGACY', 'Legacy admin', %s) RETURNING position_id",
+            "INSERT INTO oams.positions (position_code, title, org_unit_id) VALUES ('LEGACY', 'Legacy admin', %s) RETURNING position_id",
             (fixtures["company"],),
         ).fetchone()["position_id"]
         conn.execute(
-            """INSERT INTO workhub.permission_grants
+            """INSERT INTO oams.permission_grants
                (subject_type, position_id, resource, action, scope_type, effect, valid_from, reason)
                VALUES ('position', %s, 'workforce.grants', 'manage', 'all', 'allow', now(), 'pre-0003 administrator')""",
             (legacy_position,),
@@ -187,7 +187,7 @@ def _script(base: str, url: str) -> None:
 
     # Apply migration 0003, which has to pick the missing action up on its own.
     applied = subprocess.run(
-        [sys.executable, "-m", "workhub.cli", "migrate"],
+        [sys.executable, "-m", "oams.cli", "migrate"],
         capture_output=True, text=True, cwd=".", env={**os.environ, "PYTHONPATH": "app"},
     )
     check("migrate is idempotent", "Already applied" in applied.stdout, applied.stdout.strip().replace("\n", " | ")[:120])
@@ -195,14 +195,14 @@ def _script(base: str, url: str) -> None:
     # Apply 0003 the way an existing deployment meets it: admin grants already in
     # place, then the migration runs once and has to derive the missing action.
     with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
-        conn.execute(open("app/workhub/migrations/0003_report_submission_grants.sql").read())
+        conn.execute(open("app/oams/migrations/0003_report_submission_grants.sql").read())
         duplicates = conn.execute(
-            """SELECT count(*) AS n FROM workhub.permission_grants
+            """SELECT count(*) AS n FROM oams.permission_grants
                WHERE resource = 'workforce.reports' AND action = 'submit' AND revoked_at IS NULL
                  AND position_id = %s""", (legacy_position,)).fetchone()["n"]
-        conn.execute(open("app/workhub/migrations/0003_report_submission_grants.sql").read())
+        conn.execute(open("app/oams/migrations/0003_report_submission_grants.sql").read())
         twice = conn.execute(
-            """SELECT count(*) AS n FROM workhub.permission_grants
+            """SELECT count(*) AS n FROM oams.permission_grants
                WHERE resource = 'workforce.reports' AND action = 'submit' AND revoked_at IS NULL
                  AND position_id = %s""", (legacy_position,)).fetchone()["n"]
     check("0003 backfill adds submit without duplicating", duplicates == 1 and twice == 1, f"after1={duplicates} after2={twice}")

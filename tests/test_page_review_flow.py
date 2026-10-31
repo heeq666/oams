@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest  # noqa: E402  (test-module wrapper)
 
-from workhub.upgrade import upgrade_descriptor  # noqa: E402
+from oams.upgrade import upgrade_descriptor  # noqa: E402
 
 
 pytestmark = pytest.mark.db  # needs a live PostgreSQL and a served app
@@ -24,9 +24,9 @@ def _script() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
     import psycopg
     from psycopg.rows import dict_row
-    from workhub.security import issue_session
+    from oams.security import issue_session
 
-    base = os.environ.get("WORKHUB_BASE", "http://127.0.0.1:8000")
+    base = os.environ.get("OAMS_BASE", "http://127.0.0.1:8000")
     failures = []
 
     def check(name, ok, detail=""):
@@ -66,11 +66,11 @@ def _script() -> None:
     # testing the flow instead of the migration.
     descriptor, _ = upgrade_descriptor(descriptor)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        design = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code='DESIGN001'").fetchone()["member_id"]
-        admin = conn.execute("SELECT member_id FROM workhub.workforce_members WHERE employee_code='ADMIN001'").fetchone()["member_id"]
-        org = conn.execute("SELECT org_unit_id FROM workhub.org_units WHERE org_code='DESIGN'").fetchone()["org_unit_id"]
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug = 'design-review-flow'")
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        design = conn.execute("SELECT member_id FROM oams.workforce_members WHERE employee_code='DESIGN001'").fetchone()["member_id"]
+        admin = conn.execute("SELECT member_id FROM oams.workforce_members WHERE employee_code='ADMIN001'").fetchone()["member_id"]
+        org = conn.execute("SELECT org_unit_id FROM oams.org_units WHERE org_code='DESIGN'").fetchone()["org_unit_id"]
+        conn.execute("DELETE FROM oams.interfaces WHERE slug = 'design-review-flow'")
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -108,8 +108,8 @@ def _script() -> None:
         "csrf": csrf_of(form), "slug": "design-review-flow", "name": "设计部审核流程测试页",
         "position_id": "", "descriptor_text": json.dumps(descriptor)})
     check("page created", status == 303 and "saved=1" in headers.get("location", ""), headers.get("location"))
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        page = conn.execute("SELECT interface_id, status FROM workhub.interfaces WHERE slug='design-review-flow'").fetchone()
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        page = conn.execute("SELECT interface_id, status FROM oams.interfaces WHERE slug='design-review-flow'").fetchone()
     check("starts as draft", page["status"] == "draft", page)
 
     # 2. Department can still trial-fill while building.
@@ -127,8 +127,8 @@ def _script() -> None:
         f"/departments/{org}/{page['interface_id']}/submit-review", "POST", {"review_csrf": review_token})
     check("review request accepted", status == 303 and "saved=review" in headers.get("location", ""),
           headers.get("location"))
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        state = conn.execute("SELECT status FROM workhub.interfaces WHERE interface_id=%s", (page["interface_id"],)).fetchone()["status"]
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        state = conn.execute("SELECT status FROM oams.interfaces WHERE interface_id=%s", (page["interface_id"],)).fetchone()["status"]
     check("page is now pending", state == "pending", state)
 
     # 4. Reviewer sees it in the queue.
@@ -143,8 +143,8 @@ def _script() -> None:
     status, _, headers = admin_call(f"/reviews/{page['interface_id']}/reject", "POST",
                                     {"csrf": csrf_of(queue), "note": "字段太少，补充卡点"})
     check("reject accepted", status == 303 and "saved=rejected" in headers.get("location", ""))
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        row = conn.execute("SELECT status, review_note FROM workhub.interfaces WHERE interface_id=%s",
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        row = conn.execute("SELECT status, review_note FROM oams.interfaces WHERE interface_id=%s",
                            (page["interface_id"],)).fetchone()
     check("reject returns to draft with the note", row["status"] == "draft" and "字段太少" in (row["review_note"] or ""), row)
 
@@ -158,17 +158,17 @@ def _script() -> None:
     status, _, headers = admin_call(f"/reviews/{page['interface_id']}/approve", "POST",
                                     {"csrf": csrf_of(queue), "note": "通过"})
     check("approve accepted", status == 303 and "saved=approved" in headers.get("location", ""))
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
         row = conn.execute(
-            """SELECT status, reviewed_by, reviewed_at FROM workhub.interfaces WHERE interface_id=%s""",
+            """SELECT status, reviewed_by, reviewed_at FROM oams.interfaces WHERE interface_id=%s""",
             (page["interface_id"],)).fetchone()
     check("page is active with a recorded reviewer",
           row["status"] == "active" and row["reviewed_by"] == admin and row["reviewed_at"] is not None, row)
 
     # 8. Trial entries made before approval kept their draft mode and never aggregated.
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
         modes = conn.execute(
-            "SELECT entry_mode, count(*) AS n FROM workhub.interface_entries WHERE interface_id=%s GROUP BY 1",
+            "SELECT entry_mode, count(*) AS n FROM oams.interface_entries WHERE interface_id=%s GROUP BY 1",
             (page["interface_id"],)).fetchall()
     modes = {r["entry_mode"]: r["n"] for r in modes}
     check("pre-approval trial stayed in draft mode", modes.get("draft", 0) >= 1 and modes.get("live", 0) == 0, modes)
@@ -178,14 +178,14 @@ def _script() -> None:
     status, _, headers = design_call(f"/departments/{org}/{page['interface_id']}", "POST", {
         "csrf": csrf_of(html), "title": "正式记录", "state_word": "进行中", "evidence_ref": "L-1"})
     check("approved page accepts a live entry", status == 303 and "saved=1" in headers.get("location", ""))
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
         live = conn.execute(
-            """SELECT count(*) AS n FROM workhub.interface_entries
+            """SELECT count(*) AS n FROM oams.interface_entries
                 WHERE interface_id=%s AND entry_mode='live'""", (page["interface_id"],)).fetchone()["n"]
     check("live entry recorded", live == 1, live)
 
-    with psycopg.connect(os.environ["WORKHUB_DATABASE_URL"], row_factory=dict_row) as conn:
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug='design-review-flow'")
+    with psycopg.connect(os.environ["OAMS_DATABASE_URL"], row_factory=dict_row) as conn:
+        conn.execute("DELETE FROM oams.interfaces WHERE slug='design-review-flow'")
 
     if failures:
         raise AssertionError("failed checks: " + ", ".join(failures))

@@ -18,7 +18,7 @@ import { readFile } from "node:fs/promises";
 
 const ROOT = "/Volumes/工作/aiworkspace/company-workhub";
 const PYTHON = ROOT + "/.venv/bin/python";
-const SPACE_NAME = "workhub 断网重发验收";
+const SPACE_NAME = "oams 断网重发验收";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -34,7 +34,7 @@ function portFree(port) {
 }
 
 async function pickPort() {
-  const wanted = Number((process.env.WORKHUB_CDP_APP_PORT || "").trim() || 0);
+  const wanted = Number((process.env.OAMS_CDP_APP_PORT || "").trim() || 0);
   if (wanted) {
     if (!(await portFree(wanted))) {
       console.error("端口 " + wanted + " 已经被占用（本机上可能还有别的实例在跑）。换一个端口，或者先把那个停掉。");
@@ -51,11 +51,11 @@ async function pickPort() {
 
 // 库地址取自 .env（跟演示站同一条），不为测试另建库。
 async function databaseUrl() {
-  const fromEnv = (process.env.WORKHUB_DATABASE_URL || "").trim();
+  const fromEnv = (process.env.OAMS_DATABASE_URL || "").trim();
   if (fromEnv) return fromEnv;
   const text = await readFile(ROOT + "/.env", "utf8");
-  const line = text.split("\n").find((l) => l.trim().startsWith("WORKHUB_DATABASE_URL="));
-  if (!line) throw new Error(".env 里没有 WORKHUB_DATABASE_URL");
+  const line = text.split("\n").find((l) => l.trim().startsWith("OAMS_DATABASE_URL="));
+  if (!line) throw new Error(".env 里没有 OAMS_DATABASE_URL");
   return line.slice(line.indexOf("=") + 1).trim();
 }
 
@@ -85,9 +85,9 @@ with psycopg.connect(sys.argv[3], row_factory=psycopg.rows.dict_row) as conn:
 }
 
 const countRows = () =>
-  sql("SELECT count(*) AS n FROM workhub.collab_messages WHERE body = %s", [body])[0].n;
+  sql("SELECT count(*) AS n FROM oams.collab_messages WHERE body = %s", [body])[0].n;
 const dropRows = () =>
-  sql("DELETE FROM workhub.collab_messages WHERE body = %s RETURNING message_id", [body]).length;
+  sql("DELETE FROM oams.collab_messages WHERE body = %s RETURNING message_id", [body]).length;
 
 const problems = [];
 const check = (ok, message) => {
@@ -102,15 +102,15 @@ try {
   // ------------------------------------------------------------------ 服务
   server = spawn(
     PYTHON,
-    ["-m", "uvicorn", "workhub.api:app", "--host", "127.0.0.1", "--port", String(appPort)],
+    ["-m", "uvicorn", "oams.api:app", "--host", "127.0.0.1", "--port", String(appPort)],
     {
       cwd: ROOT,
       stdio: "ignore",
       env: {
         ...process.env,
         PYTHONPATH: ROOT + "/app",
-        WORKHUB_DATABASE_URL: dbUrl,
-        WORKHUB_DEV_AUTOLOGIN: "1", // 本机演示站的口径；只决定「我是谁」，权限一条不少
+        OAMS_DATABASE_URL: dbUrl,
+        OAMS_DEV_AUTOLOGIN: "1", // 本机演示站的口径；只决定「我是谁」，权限一条不少
       },
     },
   );

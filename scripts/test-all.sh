@@ -22,11 +22,11 @@ if [[ ! -x "$PYTHON" ]]; then
 fi
 
 # 口令不进仓库：先看环境变量，再看本机 .env（.env 已被 git 忽略）。都没有就用占位串，
-# 这时带库的用例会按「没有可用数据库」跳过——别把跳过当绿灯，把 WORKHUB_DATABASE_URL 配上。
-if [[ -z "${WORKHUB_DATABASE_URL:-}" && -f "$ROOT/.env" ]]; then
+# 这时带库的用例会按「没有可用数据库」跳过——别把跳过当绿灯，把 OAMS_DATABASE_URL 配上。
+if [[ -z "${OAMS_DATABASE_URL:-}" && -f "$ROOT/.env" ]]; then
   set -a; . "$ROOT/.env"; set +a
 fi
-export WORKHUB_DATABASE_URL="${WORKHUB_DATABASE_URL:-postgresql://workhub:change-me@127.0.0.1:55433/workhub}"
+export OAMS_DATABASE_URL="${OAMS_DATABASE_URL:-postgresql://oams:change-me@127.0.0.1:55433/oams}"
 export PYTHONPATH="$ROOT/app${PYTHONPATH:+:$PYTHONPATH}"
 
 TMPDIR_RUN="$(mktemp -d)"
@@ -43,7 +43,7 @@ set -e
 
 echo
 echo "== database suite (@pytest.mark.db, skipped when no PostgreSQL) =="
-echo "   WORKHUB_DATABASE_URL=$WORKHUB_DATABASE_URL"
+echo "   OAMS_DATABASE_URL=$OAMS_DATABASE_URL"
 set +e
 "$PYTHON" -m pytest -q -m "db" "$@" 2>&1 | tee "$TMPDIR_RUN/db.log"
 db_status=${PIPESTATUS[0]}

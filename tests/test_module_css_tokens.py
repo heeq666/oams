@@ -24,9 +24,9 @@ import pytest
 CSS_PATH = (
     Path(__file__).resolve().parents[1]
     / "app"
-    / "workhub"
+    / "oams"
     / "static"
-    / "workhub-modules.css"
+    / "oams-modules.css"
 )
 
 _COMMENT = re.compile(r"/\*.*?\*/", re.S)
@@ -352,6 +352,6 @@ def test_locked_rules_use_tokens_not_literal_colour_or_radius(selector):
                 assert "#" not in value, f"{rule.where} 的 {prop} 写死了颜色：{value}"
                 assert "rgb(" not in value, f"{rule.where} 的 {prop} 写死了颜色：{value}"
             if prop.startswith("border-radius"):
-                assert value.startswith("var(--wh-radius"), (
+                assert value.startswith("var(--oams-radius"), (
                     f"{rule.where} 的 {prop} 没走圆角令牌：{value}"
                 )

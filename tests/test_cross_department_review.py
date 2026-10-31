@@ -25,9 +25,9 @@ import uuid
 import pytest
 from starlette.testclient import TestClient
 
-import workhub.api
-from workhub import web
-from workhub.config import settings
+import oams.api
+from oams import web
+from oams.config import settings
 
 pytestmark = pytest.mark.db
 
@@ -84,29 +84,29 @@ def room(seeded_database, monkeypatch):
 
     conn = psycopg.connect(seeded_database.url, row_factory=dict_row)
     monkeypatch.setattr(web, "connection", lambda: _one_transaction(conn))
-    monkeypatch.setattr(workhub.api, "connection", lambda: _one_transaction(conn))
+    monkeypatch.setattr(oams.api, "connection", lambda: _one_transaction(conn))
 
     # 设计部得有个「不是审核人」的作者：种子里这个部门只有负责人，而他就是审核人。
     conn.execute(
-        """INSERT INTO workhub.positions (position_code, title, org_unit_id)
-           SELECT 'DESIGNER', '设计师', org_unit_id FROM workhub.org_units
+        """INSERT INTO oams.positions (position_code, title, org_unit_id)
+           SELECT 'DESIGNER', '设计师', org_unit_id FROM oams.org_units
             WHERE org_code = 'DESIGN'""")
     conn.execute(
-        """INSERT INTO workhub.workforce_members
+        """INSERT INTO oams.workforce_members
                  (employee_code, display_name, employment_status, joined_at)
            VALUES (%s, '设计师小李', 'active', current_date - 30)""", (DESIGN_AUTHOR,))
     conn.execute(
-        """INSERT INTO workhub.position_assignments
+        """INSERT INTO oams.position_assignments
                  (member_id, position_id, assignment_type, status, starts_at, reason)
            SELECT m.member_id, p.position_id, 'primary', 'active',
                   now() - interval '30 days', 'seed'
-             FROM workhub.workforce_members m, workhub.positions p
+             FROM oams.workforce_members m, oams.positions p
             WHERE m.employee_code = %s AND p.position_code = 'DESIGNER'""", (DESIGN_AUTHOR,))
     conn.execute(
-        """INSERT INTO workhub.permission_grants
+        """INSERT INTO oams.permission_grants
                  (subject_type, position_id, resource, action, scope_type, valid_from, reason)
            SELECT 'position', p.position_id, g.resource, g.action, 'all', now(), 'seed'
-             FROM workhub.positions p
+             FROM oams.positions p
              JOIN (VALUES ('workforce.org_units', 'read'),
                           ('workforce.positions', 'read'),
                           ('workforce.work_items', 'read'),
@@ -117,14 +117,14 @@ def room(seeded_database, monkeypatch):
     design = seeded_database.org_unit_id("DESIGN")
     hr = seeded_database.org_unit_id("HR")
     people = {code: conn.execute(
-        "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+        "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
         (code,)).fetchone()["member_id"]
         for code in (DESIGN_REVIEWER, PLATFORM, DESIGN_AUTHOR, HR_AUTHOR)}
 
     # 人事部有一张已经上线的公开页：这就是设计部可以「照着做」的那一页。
     # 公开页在库里要求 reviewed_by/reviewed_at 非空（表自身的约束），所以照填。
     source = conn.execute(
-        """INSERT INTO workhub.interfaces
+        """INSERT INTO oams.interfaces
                (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                 version_no, created_by, updated_by, reviewed_by, reviewed_at)
            VALUES (%s, 'hr-public-sample', '人事部招聘流程', 'active', 'public', '0.2', %s, 1, %s, %s, %s, now())
@@ -133,7 +133,7 @@ def room(seeded_database, monkeypatch):
          people[HR_AUTHOR], people[HR_AUTHOR], people[PLATFORM])).fetchone()["interface_id"]
     # 再加一张只有人事部自己能看见的页：它不许出现在设计部的选择里。
     hidden = conn.execute(
-        """INSERT INTO workhub.interfaces
+        """INSERT INTO oams.interfaces
                (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                 version_no, created_by, updated_by)
            VALUES (%s, 'hr-private-sample', '人事部内部名单', 'active', 'department', '0.2', %s, 1, %s, %s)
@@ -142,12 +142,12 @@ def room(seeded_database, monkeypatch):
          people[HR_AUTHOR], people[HR_AUTHOR])).fetchone()["interface_id"]
 
     state = {"me": DESIGN_AUTHOR, "cookie": "cross-department-test"}
-    monkeypatch.setattr(workhub.api, "principal_from_request",
+    monkeypatch.setattr(oams.api, "principal_from_request",
                         lambda request: {"member_id": people[state["me"]],
                                          "employee_code": state["me"],
                                          "display_name": state["me"],
                                          "employment_status": "active"})
-    client = TestClient(workhub.api.app)
+    client = TestClient(oams.api.app)
     client.cookies.set(settings.web_session_cookie, state["cookie"])
 
     def as_(code):
@@ -184,7 +184,7 @@ def test_a_page_built_on_another_departments_page_goes_to_the_company(room):
     assert "error=" not in location, urllib.parse.unquote(location)
     interface_id = location.split("/")[-1].split("?")[0]
     row = room["conn"].execute(
-        """SELECT based_on, status, review_stage FROM workhub.interfaces
+        """SELECT based_on, status, review_stage FROM oams.interfaces
             WHERE interface_id = %s""", (interface_id,)).fetchone()
     assert str(row["based_on"]) == str(room["source"]), "基础页要真的记在这一版上"
     assert row["status"] == "draft" and row["review_stage"] == "department"
@@ -201,7 +201,7 @@ def test_a_page_built_on_another_departments_page_goes_to_the_company(room):
                          follow_redirects=False)
     assert "saved=passed" in passed.headers["location"], passed.headers["location"]
     row = room["conn"].execute(
-        """SELECT status, review_stage FROM workhub.interfaces WHERE interface_id = %s""",
+        """SELECT status, review_stage FROM oams.interfaces WHERE interface_id = %s""",
         (interface_id,)).fetchone()
     assert row["status"] == "pending", "部门过了不等于上线"
     assert row["review_stage"] == "company", "跨部门的页要升到公司终审"
@@ -214,7 +214,7 @@ def test_a_page_built_on_another_departments_page_goes_to_the_company(room):
     assert "saved=approved" in final.headers["location"], final.headers["location"]
     row = room["conn"].execute(
         """SELECT status, reviewed_by, descriptor->'meta'->'review'->>'stage' AS stage
-             FROM workhub.interfaces WHERE interface_id = %s""", (interface_id,)).fetchone()
+             FROM oams.interfaces WHERE interface_id = %s""", (interface_id,)).fetchone()
     assert row["status"] == "active"
     assert row["stage"] == "company", "章上写的是公司终审这一级"
 
@@ -236,19 +236,19 @@ def test_a_page_you_cannot_see_cannot_be_chosen_as_a_basis(room):
 def test_choosing_your_own_departments_previous_version_is_pointless_and_says_so(room):
     """本部门上一版本来就会自动接上；在这里再选一次只会多一条错误来源。"""
     room["conn"].execute(
-        """INSERT INTO workhub.interfaces
+        """INSERT INTO oams.interfaces
                (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                 version_no, created_by, updated_by)
            VALUES (%s, 'design-own-sample', '设计部自家页', 'active', 'department', '0.2', %s, 1, %s, %s)""",
         (room["design"], json.dumps(DESCRIPTOR),
          room["conn"].execute(
-             "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+             "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
              (DESIGN_AUTHOR,)).fetchone()["member_id"],
          room["conn"].execute(
-             "SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+             "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
              (DESIGN_AUTHOR,)).fetchone()["member_id"]))
     own = room["conn"].execute(
-        "SELECT interface_id FROM workhub.interfaces WHERE slug = 'design-own-sample'").fetchone()
+        "SELECT interface_id FROM oams.interfaces WHERE slug = 'design-own-sample'").fetchone()
     response = room["client"].post(
         f"/departments/{room['design']}/new",
         data={"csrf": _page_token("cross-department-test"), "name": "多余指定",

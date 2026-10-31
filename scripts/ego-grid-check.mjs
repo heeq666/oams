@@ -12,14 +12,14 @@
 // 退出码只看这两条 + 外壳在不在；行内数据只进报告，留给人工看。
 //
 // 注意：ego 脚本拿不到 argv（process.argv 是空的），也不继承 shell 环境变量，
-// 所以配置只能是下面的常量；要临时改，写 /tmp/workhub-ego-grid.json 覆盖即可。
+// 所以配置只能是下面的常量；要临时改，写 /tmp/oams-ego-grid.json 覆盖即可。
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { readFile } from "node:fs/promises";
 
 const ROOT = "/Volumes/工作/aiworkspace/company-workhub";
 const PYTHON = ROOT + "/.venv/bin/python";
-const CONFIG_PATH = "/tmp/workhub-ego-grid.json";
+const CONFIG_PATH = "/tmp/oams-ego-grid.json";
 
 const DEFAULTS = {
   widths: [1440, 1024, 768],
@@ -27,7 +27,7 @@ const DEFAULTS = {
   paths: ["/settings", "/", "/progress", "/board", "/reviews"],
   outDir: ROOT + "/assets/screenshots/grid",
   shot: true,
-  spaceName: "workhub 12 栅格验收",
+  spaceName: "oams 12 栅格验收",
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,11 +44,11 @@ async function loadConfig() {
 
 // 服务要连真库（跟演示站同一条，取自 .env），不为测试另建库。
 async function databaseUrl() {
-  const fromEnv = (process.env.WORKHUB_DATABASE_URL || "").trim();
+  const fromEnv = (process.env.OAMS_DATABASE_URL || "").trim();
   if (fromEnv) return fromEnv;
   const text = await readFile(ROOT + "/.env", "utf8");
-  const line = text.split("\n").find((l) => l.trim().startsWith("WORKHUB_DATABASE_URL="));
-  if (!line) throw new Error(".env 里没有 WORKHUB_DATABASE_URL");
+  const line = text.split("\n").find((l) => l.trim().startsWith("OAMS_DATABASE_URL="));
+  if (!line) throw new Error(".env 里没有 OAMS_DATABASE_URL");
   return line.slice(line.indexOf("=") + 1).trim();
 }
 
@@ -129,15 +129,15 @@ const problems = [];
 try {
   server = spawn(
     PYTHON,
-    ["-m", "uvicorn", "workhub.api:app", "--host", "127.0.0.1", "--port", String(appPort)],
+    ["-m", "uvicorn", "oams.api:app", "--host", "127.0.0.1", "--port", String(appPort)],
     {
       cwd: ROOT,
       stdio: "ignore",
       env: {
         ...process.env,
         PYTHONPATH: ROOT + "/app",
-        WORKHUB_DATABASE_URL: await databaseUrl(),
-        WORKHUB_DEV_AUTOLOGIN: "1",
+        OAMS_DATABASE_URL: await databaseUrl(),
+        OAMS_DEV_AUTOLOGIN: "1",
       },
     },
   );

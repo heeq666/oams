@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATES = ROOT / "app" / "workhub" / "templates"
-STATIC = ROOT / "app" / "workhub" / "static"
+TEMPLATES = ROOT / "app" / "oams" / "templates"
+STATIC = ROOT / "app" / "oams" / "static"
 BASE = TEMPLATES / "base.html"
 
 

@@ -23,12 +23,12 @@ from pathlib import Path
 
 import pytest
 
-from workhub.render import render_interface
+from oams.render import render_interface
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MODULES_CSS = REPO_ROOT / "app" / "workhub" / "static" / "workhub-modules.css"
-BASE_TEMPLATE = REPO_ROOT / "app" / "workhub" / "templates" / "base.html"
-TEMPLATE_DIR = REPO_ROOT / "app" / "workhub" / "templates"
+MODULES_CSS = REPO_ROOT / "app" / "oams" / "static" / "oams-modules.css"
+BASE_TEMPLATE = REPO_ROOT / "app" / "oams" / "templates" / "base.html"
+TEMPLATE_DIR = REPO_ROOT / "app" / "oams" / "templates"
 
 _COMMENT = re.compile(r"/\*.*?\*/", re.S)
 
@@ -206,23 +206,23 @@ def test_a_review_card_with_changes_renders_its_change_rows(site) -> None:
     import psycopg
     from psycopg.rows import dict_row
 
-    from workhub.security import issue_session
+    from oams.security import issue_session
 
-    url = os.environ["WORKHUB_DATABASE_URL"]
+    url = os.environ["OAMS_DATABASE_URL"]
     with psycopg.connect(url, row_factory=dict_row) as conn:
         admin = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'ADMIN001'"
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code = 'ADMIN001'"
         ).fetchone()["member_id"]
         # 审的人必须不是作者：队列不把作者自己的提交给他看。
         reviewer = conn.execute(
-            "SELECT member_id FROM workhub.workforce_members WHERE employee_code = 'DESIGN001'"
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code = 'DESIGN001'"
         ).fetchone()["member_id"]
         org = conn.execute(
-            "SELECT org_unit_id FROM workhub.org_units WHERE org_code = 'DESIGN'"
+            "SELECT org_unit_id FROM oams.org_units WHERE org_code = 'DESIGN'"
         ).fetchone()["org_unit_id"]
-        conn.execute("DELETE FROM workhub.interfaces WHERE slug = %s", (PROBE_SLUG,))
+        conn.execute("DELETE FROM oams.interfaces WHERE slug = %s", (PROBE_SLUG,))
         conn.execute(
-            """INSERT INTO workhub.interfaces
+            """INSERT INTO oams.interfaces
                    (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
                     version_no, created_by, updated_by)
                VALUES (%s, %s, %s, 'active', 'department', '0.2', %s, 1, %s, %s)""",
@@ -251,7 +251,7 @@ def test_a_review_card_with_changes_renders_its_change_rows(site) -> None:
 
         with psycopg.connect(url, row_factory=dict_row) as conn:
             draft = conn.execute(
-                """SELECT interface_id FROM workhub.interfaces
+                """SELECT interface_id FROM oams.interfaces
                    WHERE slug = %s AND status = 'draft'""", (PROBE_SLUG,)).fetchone()["interface_id"]
         status, page, _ = call(f"/departments/{org}/{draft}")
         assert status == 200, status
@@ -279,7 +279,7 @@ def test_a_review_card_with_changes_renders_its_change_rows(site) -> None:
         assert row.get("gap") == "12px", f"改动行里「级别/部门/正文」三列之间是 12；实际 {row.get('gap')!r}"
     finally:
         with psycopg.connect(url, row_factory=dict_row) as conn:
-            conn.execute("DELETE FROM workhub.interfaces WHERE slug = %s", (PROBE_SLUG,))
+            conn.execute("DELETE FROM oams.interfaces WHERE slug = %s", (PROBE_SLUG,))
 
 
 def test_no_template_emits_the_old_diff_list_selector() -> None:

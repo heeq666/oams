@@ -20,9 +20,9 @@ from jinja2 import Environment, FileSystemLoader, meta
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-import workhub.render as render  # noqa: E402
-from workhub.modules import MODULE_REGISTRY, get_module  # noqa: E402
-from workhub.render import (  # noqa: E402
+import oams.render as render  # noqa: E402
+from oams.modules import MODULE_REGISTRY, get_module  # noqa: E402
+from oams.render import (  # noqa: E402
     MAX_RENDER_DEPTH,
     RenderError,
     known_module_keys,
@@ -451,7 +451,7 @@ def test_table_honours_a_flat_rows_count():
 
 def test_readonly_drops_the_evidence_gallery_before_any_empty_state():
     # 证据件不进公司汇总，经理视角在 render_module 里就被 _hidden_in_readonly
-    # 整块摘掉了（见 app/workhub/render.py:755），所以只读视角没有「证据」这一块，
+    # 整块摘掉了（见 app/oams/render.py:755），所以只读视角没有「证据」这一块，
     # 也不该有「没有提供证据」这类空态文案——那句话原本永远到不了，已按裁决删掉。
     # 这里锁的是「整块不出现」，别拿空态文案当只读的验收点。
     html = render_read_only(one("evidence_gallery"), {}, {})
@@ -623,7 +623,7 @@ def test_an_unregistered_child_is_rejected_not_skipped():
 # --------------------------------------------------------------------------- #
 
 
-CSS_PATH = Path(render.__file__).resolve().parent / "static" / "workhub-modules.css"
+CSS_PATH = Path(render.__file__).resolve().parent / "static" / "oams-modules.css"
 
 
 def test_the_stylesheet_exists_and_is_namespaced():

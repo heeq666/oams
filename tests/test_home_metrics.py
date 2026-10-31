@@ -1,10 +1,10 @@
 """Company metrics in the web layer (task-6).
 
-The numbers come from workhub.funnel over a FixtureDataCenter, so these tests
+The numbers come from oams.funnel over a FixtureDataCenter, so these tests
 carry the contract's measured 26D冬1-2波 values (59 / 9 / 29 / 39 /
 ¥1,745.87 万 / 5.18) and need neither a data centre nor a database.
 
-The database is stubbed at the module boundary (workhub.web.connection and the
+The database is stubbed at the module boundary (oams.web.connection and the
 security helpers web.py imported), because everything under test here is the
 presentation of platform numbers, not persistence. The one behaviour that must
 never regress is that an unreachable data centre degrades the panel instead of
@@ -22,12 +22,12 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-# api imports workhub.web at the bottom of the module, so it must be imported
+# api imports oams.web at the bottom of the module, so it must be imported
 # first: the other order is a circular import.
-from workhub.api import app
-from workhub import metrics, web
-from workhub.config import settings
-from workhub.datacenter import DataCenterError, DataCenterNotConfigured, FixtureDataCenter
+from oams.api import app
+from oams import metrics, web
+from oams.config import settings
+from oams.datacenter import DataCenterError, DataCenterNotConfigured, FixtureDataCenter
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "datacenter_26d.json"
 WAVE = "26D冬1-2波"
@@ -69,13 +69,13 @@ class _FakeConn:
 
     def execute(self, sql: str, params: Any = None) -> _Result:
         text = " ".join(sql.split())
-        # 顺序即精确度：未读那条里也含 "FROM workhub.interfaces"（fill 群的权限
+        # 顺序即精确度：未读那条里也含 "FROM oams.interfaces"（fill 群的权限
         # 子查询），所以它必须排在前面，否则会掉进「不认识的查询」那条分支。
         if "coalesce(sum(c.unread)" in text:      # 入口按钮上的未读数，每页都会算
             return _Result([{"total": 0}])
-        if "FROM workhub.interfaces" in text:
+        if "FROM oams.interfaces" in text:
             return _Result([])
-        if "FROM workhub.org_units" in text:
+        if "FROM oams.org_units" in text:
             return _Result([self.org_unit])
         raise AssertionError(f"unrecognised SQL: {text[:80]}")
 
@@ -103,7 +103,7 @@ def stubbed(monkeypatch, org_unit):
     def connection_stub():
         return _fake_connection(conn)
 
-    app_module = __import__("workhub.api", fromlist=["api"])
+    app_module = __import__("oams.api", fromlist=["api"])
     for module in (web, app_module):
         monkeypatch.setattr(module, "connection", connection_stub)
     monkeypatch.setattr(web, "has_permission", lambda *a, **k: True)
@@ -234,7 +234,7 @@ def test_unconfigured_data_centre_degrades_instead_of_raising(stubbed, monkeypat
     assert panel["available"] is False
     assert panel["metrics"] == []
     assert "未配置" in panel["reason"]
-    assert "WORKHUB_DATACENTER_URL" in panel["reason"]
+    assert "OAMS_DATACENTER_URL" in panel["reason"]
 
 
 def test_data_centre_error_degrades_instead_of_raising(stubbed, monkeypatch):
@@ -357,7 +357,7 @@ def test_home_json_never_500s_when_the_data_centre_is_down(stubbed, monkeypatch)
 
 
 def test_home_json_requires_a_session(monkeypatch):
-    api_module = __import__("workhub.api", fromlist=["api"])
+    api_module = __import__("oams.api", fromlist=["api"])
     monkeypatch.setattr(api_module, "principal_from_request", lambda request: None)
 
     response = TestClient(app).get("/metrics/home.json")

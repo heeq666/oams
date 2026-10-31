@@ -23,8 +23,8 @@ import uuid
 
 import pytest
 
-from workhub.config import settings
-from workhub.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
+from oams.config import settings
+from oams.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
                               admin_level, administered_org_unit_ids, forget_dev_identities)
 
 
@@ -38,7 +38,7 @@ def shortcut(monkeypatch):
 
 
 def _one(sql: str, params=()):
-    from workhub.db import connection
+    from oams.db import connection
 
     with connection() as conn:
         return conn.execute(sql, params).fetchone()
@@ -46,7 +46,7 @@ def _one(sql: str, params=()):
 
 def _member_id(employee_code: str):
     """Resolve a seeded employee in the database the app is currently pointed at."""
-    row = _one("""SELECT member_id FROM workhub.workforce_members
+    row = _one("""SELECT member_id FROM oams.workforce_members
                    WHERE employee_code = %s AND employment_status = 'active'""", (employee_code,))
     if row is None:
         pytest.skip(f"no {employee_code} in the database the app is pointed at")
@@ -54,20 +54,20 @@ def _member_id(employee_code: str):
 
 
 def _level_of(employee_code: str) -> str:
-    from workhub.db import connection
+    from oams.db import connection
 
     with connection() as conn:
         return admin_level(conn, _member_id(employee_code))
 
 
 def _departments_of(employee_code: str) -> set[str]:
-    from workhub.db import connection
+    from oams.db import connection
 
     with connection() as conn:
         ids = administered_org_unit_ids(conn, _member_id(employee_code))
         if not ids:
             return set()
-        rows = conn.execute("SELECT name FROM workhub.org_units WHERE org_unit_id = ANY(%s)",
+        rows = conn.execute("SELECT name FROM oams.org_units WHERE org_unit_id = ANY(%s)",
                             (list(ids),)).fetchall()
     return {row["name"] for row in rows}
 
@@ -90,17 +90,17 @@ def _open(url: str, employee_code: str | None = None):
 
 def _publish(org_code: str, employee_code: str, label: str):
     """Publish one active interface with one live entry, owned by *employee_code*."""
-    from workhub.db import connection
+    from oams.db import connection
 
-    member = _one("SELECT member_id FROM workhub.workforce_members WHERE employee_code = %s",
+    member = _one("SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
                   (employee_code,))
-    org = _one("SELECT org_unit_id FROM workhub.org_units WHERE org_code = %s", (org_code,))
+    org = _one("SELECT org_unit_id FROM oams.org_units WHERE org_code = %s", (org_code,))
     if member is None or org is None:
         pytest.skip(f"seed lacks {employee_code} or {org_code}")
     name = f"角色验证-{label}-{uuid.uuid4().hex[:6]}"
     with connection() as conn:
         interface = conn.execute(
-            """INSERT INTO workhub.interfaces
+            """INSERT INTO oams.interfaces
                    (org_unit_id, slug, name, status, schema_version, descriptor,
                     created_by, updated_by)
                VALUES (%s, %s, %s, 'active', '0.2', %s, %s, %s)
@@ -109,7 +109,7 @@ def _publish(org_code: str, employee_code: str, label: str):
              json.dumps({"schema_version": "0.2", "name": name}), member["member_id"],
              member["member_id"])).fetchone()
         conn.execute(
-            """INSERT INTO workhub.interface_entries
+            """INSERT INTO oams.interface_entries
                    (interface_id, title, status, reported_by, entry_mode, status_entry, reported_at)
                VALUES (%s, %s, 'in_progress', %s, 'live', 'active', now())""",
             (interface["interface_id"], f"{label}-001", member["member_id"]))
@@ -117,11 +117,11 @@ def _publish(org_code: str, employee_code: str, label: str):
 
 
 def _unpublish(interface_id) -> None:
-    from workhub.db import connection
+    from oams.db import connection
 
     with connection() as conn:
-        conn.execute("DELETE FROM workhub.interface_entries WHERE interface_id = %s", (interface_id,))
-        conn.execute("DELETE FROM workhub.interfaces WHERE interface_id = %s", (interface_id,))
+        conn.execute("DELETE FROM oams.interface_entries WHERE interface_id = %s", (interface_id,))
+        conn.execute("DELETE FROM oams.interfaces WHERE interface_id = %s", (interface_id,))
 
 
 # ---------------------------------------------------------------------------
@@ -271,10 +271,10 @@ def _open_head(url: str, employee_code: str | None = None, cookie: str | None = 
 
 
 def test_the_detour_lands_on_the_first_screen_the_session_can_read():
-    import workhub.api  # noqa: F401  -- web imports api; web alone is a half-built module
+    import oams.api  # noqa: F401  -- web imports api; web alone is a half-built module
     from types import SimpleNamespace
 
-    from workhub.web import _landing_url
+    from oams.web import _landing_url
 
     def landing(**flags):
         caps = {"departments": False, "progress": False, "review": False, "admin": False}
@@ -291,10 +291,10 @@ def test_the_detour_lands_on_the_first_screen_the_session_can_read():
 
 
 def test_a_refused_form_keeps_the_explanation_but_a_refused_page_does_not():
-    import workhub.api  # noqa: F401
+    import oams.api  # noqa: F401
     from starlette.requests import Request
 
-    from workhub.web import _denied
+    from oams.web import _denied
 
     def scope(method):
         return {"type": "http", "method": method, "path": "/x", "raw_path": b"/x",
