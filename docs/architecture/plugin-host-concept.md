@@ -482,7 +482,7 @@ oams plugin preview ./my-dept.yaml    # 本地起一个假的渲染预览
 14. **打样词表定稿**：`后工艺`、`剪裁中` 归在制（本就在）；`重做` / `已安排` / `毛衣已安排` **不归** 未开始，一并移入在制词表——已排产、已重排的活是在制，塞进「未开始」会高估打样未完成。→ 已改（`funnel.SAMPLE_WIP_WORDS` 13 词 / `UNCLASSIFIED_SAMPLE_WORDS` 剩 8 词）
 15. **ROI 展示四舍五入**：5.1751 显示 5.18，不再截断成 5.17——展示跟随算术，不再迁就文档里印过的数。→ 已改（`funnel.format_metric`）
 16. **登录先不做**，后续直接接入登录中心（账号中心契约未定前不自己造密码体系）。→ 已定，v1 继续用 CLI 令牌
-17. **`data/live-design-interface.json` 两处人工合并保留**（该文件已 gitignore，仓库里提交的是设计样本）。→ 已定
+17. **`data/live-design-interface.json` 两处人工合并保留**（该文件已 gitignore、不在仓库里；测试用的设计样本是另一份 `tests/fixtures/live-design-interface.json`，与它无关）。→ 已定
 
 **仍待裁决：无。**
 
