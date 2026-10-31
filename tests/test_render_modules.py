@@ -74,11 +74,13 @@ VALUES = {
 }
 
 AGGREGATES = {
-    "funnel.designed": 128, "funnel.sample_done": 59, "funnel.sample_wip": 24,
-    "funnel.sample_pending": 45, "funnel.sample_open": 69, "funnel.priced": 87,
-    "funnel.ordered": 63, "funnel.not_ordered": 65, "funnel.qty": 63289,
-    "funnel.gmv": 17458734.0, "funnel.roi": 5.1751,
-    "rank.funnel.qty.抖音": 820, "rank.funnel.qty.天猫": 640, "rank.funnel.qty.拼多多": 310,
+    "dept.DESIGN.designed": 128, "dept.DESIGN.sample_done": 59,
+    "dept.DESIGN.sample_wip": 24, "dept.DESIGN.sample_pending": 45,
+    "dept.DESIGN.sample_open": 69, "dept.DESIGN.priced": 87,
+    "dept.DESIGN.ordered": 63, "dept.DESIGN.not_ordered": 65, "dept.DESIGN.qty": 63289,
+    "dept.DESIGN.gmv": 17458734.0, "dept.DESIGN.roi": 5.1751,
+    "rank.dept.DESIGN.qty.抖音": 820, "rank.dept.DESIGN.qty.天猫": 640,
+    "rank.dept.DESIGN.qty.拼多多": 310,
     "activity": [
         {"when": "今天 09:12", "what": "补充了打样单号 SY-2610", "who": "设计部"},
         {"when": "昨天 16:40", "what": "把 3 款推进到打样中", "who": "设计部"},
@@ -87,6 +89,17 @@ AGGREGATES = {
 for _index, (_word, _standard) in enumerate(STATUS_MAP.items()):
     AGGREGATES[f"status.{_word}"] = 10 + _index * 5
     AGGREGATES[f"status.{_standard}"] = 10 + _index * 5
+
+#: 展示件引的指标必须先在本页 emit（契约 §2：自产才能自用）。
+#: 平台目录现在是空表——商品中心下线时那 11 个 funnel.* 一起删了——所以这里
+#: 全部走部门命名空间，聚合口径也写在本页，读者能自己核对数字从哪来。
+EMITTED_METRICS = [
+    {"metric_key": f"dept.DESIGN.{slug}", "mode": "emit",
+     "agg": "avg" if slug == "roi" else ("sum" if slug in {"qty", "gmv"} else "count"),
+     "from_field": "f_metric" if slug in {"qty", "gmv", "roi"} else "f_status"}
+    for slug in ("designed", "sample_done", "sample_wip", "sample_pending", "sample_open",
+                 "priced", "ordered", "not_ordered", "qty", "gmv", "roi")
+]
 
 LEAF = {"type": "note_block", "params": {"text": "说明"}}
 
@@ -115,15 +128,15 @@ MODULES: dict[str, dict] = {
     "evidence_gallery": {"type": "evidence_gallery",
                          "source_fields": ["title", "evidence_url", "note"]},
     "metric_card": {"type": "metric_card",
-                    "params": {"metric_key": "funnel.sample_done", "span": 2}},
+                    "params": {"metric_key": "dept.DESIGN.sample_done", "span": 2}},
     "metric_grid": {"type": "metric_grid",
-                    "params": {"metric_keys": ["funnel.sample_done", "funnel.qty"],
+                    "params": {"metric_keys": ["dept.DESIGN.sample_done", "dept.DESIGN.qty"],
                                "columns": 2}},
     "flow_strip": {"type": "flow_strip",
-                   "params": {"metrics": ["funnel.designed", "funnel.sample_done"],
+                   "params": {"metrics": ["dept.DESIGN.designed", "dept.DESIGN.sample_done"],
                               "labels": ["设计", "出样"]}},
     "status_chart": {"type": "status_chart", "params": {"dimension": "status"}},
-    "rank_list": {"type": "rank_list", "params": {"metric_key": "funnel.qty", "limit": 2}},
+    "rank_list": {"type": "rank_list", "params": {"metric_key": "dept.DESIGN.qty", "limit": 2}},
     "activity_feed": {"type": "activity_feed", "params": {"limit": 1}},
     "note_block": {"type": "note_block", "params": {"text": "这一页说明打样口径。"}},
 }
@@ -139,6 +152,7 @@ def page(*modules: dict, **overrides) -> dict:
         "modules": list(modules) or [LEAF],
         "fields": [dict(field) for field in FIELDS],
         "status_map": dict(STATUS_MAP),
+        "metrics": [dict(binding) for binding in EMITTED_METRICS],
     }
     descriptor.update(overrides)
     return descriptor
@@ -341,11 +355,15 @@ def test_readonly_drops_a_container_whose_children_are_all_private():
 # --------------------------------------------------------------------------- #
 
 
-def test_metric_card_shows_the_aggregate_value_and_unit():
+def test_metric_card_shows_the_aggregate_value():
+    """卡片上的名字与数字都可追溯到本页声明的那条指标。
+
+    平台目录空了以后，部门指标没有目录里的 name/unit，所以标签落到键的后段
+    （`sample_done`）、单位留空——不写死中文名，也不编一个单位出来。
+    """
     html = render_interface(one("metric_card"), {}, AGGREGATES)
-    assert "已出样" in html          # name comes from the metric catalogue
-    assert "59" in html
-    assert "款" in html              # unit comes from the metric catalogue
+    assert "sample_done" in html     # 标签来自本页 emit 的键
+    assert "59" in html              # 数字来自聚合，不来自描述符
 
 
 def test_metric_card_without_aggregates_does_not_invent_a_number():
@@ -358,19 +376,28 @@ def test_metric_card_without_aggregates_does_not_invent_a_number():
 def test_metric_grid_renders_one_cell_per_bound_metric():
     html = render_interface(one("metric_grid"), {}, AGGREGATES)
     assert html.count('class="wh-metric-cell"') == 2
-    assert "已出样" in html and "下单件数" in html
+    assert "sample_done" in html and "qty" in html
+    assert "59" in html and "63,289" in html   # 第二个数带千分位
 
 
 def test_metric_money_and_roi_use_the_canonical_formatting():
+    """金额与 ROI 仍走同一份格式化，但页面只印数字本体。
+
+    `metric_card`/`metric_grid` 用 `aggregate(key, with_unit=False)` 印裸数字，
+    单位另起一个 span；而部门指标没有目录里的 unit 元数据，所以 ¥ / 万 / 倍
+    这些字形目前不会出现在页面上——形状规则本身由
+    `tests/test_metric_format.py` 逐条钉住（`dept.DESIGN.gmv` 仍按 `.gmv`
+    后缀走万元写法）。这里钉的是「页面这一层没退化成未格式化的原值」。
+    """
     money = render_interface(
-        page({"type": "metric_card", "params": {"metric_key": "funnel.gmv"}}), {}, AGGREGATES)
-    assert "¥1,745.87 万" in money
+        page({"type": "metric_card",
+              "params": {"metric_key": "dept.DESIGN.gmv"}}), {}, AGGREGATES)
+    assert "17,458,734" in money          # 千分位，不是 17458734
     roi = render_interface(page({"type": "metric_card",
-                                 "params": {"metric_key": "funnel.roi"}}), {}, AGGREGATES)
+                                 "params": {"metric_key": "dept.DESIGN.roi"}}), {}, AGGREGATES)
     # Rounded half up by owner ruling (2026-10-23): 5.1751 renders as 5.18.
     assert "5.18" in roi
     assert "5.17" not in roi
-    assert "倍" in roi
 
 
 def test_flow_strip_uses_the_declared_stage_labels():
@@ -689,7 +716,7 @@ def test_formatting_keeps_missing_and_zero_apart():
 def test_an_aggregate_of_zero_renders_as_zero_not_a_dash():
     """口子上的 0 是「这期真的是 0」，不是「没数据」——两种含义不能混。"""
 
-    html = render_interface(one("metric_card"), {}, {"funnel.sample_done": 0})
+    html = render_interface(one("metric_card"), {}, {"dept.DESIGN.sample_done": 0})
     values = re.findall(r'<span class="wh-metric-value">(.*?)</span>', html)
     assert values == ["0"], values
     assert render.EMPTY not in values

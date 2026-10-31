@@ -210,10 +210,20 @@ def test_rejects_nesting_deeper_than_the_render_limit():
 
 
 def test_display_module_reads_aggregates_not_the_descriptor():
-    descriptor = base(modules=[{"type": "metric_card",
-                                "params": {"metric_key": "funnel.sample_done"}}])
-    html = render_interface(descriptor, aggregates={"funnel.sample_done": 59})
-    assert "已出样" in html
+    """卡片上的数字来自聚合，不来自描述符。
+
+    指标是本页自己 emit 的（`dept.DESIGN.sample_done`）——平台目录空了以后，
+    部门页只能自产自用（契约 §2）。目录里没有这个名字，所以卡片标签落到键的
+    后段（`sample_done`），不再有写死的中文名。
+    """
+    descriptor = base(
+        modules=[{"type": "metric_card",
+                  "params": {"metric_key": "dept.DESIGN.sample_done"}}],
+        metrics=[{"metric_key": "dept.DESIGN.sample_done", "mode": "emit",
+                  "agg": "count", "from_field": "status", "where_status": "done"}],
+    )
+    html = render_interface(descriptor, aggregates={"dept.DESIGN.sample_done": 59})
+    assert "sample_done" in html
     assert "59" in html
     # without aggregates the card says so instead of inventing a number
     assert "\u2014" in render_interface(descriptor)
