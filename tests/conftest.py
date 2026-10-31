@@ -111,7 +111,27 @@ def pytest_configure(config: pytest.Config) -> None:
 # turns every db-marked item into a skip when nothing answers, so the guarantee is
 # enforced in one place instead of remembered at every call site.
 
+# 「这个库建过表了吗」的判据：必须是 ``app/oams/schema.sql`` 真正创建的对象。
+#
+# 原来判的是 ``oams.schema_migrations``（增量迁移的台账表）。``f9fae3d`` 用单文件
+# ``schema.sql`` + ``oams db init`` 取代增量迁移，那张台账表随之消失 —— 判据没跟着改，
+# 后果是**任何新库跑完 db init 之后，所有 db 用例全 skip**，pytest 还是 ``0 failed``
+# 一片绿。踩的正是 AGENTS.md 里「看 skip 数」那一条：静默跳过比红更危险。
+#
+# 换判据时挑 schema.sql 里第一个建的表，别再造一张「只为了被探测」的台账表。
+_SCHEMA_MARKER = "oams.workforce_members"
+
 _DB_PROBE: list[tuple[bool, str]] = []
+
+
+def schema_initialised(url: str) -> bool:
+    """这个库里 oams schema 建好了吗（判据见 ``_SCHEMA_MARKER``）。"""
+
+    import psycopg
+
+    with psycopg.connect(url, connect_timeout=3) as conn:
+        row = conn.execute(f"SELECT to_regclass('{_SCHEMA_MARKER}')").fetchone()
+    return bool(row) and row[0] is not None
 
 
 def database_usable() -> tuple[bool, str]:
@@ -129,7 +149,7 @@ def database_usable() -> tuple[bool, str]:
             with psycopg.connect(url, connect_timeout=3) as conn:
                 conn.execute("SELECT 1")
                 migrated = conn.execute(
-                    "SELECT to_regclass('oams.schema_migrations')").fetchone()
+                    f"SELECT to_regclass('{_SCHEMA_MARKER}')").fetchone()
             if not migrated or migrated[0] is None:
                 result = (False, "oams schema is not migrated in this database")
             else:
@@ -231,11 +251,11 @@ def db_ready() -> Database:
     database = Database(url)
     try:
         database.scalar("SELECT 1")
-        database.scalar("SELECT to_regclass('oams.schema_migrations')")
+        database.scalar(f"SELECT to_regclass('{_SCHEMA_MARKER}')")
     except Exception as exc:  # pragma: no cover - depends on the machine
         pytest.skip(f"no usable PostgreSQL at {url}: {exc.__class__.__name__}: {exc}")
 
-    if database.scalar("SELECT to_regclass('oams.schema_migrations')") is None:
+    if database.scalar(f"SELECT to_regclass('{_SCHEMA_MARKER}')") is None:
         pytest.skip("oams schema is not migrated in this database")
 
     return database
