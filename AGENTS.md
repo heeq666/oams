@@ -49,7 +49,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 - `app/oams/` —— 应用本体：`modules.py`（模块注册表）、`templates/`、`static/`、`mcp/`（12 个 MCP 工具）、`cli.py`
 - `docs/architecture/` —— 契约与方案（`plugin-host-concept.md` 是现行主线，`v1-ui-redesign-plan.md` 已作废）；`collab-room-implementation-plan.md` 是协作室的实现清单（设计稿见 Figma 与 `docs/design/design-system-v1.md` §7）
 - `docs/design/` —— 界面规范与令牌
-- `app/oams/migrations/` —— 建表 SQL，`oams db init` 按文件名顺序执行；`db/deploy/` —— 建库、建 schema、授权（DBA 手工执行）
+- `app/oams/schema.sql` —— **唯一一份**建表脚本，`oams db init` 幂等执行；`db/deploy/` —— 双角色时期的建库脚本遗留（已废弃，别照它建角色）
 - `examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill（两个目录名 `workhub-*` 按批次保留、本轮不改；引用时写真实目录名，别指向不存在的路径）
 
 ## 约定
