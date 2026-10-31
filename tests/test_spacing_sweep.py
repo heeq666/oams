@@ -160,7 +160,8 @@ def test_the_evidence_row_disappears_without_a_link() -> None:
 
 # --- 审核卡的改动行 -----------------------------------------------------------
 
-BASE_DESCRIPTOR = json.loads((REPO_ROOT / "data" / "live-design-interface.json").read_text(encoding="utf-8"))
+# 用 tests/fixtures/ 里的快照，别读 `data/live-design-*.json`（被 .gitignore，clone 下来没有）。
+BASE_DESCRIPTOR = json.loads((REPO_ROOT / "tests" / "fixtures" / "live-design-interface.json").read_text(encoding="utf-8"))
 PROBE_SLUG = "spacing-sweep-probe"
 
 

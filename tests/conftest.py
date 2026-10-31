@@ -97,6 +97,15 @@ def pytest_configure(config: pytest.Config) -> None:
     app = str(APP_DIR)
     if app not in os.sys.path:
         os.sys.path.insert(0, app)
+    # 干净 clone 里没有 ``.env``：``workhub.config.Settings`` 要求 ``database_url``
+    # 必须在场，缺了会在 ``import workhub.api`` 时抛 ValidationError，整个套件连
+    # 收集都过不去（外面的人 clone 下来第一件事就是撞它）。
+    #
+    # 这里补一个**占位串**（``change-me``，本来就连不上），不是真库地址：
+    # db 用例照旧走「连不上就 skip」，真地址仍由 fixture 注入（见 ``database_url()``）。
+    # 本机有 ``.env`` 或真环境变量时这段不生效，行为与改动前完全一样。
+    if not os.environ.get("WORKHUB_DATABASE_URL") and _url_from_dotenv() is None:
+        os.environ["WORKHUB_DATABASE_URL"] = DEFAULT_DATABASE_URL
 
 
 # ---------------------------------------------------------------------------
