@@ -1,5 +1,5 @@
 ---
-name: workhub-department-interface
+name: oams-department-interface
 description: 按 OAMS 插件契约（descriptor v0.2）帮部门负责人制作本部门进度汇报界面，可离线校验、预览、提审
 ---
 
