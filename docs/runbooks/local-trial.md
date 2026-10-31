@@ -23,7 +23,7 @@
 
 **改名已落地（2026-11-01）**：库名和容器名都已从旧名改成 `oams`，改名不动数据、不动成员 id（演示库 16 页 / 144 条会话 / 4 成员 / 373 条审计原样，开发库 8 页 / 35 条会话原样）。上表就是现在真机上的名字；如果看到 `workhub` 开头的容器名或 `/workhub` 结尾的连接串，那是改名前的旧记录（不在本仓），按上表为准。
 
-仓库目录 `company-workhub` 与 `.local-backups/` 里已有的历史 bundle 文件名**沿用原样**：那是真机上已经存在的路径和文件，现在改名就跟备份对不上（恢复、排查都要按原文件名找）。
+仓库目录 `company-workhub` 与本机备份目录里已有的历史 bundle 文件名**沿用原样**：那是真机上已经存在的路径和文件，现在改名就跟备份对不上（恢复、排查都要按原文件名找）。备份不在仓库里。
 
 ## 一次性准备
 
@@ -56,8 +56,8 @@ docker run -d --name oams-live \
 ```sh
 # 沿用「一次性准备」里 export 的 OAMS_DATABASE_URL；新开终端就先把那四行重跑一遍
 export OAMS_ADMIN_MEMBER_ID=<上一步的 member_id>
-.venv/bin/python scripts/load_department_data.py data/live-design-department.json --apply
-.venv/bin/python scripts/seed-live-interface.py
+.venv/bin/python scripts/load_department_data.py data/neutral-demo-departments.json --apply
+.venv/bin/python scripts/seed-live-interface.py data/neutral-demo-ops-weekly.json
 ```
 
 `load_department_data.py` 不带 `--apply` 时是**只看不写**的预演（逐条打印 `[new]` / `[exists]`，末尾一行 `N new, M already present`）。先跑一遍确认要建的东西对，再加 `--apply` 落库。
@@ -66,7 +66,7 @@ export OAMS_ADMIN_MEMBER_ID=<上一步的 member_id>
 
 它会自己起一个临时服务把部门、岗位、成员、授权跑一遍完整接口（跑完自动关），默认在 127.0.0.1:8126，端口被占用时用 `OAMS_LOADER_PORT` 换一个。`OAMS_DATABASE_URL` 和 `OAMS_ADMIN_MEMBER_ID` 两个都要给，缺一个会直接报错退出（双角色那套 `OAMS_MIGRATOR_URL` 已随机制移除，不用再设）。
 
-第二个脚本会把[设计部打样进度界面](data/live-design-interface.json)启用，作为你点开就能看的示例。它每跑一次都是「归档上一版、启用新的一版」，所以**页面的地址（`/interfaces/<id>` 里那个 id）会变**，之前收藏的旧链接会失效、打开后被带回能看的页面。要的就是这个效果：页面描述升级过之后重跑一次，旧版自动退场。
+第二个脚本会把[运维周报界面](../../data/neutral-demo-ops-weekly.json)启用，作为你点开就能看的示例。它每跑一次都是「归档上一版、启用新的一版」，所以**页面的地址（`/interfaces/<id>` 里那个 id）会变**，之前收藏的旧链接会失效、打开后被带回能看的页面。要的就是这个效果：页面描述升级过之后重跑一次，旧版自动退场。
 
 ## 启动服务
 
