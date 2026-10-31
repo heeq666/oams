@@ -1,6 +1,6 @@
-/* Workhub module styles -- the interface renderer's own layer.
+/* OAMS module styles -- the interface renderer's own layer.
  *
- * Scope: ONLY markup produced by app/workhub/render.py (roots at .wh-interface).
+ * Scope: ONLY markup produced by app/oams/render.py (roots at .wh-interface).
  * Everything is namespaced wh-* so it can never fight the shell's global .card /
  * table / input rules in base.html. No inline styles anywhere in the markup, so
  * every value that varies (column count, bar width, status tone) is a class here.
@@ -11,38 +11,38 @@
 
 /* 令牌作用域。第二行是给「跨天日期分隔」这一件用的：它要同时出现在模块层和
    协作室消息区，而协作室那块不一定包在 .wh-interface 里。把作用域复制到本件
-   自身，是为了让它取 --wh-* 而不必去借外壳的 --bg/--ink（两套变量不许混用）。
+   自身，是为了让它取 --oams-* 而不必去借外壳的 --bg/--ink（两套变量不许混用）。
    自定义属性只是声明，不会改变这个节点自己的版式。 */
 .wh-interface,
 .wh-date-divider {
   /* Same five tiers as the shell (base.html :root): 26 container / 18 control
      (输入框、下拉、文本域也在这档 -- 它们长在卡片里，是二级元件) / 9 row / 4 micro
      / 999 pill. A module never invents its own radius. */
-  --wh-radius-card: 26px;
-  --wh-radius: 18px;
-  --wh-radius-sm: 9px;
-  --wh-radius-micro: 4px;
-  --wh-radius-pill: 999px;
-  --wh-line: #E5E5E5;
-  --wh-line-strong: #D4D4D4;
-  --wh-bg: #ffffff;
-  --wh-bg-muted: #fafafa;
-  --wh-ink: #0A0A0A;
-  --wh-muted: #737373;
-  --wh-accent: #171717;
-  --wh-on-accent: #FAFAFA;
-  --wh-hover: #E5E5E5;
-  --wh-fill: #F5F5F5;
-  --wh-info: #2563EB;
-  --wh-done-soft: #F0FDF4; --wh-done-line: #BBF7D0;
-  --wh-warning-soft: #FFFBEB; --wh-warning-line: #FDE68A;
-  --wh-danger-soft: #FEF2F2; --wh-danger-line: #FECACA;
-  --wh-info-soft: #EFF6FF; --wh-info-line: #BFDBFE;
-  --wh-blocked: #DC2626;
-  --wh-decision: #D97706;
-  --wh-done: #16A34A;
-  --wh-gap: 12px;
-  color: var(--wh-ink);
+  --oams-radius-card: 26px;
+  --oams-radius: 18px;
+  --oams-radius-sm: 9px;
+  --oams-radius-micro: 4px;
+  --oams-radius-pill: 999px;
+  --oams-line: #E5E5E5;
+  --oams-line-strong: #D4D4D4;
+  --oams-bg: #ffffff;
+  --oams-bg-muted: #fafafa;
+  --oams-ink: #0A0A0A;
+  --oams-muted: #737373;
+  --oams-accent: #171717;
+  --oams-on-accent: #FAFAFA;
+  --oams-hover: #E5E5E5;
+  --oams-fill: #F5F5F5;
+  --oams-info: #2563EB;
+  --oams-done-soft: #F0FDF4; --oams-done-line: #BBF7D0;
+  --oams-warning-soft: #FFFBEB; --oams-warning-line: #FDE68A;
+  --oams-danger-soft: #FEF2F2; --oams-danger-line: #FECACA;
+  --oams-info-soft: #EFF6FF; --oams-info-line: #BFDBFE;
+  --oams-blocked: #DC2626;
+  --oams-decision: #D97706;
+  --oams-done: #16A34A;
+  --oams-gap: 12px;
+  color: var(--oams-ink);
   font-variant-numeric: tabular-nums;
 }
 
@@ -50,13 +50,13 @@
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 12px;
-  color: var(--wh-ink);
+  color: var(--oams-ink);
 }
 
 .wh-interface-body {
   display: flex;
   flex-direction: column;
-  gap: var(--wh-gap);
+  gap: var(--oams-gap);
 }
 
 /* --- modules: one shared surface, then per-type refinements --- */
@@ -69,16 +69,16 @@
 .wh-container,
 .wh-m.wh-input,
 .wh-display {
-  background: var(--wh-bg);
-  border: 1px solid var(--wh-line);
-  border-radius: var(--wh-radius);
+  background: var(--oams-bg);
+  border: 1px solid var(--oams-line);
+  border-radius: var(--oams-radius);
   padding: 16px;
 }
 
 .wh-container {
   /* 模块块面一律 bg/surface 白底（Figma 模块 / card 148:5953），不再用灰底：
      灰底叠在白卡里会多出一层看不出用途的框。 */
-  background: var(--wh-bg);
+  background: var(--oams-bg);
   /* 卡片内距 16（Figma 模块 / card 148:5953） */
   padding: 16px;
 }
@@ -121,17 +121,17 @@
   display: grid;
   /* 列数收进变量：模块的 `span: 1..4` 是「跨父级的几列」，所以模块层保留 repeat(N)，
      不套外壳的 12 栅格（外壳那套见 docs/design/layout-grid.md §2，模块层的理由见 §6）。 */
-  grid-template-columns: repeat(var(--wh-cols, 1), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--oams-cols, 1), minmax(0, 1fr));
   align-items: start;
 }
 
-.wh-columns-1 { --wh-cols: 1; }
-.wh-columns-2 { --wh-cols: 2; }
-.wh-columns-3 { --wh-cols: 3; }
-.wh-columns-4 { --wh-cols: 4; }
-.wh-columns-6 { --wh-cols: 6; }
+.wh-columns-1 { --oams-cols: 1; }
+.wh-columns-2 { --oams-cols: 2; }
+.wh-columns-3 { --oams-cols: 3; }
+.wh-columns-4 { --oams-cols: 4; }
+.wh-columns-6 { --oams-cols: 6; }
 /* 5 列放不下五个可读的列，退回 2 列（不是 1 列：1 列让 5 个并列项塌成一条长虫）。 */
-.wh-columns-5 { --wh-cols: 2; }
+.wh-columns-5 { --oams-cols: 2; }
 
 /* 两档断点（2026-10-30 定）：>1100 原列数；900–1100 最多 2 列；<900 单列。
    列数是整数，`repeat()` 不接受 min()，所以按列数逐条压，不搞表达式。 */
@@ -140,7 +140,7 @@
   .wh-columns-4,
   .wh-columns-5,
   .wh-columns-6 {
-    --wh-cols: 2;
+    --oams-cols: 2;
   }
 }
 
@@ -151,7 +151,7 @@
   .wh-columns-4,
   .wh-columns-5,
   .wh-columns-6 {
-    --wh-cols: 1;
+    --oams-cols: 1;
   }
 }
 
@@ -214,20 +214,20 @@
   padding: 0 12px;
   font-size: 12px;
   line-height: 18px;
-  border-radius: var(--wh-radius-pill);
-  border: 1px solid var(--wh-line);
-  background: var(--wh-bg);
-  color: var(--wh-muted);
+  border-radius: var(--oams-radius-pill);
+  border: 1px solid var(--oams-line);
+  background: var(--oams-bg);
+  color: var(--oams-muted);
 }
 
 .wh-tab-radio:checked + .wh-tab {
-  background: var(--wh-accent);
-  border-color: var(--wh-accent);
-  color: var(--wh-on-accent);
+  background: var(--oams-accent);
+  border-color: var(--oams-accent);
+  color: var(--oams-on-accent);
 }
 
 .wh-tab-radio:focus-visible + .wh-tab {
-  outline: 2px solid var(--wh-accent);
+  outline: 2px solid var(--oams-accent);
   outline-offset: 2px;
 }
 
@@ -235,10 +235,10 @@
   display: none;
   order: 2;
   flex: 1 0 100%;
-  border: 1px solid var(--wh-line);
-  border-radius: var(--wh-radius);
+  border: 1px solid var(--oams-line);
+  border-radius: var(--oams-radius);
   padding: 12px;
-  background: var(--wh-bg);
+  background: var(--oams-bg);
 }
 
 .wh-tab-radio:checked + .wh-tab + .wh-tabpanel {
@@ -258,13 +258,13 @@
 .wh-divider-label {
   display: block;
   font-size: 12px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
   margin-bottom: 8px;
 }
 
 .wh-hr {
   border: 0;
-  border-top: 1px solid var(--wh-line);
+  border-top: 1px solid var(--oams-line);
   margin: 0;
 }
 
@@ -282,7 +282,7 @@
  * 两段 1px 细线 + 12 号日期标签。宽度靠两段线 flex:1 撑开，因此放在任何容器里
  * 都自动铺满，不给死宽度 —— Figma 上实例拉宽也是同一套几何。
  * 用法：<div class="wh-date-divider">2026年10月30日</div>
- * 令牌：线 --wh-line、字 --wh-muted；间距 8（行内）与 16（块间）。 */
+ * 令牌：线 --oams-line、字 --oams-muted；间距 8（行内）与 16（块间）。 */
 .wh-date-divider {
   display: flex;
   align-items: center;
@@ -290,7 +290,7 @@
   margin: 16px 0;
   font-size: 12px;
   line-height: 17px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
   /* 日期只有一行：窄到放不下时让两段线先缩，文字不折行 */
   white-space: nowrap;
 }
@@ -301,7 +301,7 @@
   flex: 1 1 0;
   min-width: 8px;
   height: 1px;
-  background: var(--wh-line);
+  background: var(--oams-line);
 }
 
 /* 贴在同一块顶部时不要多出一段上边距（空态/首条消息） */
@@ -335,25 +335,25 @@
 .wh-note {
   margin: 8px 0 0;
   font-size: 13px;
-  color: var(--wh-ink);
+  color: var(--oams-ink);
 }
 
 .wh-evidence,
 .wh-meta {
   margin: 8px 0 0;
   font-size: 12px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-empty {
   margin: 0;
   font-size: 13px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-unit {
   font-size: 12px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-link {
@@ -367,7 +367,7 @@
   /* 链接与上一段 8（Figma evidence_gallery 148:6088） */
   margin-top: 8px;
   font-size: 13px;
-  color: var(--wh-info);
+  color: var(--oams-info);
   text-decoration: none;
   overflow-wrap: anywhere;
 }
@@ -380,12 +380,12 @@
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
   vertical-align: -0.2em;
 }
 
 /* 图标一律 muted：图标是辅助标记不是状态，语义色留给真正的状态提示。 */
-.wh-icon-external { color: var(--wh-muted); }
+.wh-icon-external { color: var(--oams-muted); }
 
 /* --- form widgets (edit mode only) --- */
 .wh-field {
@@ -397,12 +397,12 @@
 
 .wh-field-label {
   font-size: 12px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-field-value {
   font-size: 13px;
-  color: var(--wh-ink);
+  color: var(--oams-ink);
   overflow-wrap: anywhere;
 }
 
@@ -422,14 +422,14 @@
      ——外壳的「控件基准线」规则（height 30 + padding 0 12）特异性更高，先命中。 */
   padding: 12px 12px;
   font-size: 13px;
-  color: var(--wh-ink);
-  background: var(--wh-bg);
-  border: 1px solid var(--wh-line-strong);
-  border-radius: var(--wh-radius-sm);
+  color: var(--oams-ink);
+  background: var(--oams-bg);
+  border: 1px solid var(--oams-line-strong);
+  border-radius: var(--oams-radius-sm);
 }
 
 .wh-input:focus-visible {
-  outline: 2px solid var(--wh-accent);
+  outline: 2px solid var(--oams-accent);
   outline-offset: 1px;
 }
 
@@ -456,33 +456,33 @@
   font-size: 12px;
   line-height: 1.6;
   padding: 0 8px;
-  border-radius: var(--wh-radius-pill);
-  border: 1px solid var(--wh-line);
-  color: var(--wh-muted);
-  background: var(--wh-bg-muted);
+  border-radius: var(--oams-radius-pill);
+  border: 1px solid var(--oams-line);
+  color: var(--oams-muted);
+  background: var(--oams-bg-muted);
   white-space: nowrap;
 }
 
-.wh-badge-progress { color: var(--wh-info); border-color: var(--wh-info-line); background: var(--wh-info-soft); }
-.wh-badge-done { color: var(--wh-done); border-color: var(--wh-done-line); background: var(--wh-done-soft); }
-.wh-badge-blocked { color: var(--wh-blocked); border-color: var(--wh-danger-line); background: var(--wh-danger-soft); }
-.wh-badge-planned { color: var(--wh-muted); }
-.wh-badge-empty { color: var(--wh-muted); }
+.wh-badge-progress { color: var(--oams-info); border-color: var(--oams-info-line); background: var(--oams-info-soft); }
+.wh-badge-done { color: var(--oams-done); border-color: var(--oams-done-line); background: var(--oams-done-soft); }
+.wh-badge-blocked { color: var(--oams-blocked); border-color: var(--oams-danger-line); background: var(--oams-danger-soft); }
+.wh-badge-planned { color: var(--oams-muted); }
+.wh-badge-empty { color: var(--oams-muted); }
 
 /* progress bar: width comes from a p0..p100 class, never an inline style */
 .wh-bar {
   margin-top: 10px;
   height: 6px;
-  border-radius: var(--wh-radius-pill);
-  background: var(--wh-line);
+  border-radius: var(--oams-radius-pill);
+  background: var(--oams-line);
   overflow: hidden;
 }
 
 .wh-bar > span {
   display: block;
   height: 100%;
-  background: var(--wh-accent);
-  border-radius: var(--wh-radius-pill);
+  background: var(--oams-accent);
+  border-radius: var(--oams-radius-pill);
 }
 
 .wh-bar-p0 > span { width: 0; }
@@ -511,15 +511,15 @@
 .wh-table td {
   text-align: left;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--wh-line);
+  border-bottom: 1px solid var(--oams-line);
   vertical-align: top;
 }
 
 .wh-table th {
   font-size: 12px;
   font-weight: 500;
-  color: var(--wh-muted);
-  background: var(--wh-bg-muted);
+  color: var(--oams-muted);
+  background: var(--oams-bg-muted);
 }
 
 .wh-table tr:last-child td { border-bottom: 0; }
@@ -550,14 +550,14 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--wh-line-strong);
+  background: var(--oams-line-strong);
   flex: 0 0 auto;
 }
 
-.wh-dot-done { background: var(--wh-done); }
-.wh-dot-blocked { background: var(--wh-blocked); }
-.wh-dot-progress { background: var(--wh-info); }
-.wh-dot-planned { background: var(--wh-line-strong); }
+.wh-dot-done { background: var(--oams-done); }
+.wh-dot-blocked { background: var(--oams-blocked); }
+.wh-dot-progress { background: var(--oams-info); }
+.wh-dot-planned { background: var(--oams-line-strong); }
 
 .wh-timeline-text { flex: 1; }
 
@@ -571,14 +571,14 @@
 
 .wh-metric-label {
   font-size: 12px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-num-empty {
   font-style: normal;
   font-size: 12px;
   font-weight: 400;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-metric-value {
@@ -591,7 +591,7 @@
 
 .wh-metric-unit {
   font-size: 12px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-span-1 { grid-column: span 1; }
@@ -613,7 +613,7 @@
 
 /* 流程条段间箭头：换成 Lucide arrow-right（2026-10-30 起不再用字符 →）。 */
 .wh-flow-strip .wh-icon-arrow {
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-stage {
@@ -621,14 +621,14 @@
   align-items: baseline;
   gap: 8px;
   padding: 6px 12px;
-  border: 1px solid var(--wh-line);
-  border-radius: var(--wh-radius-pill);
-  background: var(--wh-bg);
+  border: 1px solid var(--oams-line);
+  border-radius: var(--oams-radius-pill);
+  background: var(--oams-bg);
 }
 
 .wh-stage-label {
   font-size: 12px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-stage-value {
@@ -651,7 +651,7 @@
 
 /* 标签列定宽 88，超长截断，别把轨道挤变形。 */
 .wh-status-label {
-  color: var(--wh-muted);
+  color: var(--oams-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -659,25 +659,25 @@
 
 .wh-track {
   height: 8px;
-  border-radius: var(--wh-radius-pill);
-  background: var(--wh-fill);
+  border-radius: var(--oams-radius-pill);
+  background: var(--oams-fill);
   overflow: hidden;
 }
 
 .wh-fill {
   display: block;
   height: 100%;
-  border-radius: var(--wh-radius-pill);
-  background: var(--wh-line-strong);
+  border-radius: var(--oams-radius-pill);
+  background: var(--oams-line-strong);
 }
 
-.wh-fill-done { background: var(--wh-done); }
-.wh-fill-blocked { background: var(--wh-blocked); }
-.wh-fill-in_progress { background: var(--wh-info); }
-.wh-fill-planned { background: var(--wh-line-strong); }
+.wh-fill-done { background: var(--oams-done); }
+.wh-fill-blocked { background: var(--oams-blocked); }
+.wh-fill-in_progress { background: var(--oams-info); }
+.wh-fill-planned { background: var(--oams-line-strong); }
 
 /* an aggregate key with no standard mapping still gets a neutral bar */
-.wh-fill-plain { background: var(--wh-line-strong); }
+.wh-fill-plain { background: var(--oams-line-strong); }
 
 .wh-status-value {
   text-align: right;
@@ -709,7 +709,7 @@
 
 .wh-rank-no {
   width: 18px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -743,7 +743,7 @@
   align-items: baseline;
   font-size: 13px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--wh-line);
+  border-bottom: 1px solid var(--oams-line);
 }
 
 .wh-feed > li:last-child {
@@ -753,7 +753,7 @@
 
 .wh-feed-when,
 .wh-feed-who {
-  color: var(--wh-muted);
+  color: var(--oams-muted);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -773,11 +773,11 @@
 .wh-table-hint {
   margin: 12px 0 0;
   font-size: 12px;
-  color: var(--wh-muted);
+  color: var(--oams-muted);
 }
 
 .wh-note-block {
-  background: var(--wh-bg-muted);
+  background: var(--oams-bg-muted);
 }
 
 .wh-note-text {
@@ -785,7 +785,7 @@
   font-size: 13px;
   /* 正文 13/20（Figma note_block 148:6322 正文 224:13475） */
   line-height: 20px;
-  color: var(--wh-ink);
+  color: var(--oams-ink);
   white-space: pre-wrap;
 }
 
@@ -797,19 +797,19 @@
   font-size: 11px;
   line-height: 1;
   padding: 4px 8px;
-  border-radius: 0 var(--wh-radius) 0 var(--wh-radius);
-  border-left: 1px solid var(--wh-line);
-  border-bottom: 1px solid var(--wh-line);
+  border-radius: 0 var(--oams-radius) 0 var(--oams-radius);
+  border-left: 1px solid var(--oams-line);
+  border-bottom: 1px solid var(--oams-line);
 }
 
 .wh-tag-on {
-  background: var(--wh-done-soft);
-  color: var(--wh-done);
+  background: var(--oams-done-soft);
+  color: var(--oams-done);
 }
 
 .wh-tag-off {
-  background: var(--wh-danger-soft);
-  color: var(--wh-blocked);
+  background: var(--oams-danger-soft);
+  color: var(--oams-blocked);
 }
 
 /* Preview mode is a review artefact: the tag needs room, so give every block a
@@ -818,7 +818,7 @@
 .wh-interface-preview .wh-input,
 .wh-interface-preview .wh-display {
   padding-top: 18px;
-  outline: 1px dashed var(--wh-line-strong);
+  outline: 1px dashed var(--oams-line-strong);
   outline-offset: -1px;
 }
 
