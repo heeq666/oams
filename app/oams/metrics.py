@@ -1,19 +1,12 @@
-"""Metric catalogue for department interfaces and the company home page (contract §2).
+"""接口指标的目录与绑定校验（契约 §2/§5.2）。
 
-Two origins, and the difference is not cosmetic:
+商品数据中心下线之后，这里只剩**一种**指标来源：`origin="interface"` —— 部门在自己
+的页面字段上声明指标，键强制落在 `dept.<ORG_UNIT_CODE>.<slug>` 命名空间里，既不会
+撞上别人的键，也不会被别的部门读到（概念文档 §5.2）。
 
-  * origin="platform"  -- the data centre computes these. A department may only
-    *reference* them. The formula lives here so nobody can quietly redefine
-    "已出样" to mean something more flattering.
-  * origin="interface" -- the department declares its own metric over its own
-    entry fields. Its key is forced into the `dept.<ORG_UNIT_CODE>.<slug>` namespace
-    so an interface metric can never shadow a platform one, and an emitted metric
-    can never be read by another department (concept §5.2).
-
-Why a catalogue at all: a number on a screen without a stated, frozen 举口 is a rumour.
-Every metric here carries `formula` (human-readable), `source` (which data centre
-call feeds it) and `wave_scoped` -- the three things a reviewer needs to decide
-whether a page is honest.
+平台指标（`funnel.*`，原来由外部商品数据中心计算）已随那次下线一起移除，`METRIC_CATALOG`
+现在是空表；描述符里若还写着 `mode="display"` 去引用平台指标，会被 `METRIC_UNDEFINED`
+可读地拒绝，而不是悄悄变成 0。emit 绑定不受影响。
 """
 from __future__ import annotations
 
@@ -22,11 +15,12 @@ from typing import Any
 
 from oams.modules import STANDARD_STATUSES
 
-#: Metric provenance.
-ORIGINS: tuple[str, ...] = ("platform", "interface")
+#: Metric provenance. 只剩接口指标：平台指标随商品数据中心一起下线。
+ORIGINS: tuple[str, ...] = ("interface",)
 
-#: Home page trays (funnel stages).
-GROUPS: tuple[str, ...] = ("design", "sample", "order", "money")
+#: 首页托盘（曾用于平台漏斗的阶段分组）。平台指标下线后没有成员，保留常量是为了
+#: 让 `list_metrics(group=...)` 对旧写法给出明确报错，而不是静默返回空列表。
+GROUPS: tuple[str, ...] = ()
 
 #: Allowed aggregation modes for an emitted (interface) metric.
 AGG_MODES: tuple[str, ...] = ("count", "sum", "avg", "count_distinct")
@@ -102,64 +96,6 @@ def _metric(
     )
 
 
-# --------------------------------------------------------------------------- #
-# platform metrics -- origin=platform, 11 of them, keys frozen by contract §2
-# --------------------------------------------------------------------------- #
-
-_PLATFORM: tuple[MetricSpec, ...] = (
-    _metric(
-        "funnel.designed", "有设计图", "款",
-        "has_design_image = true", "datacenter:styles", "design",
-    ),
-    _metric(
-        "funnel.sample_done", "已出样", "款",
-        "至少一个颜色已出样（款级派生）", "datacenter:development", "sample",
-        on_home=True, home_order=1,
-    ),
-    _metric(
-        "funnel.sample_wip", "打样在制", "款",
-        "无色出样且有色在制", "datacenter:development", "sample",
-    ),
-    _metric(
-        "funnel.sample_pending", "打样未开始", "款",
-        "无色出样、无色在制", "datacenter:development", "sample",
-    ),
-    _metric(
-        "funnel.sample_open", "打样未完成", "款",
-        "wip + pending", "datacenter:development", "sample",
-        on_home=True, home_order=2,
-    ),
-    _metric(
-        "funnel.priced", "核价完成", "款",
-        "款级最新核价状态=核价完成", "datacenter:development", "sample",
-    ),
-    _metric(
-        "funnel.ordered", "已下单", "款",
-        "is_ordered = true", "datacenter:styles", "order",
-        on_home=True, home_order=3,
-    ),
-    _metric(
-        "funnel.not_ordered", "未下单", "款",
-        "is_ordered = false", "datacenter:styles", "order",
-        on_home=True, home_order=4,
-    ),
-    _metric(
-        "funnel.qty", "下单件数", "件",
-        "sum(quantity)", "datacenter:styles", "order",
-    ),
-    _metric(
-        "funnel.gmv", "下单金额", "元",
-        "sum(paid_amount)", "datacenter:styles", "money",
-        on_home=True, home_order=5,
-    ),
-    _metric(
-        "funnel.roi", "推广 ROI", "倍",
-        "sum(marketing_sales)/sum(spend)", "datacenter:marketing", "money",
-        on_home=True, home_order=6,
-    ),
-)
-
-
 def _build_catalog(specs: tuple[MetricSpec, ...]) -> dict[str, MetricSpec]:
     catalog: dict[str, MetricSpec] = {}
     for spec in specs:
@@ -173,15 +109,8 @@ def _build_catalog(specs: tuple[MetricSpec, ...]) -> dict[str, MetricSpec]:
     return catalog
 
 
-METRIC_CATALOG: dict[str, MetricSpec] = _build_catalog(_PLATFORM)
-
-#: The six cards the company home page shows by default, in display order.
-HOME_DEFAULT: tuple[str, ...] = tuple(
-    spec.key for spec in sorted(
-        (spec for spec in METRIC_CATALOG.values() if spec.on_home),
-        key=lambda spec: spec.home_order if spec.home_order is not None else 0,
-    )
-)
+#: 目录现在是空的：平台指标移除后，接口指标是运行时按部门声明的，不进这张表。
+METRIC_CATALOG: dict[str, MetricSpec] = _build_catalog(())
 
 
 # --------------------------------------------------------------------------- #

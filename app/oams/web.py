@@ -41,9 +41,8 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from oams import admin_labels, api, collab, funnel, metrics, review as review_rules
+from oams import admin_labels, api, collab, metrics, review as review_rules
 from oams.config import settings
-from oams.datacenter import DataCenter, DataCenterNotConfigured, build_datacenter
 from oams.db import connection
 from oams.descriptor import recorded_approval_gaps, validate_descriptor
 from oams.render import RenderError, render_interface, render_read_only
@@ -348,127 +347,6 @@ class _NotPermitted(Exception):
     pass
 
 
-# --------------------------------------------------------------------------- #
-# Company metrics (platform funnel, contract section 2 and 7)
-#
-# The numbers do not live here: oams.funnel computes them from the product data
-# centre, which is a machine on the office LAN and is routinely unreachable from
-# wherever this process happens to run. That makes "the data centre is down" an
-# ordinary state rather than an incident, so every function below is total: it
-# returns a panel or an explanation and never raises. A missing sidebar must never
-# take a page down with it.
-# --------------------------------------------------------------------------- #
-
-METRICS_UNAVAILABLE_PREFIX = "指标暂不可用"
-
-#: How long a page render will wait for the data centre. The default client
-#: timeout (20s) is right for a batch job and wrong for a page: an unreachable
-#: LAN host would hold the whole board open for a panel that is not the page's
-#: subject. Failing fast into 「指标暂不可用」 is the better trade.
-METRICS_HTTP_TIMEOUT = 6.0
-
-
-def _metric_reason(exc: Exception) -> str:
-    """One short sentence a manager can act on, never a stack trace."""
-    if isinstance(exc, DataCenterNotConfigured):
-        return "商品数据中心地址未配置（环境变量 OAMS_DATACENTER_URL）"
-    detail = str(exc).strip()
-    return detail or exc.__class__.__name__
-
-
-def _page_datacenter(dc: DataCenter | None = None) -> DataCenter:
-    """The data centre as a *page* wants it: present or failing fast.
-
-    Only the timeout differs from build_datacenter's default, and it is narrowed
-    rather than configured because the default (20s) is tuned for a batch job
-    that is allowed to wait. On a page, a firewalled LAN host would otherwise
-    stall the board for twenty seconds before falling back to the same message.
-    """
-    centre = build_datacenter(dc)
-    if dc is None and hasattr(centre, "timeout"):
-        centre.timeout = min(float(getattr(centre, "timeout") or 0) or METRICS_HTTP_TIMEOUT,
-                             METRICS_HTTP_TIMEOUT)
-    return centre
-
-
-def _report_wave(dc: DataCenter) -> str | None:
-    """The configured wave, else the data centre's first one.
-
-    Configuration wins so an operator can pin the home page to the season being
-    reported on. The first wave is the fallback because a wave string cannot be
-    hard-coded: it changes every season, and a stale one reports zeros without
-    anything looking broken.
-    """
-    configured = (settings.default_wave or "").strip()
-    if configured:
-        return configured
-    waves = dc.list_waves() or []
-    return waves[0] if waves else None
-
-
-def _metric_rows(values: dict[str, Any]) -> list[dict[str, Any]]:
-    """The six home cards, already formatted, in metrics.HOME_DEFAULT order."""
-    rows: list[dict[str, Any]] = []
-    for key in metrics.HOME_DEFAULT:
-        spec = metrics.get_metric(key)
-        value = values.get(key)
-        rows.append({
-            "key": key,
-            "label": spec.name if spec is not None else key,
-            "value": value,
-            # One formatter for the whole product: the API, the HTML and any
-            # future export must not each round money their own way.
-            "formatted": funnel.format_metric(key, value),
-            "unit": spec.unit if spec is not None else funnel.METRIC_UNITS.get(key, ""),
-        })
-    return rows
-
-
-def company_metrics_panel(dc: DataCenter | None = None) -> dict[str, Any]:
-    """The six home page cards. Never raises; see the block comment above."""
-    try:
-        centre = _page_datacenter(dc)
-        wave = _report_wave(centre)
-        values = funnel.compute_funnel(centre, wave=wave)
-    except Exception as exc:  # noqa: BLE001 - an unreachable data centre is normal here
-        return {"available": False, "reason": _metric_reason(exc), "wave": None, "metrics": []}
-    return {"available": True, "reason": None, "wave": wave, "metrics": _metric_rows(values)}
-
-
-def department_funnel_chain(dc: DataCenter | None = None) -> dict[str, Any]:
-    """有开发记录 → 已出样 → 有核价记录 → 核价完成 → 已下单.
-
-    The two "has a record" stages count *rows that exist*, which is not a funnel
-    metric, so they are derived here from the same normalised payload the funnel
-    already reads instead of widening funnel.py for a display-only number.
-
-    They are deliberately company wide: the data centre carries no department
-    dimension on a style yet, so filtering by department would be an invention.
-    """
-    try:
-        centre = _page_datacenter(dc)
-        wave = _report_wave(centre)
-        products = centre.list_products(wave=wave) or []
-        styles = (centre.list_development(wave=wave) or {}).get("styles") or {}
-        values = funnel.compute_funnel(centre, wave=wave)
-    except Exception as exc:  # noqa: BLE001 - see company_metrics_panel
-        return {"available": False, "reason": _metric_reason(exc), "wave": None, "stages": []}
-    # Restricted to styles that are in this wave's product list, so the first
-    # stage can never exceed the number of styles the shop actually has.
-    codes = {str(product.get("style_code")) for product in products if product.get("style_code")}
-    recorded = sum(1 for code, entry in styles.items() if entry and code in codes)
-    priced_records = sum(
-        1 for code, entry in styles.items()
-        if entry and code in codes and (entry.get("pricing_status") or "").strip()
-    )
-    stages = [
-        {"key": "development_recorded", "label": "有开发记录", "count": recorded},
-        {"key": "funnel.sample_done", "label": "已出样", "count": values.get("funnel.sample_done")},
-        {"key": "pricing_recorded", "label": "有核价记录", "count": priced_records},
-        {"key": "funnel.priced", "label": "核价完成", "count": values.get("funnel.priced")},
-        {"key": "funnel.ordered", "label": "已下单", "count": values.get("funnel.ordered")},
-    ]
-    return {"available": True, "reason": None, "wave": wave, "stages": stages}
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -710,7 +588,6 @@ def department_workbench(request: Request, org_unit_id: UUID, saved: str | None 
     return TEMPLATES.TemplateResponse(request, "department_workbench.html", {
         "unit": unit, "departments": departments, "pages": pages,
         "current": None, "page": None, "preview": False,
-        "funnel_chain": department_funnel_chain(),
         "member": _member(request), "saved": saved, "error": error,
         "csrf": _form_token(request, "oams:interface-form:v1")})
 
@@ -934,9 +811,6 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         "live_version": live_version,
         "review_code_label": (review_rules.rejection_label(page.get("review_code"))
                               if page.get("review_code") else None),
-        # The same five stages as the company page: a department reads the funnel
-        # it feeds, from the one source of truth, rather than a private copy.
-        "funnel_chain": department_funnel_chain(),
         "member": _member(request), "saved": saved, "error": error,
         "status_labels": STATUS_LABELS,
         # Rollup: the department's own numbers, why they are what they are, and the
@@ -2013,9 +1887,6 @@ def board(request: Request, org: UUID | None = None, stale_days: int = Query(def
         selected_id = org or org_units[0]["org_unit_id"]
         require_org_unit_access(conn, request.state.member["member_id"], selected_id)
         data = api.build_board(conn, selected_id, stale_days, layer, stage)
-    # Computed after the connection closes: the data centre is a separate machine
-    # on the LAN, and a slow one must not hold a database connection open.
-    panel = company_metrics_panel()
     return TEMPLATES.TemplateResponse(request, "board.html", {
         "org_units": org_units,
         "selected_id": str(selected_id),
@@ -2023,8 +1894,6 @@ def board(request: Request, org: UUID | None = None, stale_days: int = Query(def
         "stale_days": stale_days,
         "layer": layer,
         "stage": stage,
-        "company_metrics": panel,
-        "metrics_unavailable_prefix": METRICS_UNAVAILABLE_PREFIX,
         "member": _member(request),
         "status_labels": STATUS_LABELS,
         "kind_labels": KIND_LABELS,
@@ -2057,9 +1926,6 @@ def board_body(request: Request, org: UUID, stale_days: int = Query(default=7, g
                    WHERE status = 'active' AND org_unit_id = ANY(%s)
                    ORDER BY unit_type DESC, org_code""",
                 (list(active_org_unit_ids(conn, request.state.member["member_id"])),)).fetchall()
-    # The htmx swap replaces the whole fragment, the metrics panel included, so
-    # this renders the same panel the full page does -- not a stale copy.
-    panel = company_metrics_panel()
     return TEMPLATES.TemplateResponse(request, "board_body.html", {
         "org_units": org_units,
         "selected_id": str(org),
@@ -2067,33 +1933,10 @@ def board_body(request: Request, org: UUID, stale_days: int = Query(default=7, g
         "stale_days": stale_days,
         "layer": layer,
         "stage": stage,
-        "company_metrics": panel,
-        "metrics_unavailable_prefix": METRICS_UNAVAILABLE_PREFIX,
         "status_labels": STATUS_LABELS,
         "kind_labels": KIND_LABELS,
         "channel_labels": CHANNEL_LABELS,
     })
-
-
-@router.get("/metrics/home.json")
-def metrics_home_json(request: Request):
-    """The company home metrics as data.
-
-    Same numbers, same formatter and same wave as the board panel, so a dashboard
-    or a script reads exactly what the page shows instead of recomputing it with a
-    second rounding rule. Unavailable is a 200 with available=false: "the data
-    centre is down" is a state of the world, not a client error, and a caller must
-    be able to tell it apart from a refused permission.
-    """
-    try:
-        _require(request, "workforce.work_items", "read")
-    except _NotSignedIn:
-        return JSONResponse(status_code=401, content={
-            "available": False, "reason": "需要登录", "wave": None, "metrics": []})
-    except _NotPermitted:
-        return JSONResponse(status_code=403, content={
-            "available": False, "reason": "需要 workforce.work_items/read 权限", "wave": None, "metrics": []})
-    return JSONResponse(content=company_metrics_panel())
 
 
 PILOT_REPORTING_GRANTS = (
