@@ -26,9 +26,9 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 
 ```sh
 python -m venv .venv && . .venv/bin/activate && pip install -e .
-workhub migrate                       # 需要 WORKHUB_DATABASE_URL
-workhub bootstrap-admin --name ... --employee-code ... --org-code ... --org-name ...
-workhub serve
+oams migrate                       # 需要 WORKHUB_DATABASE_URL；命令主名 oams，workhub 是兼容别名
+oams bootstrap-admin --name ... --employee-code ... --org-code ... --org-name ...
+oams serve
 scripts/start-local-trial.sh          # 本机试用，默认开 WORKHUB_DEV_AUTOLOGIN=1
 pytest                                # 带 db 标记的用例在没数据库时跳过
 ```

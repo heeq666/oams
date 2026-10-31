@@ -19,7 +19,7 @@ OAMS 想解决的是这件事：**让每个部门都能用 AI 给自己的业务
 
 ## 三分钟跑起来
 
-需要 Python 3.11+ 和一个 PostgreSQL 数据库。
+需要 Python 3.11+ 和一个 PostgreSQL 数据库。命令主名是 `oams`，`workhub` 作为兼容别名保留，两条命令等价。
 
 ```sh
 python -m venv .venv
@@ -27,9 +27,9 @@ python -m venv .venv
 pip install -e .
 cp .env.example .env            # 再把 WORKHUB_DATABASE_URL 指向你自己的库
 export WORKHUB_DATABASE_URL="postgresql://账号@127.0.0.1:5432/workhub"
-workhub migrate                 # 建表
-workhub bootstrap-admin --name "系统管理员" --employee-code "ADMIN001" --org-code "COMPANY" --org-name "公司"
-workhub serve                   # 默认 http://127.0.0.1:8000
+oams migrate                 # 建表
+oams bootstrap-admin --name "系统管理员" --employee-code "ADMIN001" --org-code "COMPANY" --org-name "公司"
+oams serve                   # 默认 http://127.0.0.1:8000
 ```
 
 起来之后打开 <http://127.0.0.1:8000>：
@@ -89,17 +89,17 @@ workhub serve                   # 默认 http://127.0.0.1:8000
 
 ## 当前可运行后端
 
-要求 Python 3.11+。复制 `.env.example` 为 `.env`。先通过受控配置机制将 `WORKHUB_DATABASE_URL` 指向迁移账号运行 `workhub migrate`；随后切换到运行时账号，再创建管理员并启动服务：
+要求 Python 3.11+。复制 `.env.example` 为 `.env`。先通过受控配置机制将 `WORKHUB_DATABASE_URL` 指向迁移账号运行 `oams migrate`；随后切换到运行时账号，再创建管理员并启动服务：
 
 ```sh
 python -m venv .venv
 . .venv/bin/activate
 pip install -e .
-workhub bootstrap-admin --name "系统管理员" --employee-code "ADMIN001" --org-code "COMPANY" --org-name "公司"
-workhub serve
+oams bootstrap-admin --name "系统管理员" --employee-code "ADMIN001" --org-code "COMPANY" --org-name "公司"
+oams serve
 ```
 
-独立账号中心接入前，应通过受控运维通道使用 `workhub issue-token --member-id ...` 签发短时令牌。当前 MVP 的工作项列表、汇报历史、部门看板、进度中心和汇报提交已按有效岗位任职关系限制部门/岗位范围；公司总览（全公司汇总）、自己所属部门的明细对所有角色可见，部门明细的可见范围按三级（系统管理员 / 部门管理员 / 普通员工）决定，汇报中心按「自己的 / 本部门的 / 全部」分档。其他 workforce 管理资源仍沿用 `all` 权限语义，不应据此向普通用户开放。真实部门试用可直接用管理员的「试用设置」页建部门、岗位和成员，并生成一次性登录链接；详细说明见 [MVP 小范围试用说明](docs/runbooks/mvp-pilot-guide.md)。
+独立账号中心接入前，应通过受控运维通道使用 `oams issue-token --member-id ...` 签发短时令牌。当前 MVP 的工作项列表、汇报历史、部门看板、进度中心和汇报提交已按有效岗位任职关系限制部门/岗位范围；公司总览（全公司汇总）、自己所属部门的明细对所有角色可见，部门明细的可见范围按三级（系统管理员 / 部门管理员 / 普通员工）决定，汇报中心按「自己的 / 本部门的 / 全部」分档。其他 workforce 管理资源仍沿用 `all` 权限语义，不应据此向普通用户开放。真实部门试用可直接用管理员的「试用设置」页建部门、岗位和成员，并生成一次性登录链接；详细说明见 [MVP 小范围试用说明](docs/runbooks/mvp-pilot-guide.md)。
 
 设计开发阶段可以在本机打开免登录，省掉反复签令牌：`WORKHUB_DEV_AUTOLOGIN=1`（可写工号认人，页面右下角会常驻「开发模式 · 免登录」角标，点开即可在系统管理员 / 部门管理员 / 普通员工之间切换身份看同一页）。`scripts/start-local-trial.sh` 默认打开它，`WORKHUB_DEV_AUTOLOGIN=0` 即恢复真实登录；它只决定身份，权限、数据范围和审计不变。部署到任何共享环境前必须去掉。
 
