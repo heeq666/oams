@@ -8,7 +8,7 @@
 
 登录后点左栏「**设计部**」。页面条最右边是「**＋ 新页面**」。
 
-![部门工作台入口](assets/screenshots/trial-onepager/03-部门工作台-入口.png)
+![部门工作台入口](../assets/trial/03-workbench-entry.png)
 
 ## 2. 填三个名字，贴一段页面描述
 
@@ -50,7 +50,7 @@
 
 填完点「**保存并预览**」（不是「保存」）。
 
-![新建页表单](assets/screenshots/trial-onepager/01-新建页-表单.png)
+![新建页表单](../assets/trial/01-new-page-form.png)
 
 ## 3. 自己先试填一遍，再提交
 
@@ -65,7 +65,7 @@
 - 「**初审通过**」——通过后这页立刻能用；
 - 「**退回部门**」——必须选一个原因类型、写一句哪儿不行。
 
-![审核页](assets/screenshots/trial-onepager/02-审核页-待我审.png)
+![审核页](../assets/trial/02-review-page-pending.png)
 
 如果这页要**对外公开**或**进公司汇总**，通过后会提示「**已转到公司终审**」，负责人这边的队列就清空了，等公司那边再签一次。
 
