@@ -537,7 +537,8 @@ def aggregate(metric_key: Any, with_unit: bool = True) -> str:
         return EMPTY
     if _real_format_metric is not None and metric_key and with_unit:
         try:
-            return str(_real_format_metric(str(metric_key), raw))
+            return str(_real_format_metric(str(metric_key), raw,
+                                           metric_meta(metric_key).get("unit", "")))
         except Exception:
             pass
     return format_number(raw, metric_meta(metric_key).get("unit", ""), with_unit=with_unit)
