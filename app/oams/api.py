@@ -1130,11 +1130,15 @@ def _combine_pages(agg, page_rows):
     return None
 
 
-def _format_metric(metric_key, value):
-    """The shared formatter, so a department number reads like any other one."""
+def _format_metric(metric_key, value, unit=""):
+    """The shared formatter, so a department number reads like any other one.
+
+    单位由调用方给：binding 上写了 `unit` 就用它，没写就传空串（不带单位是允许的
+    显示结果，不猜）。部门指标的 unit 目前没有契约字段，见 p0-interface-contract §7。
+    """
     try:
         from oams.metric_format import format_metric
-        return format_metric(metric_key, value)
+        return format_metric(metric_key, value, unit or "")
     except Exception:  # noqa: BLE001 - formatting is never worth a 500
         return "—" if value is None else str(value)
 
@@ -1209,7 +1213,7 @@ def rollup_entries(conn, interface_id, metric_key=None):
                          "where_status": binding.get("where_status")})
         base.update({
             "value": value,
-            "formatted": _format_metric(metric_key, value) if metric_key else None,
+            "formatted": _format_metric(metric_key, value, binding.get("unit") if binding else "") if metric_key else None,
             "entry_count": len(rows),
             "entries": [_entry_brief(row) for row in rows],
         })
@@ -1327,7 +1331,8 @@ def build_department_aggregates(conn, org_unit_id, descriptor=None, interface_id
                     "from_field": binding.get("from_field"),
                     "where_status": binding.get("where_status"),
                     "value": value,
-                    "formatted": _format_metric(binding.get("metric_key"), value),
+                    "formatted": _format_metric(binding.get("metric_key"), value,
+                                                binding.get("unit")),
                     "entry_count": len(rows),
                     "interface_id": page_interface_id,
                     "interface_name": page.get("name"),
