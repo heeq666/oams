@@ -190,10 +190,16 @@ def _module_catalog(layer: str | None = None) -> list[dict[str, Any]]:
     return list(module.list_modules(layer))
 
 
-def _metric_catalog(group: str | None = None, home_only: bool = False,
-                    origin: str | None = None) -> list[dict[str, Any]]:
+#: `origin` 的可选值直接取契约里的 ORIGINS，不在 schema 里手写一份——写死的枚举会在
+#: 契约变了之后继续把调用方引到已失效的值上（平台指标下线后 `platform` 就成了这种值：
+#: 传它必被判错，schema 却还列着）。
+_ORIGIN_ENUM = list(_import_contract("metrics", "ORIGINS").ORIGINS)
+
+
+def _metric_catalog(origin: str | None = None) -> list[dict[str, Any]]:
+    """目录现状。分组与「只要首页默认」两条过滤已随 GROUPS=() 与 HOME_DEFAULT 一起下线。"""
     module = _import_contract("metrics", "list_metrics")
-    return list(module.list_metrics(group=group, home_only=home_only, origin=origin))
+    return list(module.list_metrics(origin=origin))
 
 
 def _get_metric(key: str) -> Any:
@@ -492,20 +498,28 @@ def _metric_binding_rules(metrics: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _t_list_metric_catalog(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    home_only = bool(args.get("home_only") or False)
+    # 参数表只剩 origin，别的键一律判错：分组与「只要首页默认」两条过滤已经没有任何
+    # 来源，静默忽略会让调用方以为「过滤了」，其实拿到的是整张（空）目录。
+    unknown = sorted(set(args) - {"origin"})
+    if unknown:
+        return _fail(
+            ERR_INVALID_ARGUMENTS,
+            "不认识的参数：" + "、".join(unknown)
+            + "；list_metric_catalog 现在只接受 origin（可选，取值 "
+            + "、".join(_ORIGIN_ENUM) + "）。参数表里没有的键一律判错：分组与「只要首页"
+            "默认」两条过滤已随平台指标与首页默认值下线，不会静默返回空表。",
+        )
     try:
-        metrics = _metric_catalog(group=args.get("group"), home_only=home_only,
-                                  origin=args.get("origin"))
+        metrics = _metric_catalog(origin=args.get("origin"))
     except ContractError as error:
         return _fail(ERR_CONTRACT_UNAVAILABLE, str(error))
     except ValueError as error:
         return _fail(ERR_INVALID_ARGUMENTS, str(error))
-    home = [m.get("key") for m in metrics if m.get("on_home")]
     try:
         can_bind = _metric_binding_rules(metrics)
     except ContractError as error:
         return _fail(ERR_CONTRACT_UNAVAILABLE, str(error))
-    return _ok(metrics=metrics, count=len(metrics), home=home, can_bind=can_bind,
+    return _ok(metrics=metrics, count=len(metrics), can_bind=can_bind,
                message=("指标目录本身现在是空的（平台指标已下线）；下一个 descriptor 能绑什么，"
                         "看 can_bind：部门指标在 metrics[] 里用 mode=emit 自己声明，"
                         "展示模块只能引本页自己 emit 的键。"))
@@ -796,10 +810,11 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
             "can_bind 是规则，规则不会因目录为空而失效。"
         ),
         input_schema=_schema({
-            "group": {"type": "string", "enum": ["design", "sample", "order", "money"]},
-            "origin": {"type": "string", "enum": ["platform", "interface"]},
-            "home_only": {"type": "boolean", "default": False,
-                          "description": "只返回首页默认展示的指标"},
+            "origin": {
+                "type": "string", "enum": _ORIGIN_ENUM,
+                "description": "按来源过滤，取值来自指标契约的 ORIGINS；平台指标已下线，"
+                               "现在目录里只剩 interface（部门在 descriptor 里自己 emit 的指标）",
+            },
         }),
         capability=CAP_PLUGIN_READ,
         handler=_t_list_metric_catalog,
