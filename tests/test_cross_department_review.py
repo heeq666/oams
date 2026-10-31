@@ -63,11 +63,11 @@ DESCRIPTOR = {
 
 
 def _page_token(cookie: str) -> str:
-    return hmac.new(cookie.encode(), b"workhub:page-form:v1", hashlib.sha256).hexdigest()
+    return hmac.new(cookie.encode(), b"oams:page-form:v1", hashlib.sha256).hexdigest()
 
 
 def _review_token(cookie: str) -> str:
-    return hmac.new(cookie.encode(), b"workhub:review-form:v1", hashlib.sha256).hexdigest()
+    return hmac.new(cookie.encode(), b"oams:review-form:v1", hashlib.sha256).hexdigest()
 
 
 @contextlib.contextmanager

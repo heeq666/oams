@@ -173,39 +173,27 @@ def _script(base: str, url: str) -> None:
 
     with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
         fixtures = seed(conn)
-        # Simulate a deployment created before migration 0003 existed.
-        legacy_position = conn.execute(
-            "INSERT INTO oams.positions (position_code, title, org_unit_id) VALUES ('LEGACY', 'Legacy admin', %s) RETURNING position_id",
-            (fixtures["company"],),
-        ).fetchone()["position_id"]
-        conn.execute(
-            """INSERT INTO oams.permission_grants
-               (subject_type, position_id, resource, action, scope_type, effect, valid_from, reason)
-               VALUES ('position', %s, 'workforce.grants', 'manage', 'all', 'allow', now(), 'pre-0003 administrator')""",
-            (legacy_position,),
+
+    # ``oams db init`` 是唯一建表入口（``app/oams/schema.sql``，全部 IF NOT EXISTS）。
+    # 增量迁移 0001-0012 已随 f9fae3d 删除，「模拟老部署再跑 0003 回填」那个场景随方案
+    # 一起消失；改成钉住它现在的两条契约：重复执行成功、不把基线授权再插一遍。
+    def _grant_count() -> int:
+        with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
+            return conn.execute("SELECT count(*) AS n FROM oams.permission_grants").fetchone()["n"]
+
+    grants_before = _grant_count()
+    reinit = [
+        subprocess.run(
+            [sys.executable, "-m", "oams.cli", "db", "init"],
+            capture_output=True, text=True, cwd=".", env={**os.environ, "PYTHONPATH": "app"},
         )
-
-    # Apply migration 0003, which has to pick the missing action up on its own.
-    applied = subprocess.run(
-        [sys.executable, "-m", "oams.cli", "migrate"],
-        capture_output=True, text=True, cwd=".", env={**os.environ, "PYTHONPATH": "app"},
-    )
-    check("migrate is idempotent", "Already applied" in applied.stdout, applied.stdout.strip().replace("\n", " | ")[:120])
-
-    # Apply 0003 the way an existing deployment meets it: admin grants already in
-    # place, then the migration runs once and has to derive the missing action.
-    with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
-        conn.execute(open("app/oams/migrations/0003_report_submission_grants.sql").read())
-        duplicates = conn.execute(
-            """SELECT count(*) AS n FROM oams.permission_grants
-               WHERE resource = 'workforce.reports' AND action = 'submit' AND revoked_at IS NULL
-                 AND position_id = %s""", (legacy_position,)).fetchone()["n"]
-        conn.execute(open("app/oams/migrations/0003_report_submission_grants.sql").read())
-        twice = conn.execute(
-            """SELECT count(*) AS n FROM oams.permission_grants
-               WHERE resource = 'workforce.reports' AND action = 'submit' AND revoked_at IS NULL
-                 AND position_id = %s""", (legacy_position,)).fetchone()["n"]
-    check("0003 backfill adds submit without duplicating", duplicates == 1 and twice == 1, f"after1={duplicates} after2={twice}")
+        for _ in range(2)
+    ]
+    grants_after = _grant_count()
+    check("db init is idempotent", all(r.returncode == 0 for r in reinit),
+          " | ".join((r.stdout or r.stderr).strip().replace("\n", " ")[:80] for r in reinit))
+    check("db init does not duplicate baseline grants", grants_before == grants_after,
+          f"before={grants_before} after={grants_after}")
 
     token, _ = issue_session(admin_id)
 

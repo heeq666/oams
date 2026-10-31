@@ -17,7 +17,7 @@ Design rules (deliberate):
 Environment:
 
     OAMS_DATABASE_URL   service connection string (defaults to the local
-                           docker ``workhub-pg`` instance on port 55433)
+                           docker ``oams-pg`` instance on port 55433)
     OAMS_TEST_PORT      preferred port for the in-process server
 """
 
@@ -538,7 +538,7 @@ def seeded_oams(db_ready) -> dict:
 
     name, url = _create_database(db_ready)
     try:
-        _cli(["migrate"], url)
+        _cli(["db", "init"], url)
         _cli(
             [
                 "bootstrap-admin",
@@ -586,7 +586,7 @@ def bootstrapped_database(db_ready) -> Database:
 
     name, url = _create_database(db_ready)
     try:
-        _cli(["migrate"], url)
+        _cli(["db", "init"], url)
         _cli(
             [
                 "bootstrap-admin",
@@ -732,7 +732,7 @@ def migrated_site(db_ready):
 
     name, url = _create_database(db_ready)
     try:
-        _cli(["migrate"], url)
+        _cli(["db", "init"], url)
         with serve(url) as base:
             yield {"name": name, "url": url, "base": base, "database": Database(url)}
     finally:
@@ -749,7 +749,7 @@ def hr_site(db_ready):
 
     name, url = _create_database(db_ready)
     try:
-        _cli(["migrate"], url)
+        _cli(["db", "init"], url)
         bootstrap = _cli(
             [
                 "bootstrap-admin",

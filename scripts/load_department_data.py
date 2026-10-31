@@ -317,7 +317,7 @@ def load(api: Api, issue_session, spec: dict, apply_changes: bool) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Load one department through the Workhub API")
+    parser = argparse.ArgumentParser(description="Load one department through the OAMS API")
     parser.add_argument("spec", help="path to the department JSON file")
     parser.add_argument("--apply", action="store_true", help="write changes; without it this is a dry run")
     args = parser.parse_args()
