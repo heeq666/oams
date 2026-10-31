@@ -1,6 +1,6 @@
-# AGENTS.md — Company Workhub 协作约定
+# AGENTS.md — OAMS 协作约定
 
-全公司工作进度与岗位协同系统。Python 3.11 + FastAPI + Jinja2 + htmx 服务端渲染，PostgreSQL。**没有前端构建链**（无 package.json / 无 tailwind / 无 React）：前端资产只有 `app/workhub/static/vendor/htmx.min.js`、`static/workhub-modules.css` 和各模板里的内联样式。
+OAMS（Organizational App Management System，组织应用中台）：组织内 AI 应用的宿主与应用商店——应用由部门用 AI 写，跑在同一套底座上。Python 3.11 + FastAPI + Jinja2 + htmx 服务端渲染，PostgreSQL。**没有前端构建链**（无 package.json / 无 tailwind / 无 React）：前端资产只有 `app/workhub/static/vendor/htmx.min.js`、`static/workhub-modules.css` 和各模板里的内联样式。
 
 ## 做界面（UI / 样式 / 组件）之前必读
 

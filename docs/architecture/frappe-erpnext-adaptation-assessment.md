@@ -44,7 +44,7 @@ Frappe HR + ERPNext 在 MariaDB 上能安装，Employee Transfer 的上游测试
 
 数据库是明确的适配阻断：ERPNext 官方部署说明要求 MariaDB；本次 PostgreSQL 16.14 实测在 HRMS after-install 补丁失败，并与 HRMS issue #5033 一致。不能把 PostgreSQL 作为此组合的可用方案，也不应绕过补丁后把当前未完成的站点当作可部署结果。
 
-本轮没有在服务器安装或改动任何东西。Workhub FastAPI 底座和迁移仍只在本地仓库、尚未部署；若继续使用既定 PostgreSQL 16，应沿 Workhub 自有底座方向推进。
+本轮没有在服务器安装或改动任何东西。OAMS FastAPI 底座和迁移仍只在本地仓库、尚未部署；若继续使用既定 PostgreSQL 16，应沿 OAMS 自有底座方向推进。
 
 ## 功能映射
 
@@ -55,7 +55,7 @@ Frappe HR + ERPNext 在 MariaDB 上能安装，Employee Transfer 的上游测试
 | 部门工作任务 | ERPNext Task 支持状态、进度、模板、依赖、负责人/多人分配和 Owner Department | 适合作为通用任务试点；公司级跨部门看板的组织口径需配置验证 |
 | REST API | Frappe 自动提供 DocType REST API 与自定义 RPC | 可用于外部系统集成；商品中心只读适配仍需编写并验证 |
 | 独立账号中心身份 | Frappe 未提供与后续账号中心的既定集成 | 需按账号中心契约单独编写认证适配层 |
-| 稳定岗位 ID、多人兼岗、代理到期、岗位交接、职责配置版本 | 未找到可直接满足的标准能力 | 预计需要自定义 DocType / 应用，这是 Workhub 的核心差异层 |
+| 稳定岗位 ID、多人兼岗、代理到期、岗位交接、职责配置版本 | 未找到可直接满足的标准能力 | 预计需要自定义 DocType / 应用，这是 OAMS 的核心差异层 |
 
 ## 目标服务器适配
 
@@ -79,7 +79,7 @@ Frappe 官方安装说明支持 Debian/Ubuntu，Windows 使用者可通过 WSL�
 
 ## 当前建议
 
-若保持现有 PostgreSQL 16 规划，不建议把 Frappe HR/ERPNext 作为当前底座：HRMS 官方安装已在该组合上失败。只有在接受独立 MariaDB 及相应备份/运维成本时，才值得继续评估 MariaDB 路线；在这之前不要迁移真实数据或调整服务器数据库。若不接受 MariaDB，应继续 Workhub 自有 PostgreSQL 实现，复用本次确认可行的业务概念，而不是将 Frappe 误认为可直接替代底座。
+若保持现有 PostgreSQL 16 规划，不建议把 Frappe HR/ERPNext 作为当前底座：HRMS 官方安装已在该组合上失败。只有在接受独立 MariaDB 及相应备份/运维成本时，才值得继续评估 MariaDB 路线；在这之前不要迁移真实数据或调整服务器数据库。若不接受 MariaDB，应继续 OAMS 自有 PostgreSQL 实现，复用本次确认可行的业务概念，而不是将 Frappe 误认为可直接替代底座。
 
 ## 参考资料
 

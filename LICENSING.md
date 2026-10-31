@@ -4,6 +4,8 @@
 
 > 本文件是说明，不是法律意见。正式发布或签约前请律师复核。
 
+版权署名 example-user 为作者的 GitHub 账号（https://github.com/example-user）。
+
 ## 一、开源版：GNU AGPL-3.0
 
 免费，**包括商业用途**。全文见 [LICENSE](LICENSE)（AGPL-3.0 官方原文）。

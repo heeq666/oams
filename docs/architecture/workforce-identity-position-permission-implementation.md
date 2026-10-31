@@ -1,13 +1,13 @@
 # 身份、岗位与权限底座：首期实现契约
 
-状态：首版服务代码与数据库迁移已实现，尚未部署到服务器或连接真实数据库。独立账号中心接入仍未开始。迁移只适用于 Company Workhub 专用 PostgreSQL 数据库。
+状态：首版服务代码与数据库迁移已实现，尚未部署到服务器或连接真实数据库。独立账号中心接入仍未开始。迁移只适用于 OAMS 专用 PostgreSQL 数据库。
 
 ## 1. 已实现的代码
 
 - `app/workhub/api.py`：FastAPI health、个人信息、组织单元、员工、岗位、任职、配置版本、授权和审计 API。
 - `app/workhub/security.py`：数据库会话令牌哈希校验、过期/撤销和令牌版本检查；服务端授权检查拒绝任何未匹配的主体/资源/动作。
 - `app/workhub/cli.py`：迁移、一次性首管理员引导、受控运维令牌签发和 API 服务命令。SQL 迁移作为 Python 包数据随发布包分发。
-- `db/migrations/0001_workforce_identity_position_permission.sql`：专用 Workhub schema 的首个迁移。
+- `db/migrations/0001_workforce_identity_position_permission.sql`：专用 OAMS schema 的首个迁移。
 
 首管理员从可信运维 shell 建立，账号中心未接入前不允许伪造外部账号登录。当前管理 API 仅通过 `scope_type = 'all'` 授权；工作项/看板/汇报路径已按有效任职做范围过滤，其他管理资源仍不能向普通成员开放。
 
