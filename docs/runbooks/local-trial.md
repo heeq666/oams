@@ -10,8 +10,8 @@
 
 | 库 | 端口 | Docker 容器 | 连接串 | 谁在用 |
 |---|---|---|---|---|
-| 演示站库 | **55460** | `workhub-live` | `postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:55460/workhub` | `scripts/start-local-trial.sh` 起的演示站，以及本手册下文所有手工命令 |
-| 本机开发库 | **55433** | `workhub-pg` | `postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:55433/workhub` | 项目根目录 `.env` 里那条，`pytest` 默认走它 |
+| 演示站库 | **55460** | `oams-demo` | `postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:55460/oams` | `scripts/start-local-trial.sh` 起的演示站，以及本手册下文所有手工命令 |
+| 本机开发库 | **55433** | `oams-pg` | `postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:55433/oams` | 项目根目录 `.env` 里那条，`pytest` 默认走它 |
 
 连接串里的用户名和口令**一律用变量拼**：口令只放在你自己的环境变量或项目根目录的 `.env` 里，不写进文档、不提交、不贴群里。两个库的用户名口令各不相同，按你本机的实际值填；变量怎么设见下一节。
 
@@ -19,9 +19,9 @@
 
 - **下文命令里显式 `export` 的都是 55460**（演示站库）。别顺手改成 `.env` 里那条，改了就会看到「刚建的东西不见了」。
 - `.env` 是 `pytest` 与本地开发的默认库；跑 `pytest` 前确认环境里没有残留的 `OAMS_DATABASE_URL`，否则会打到演示站库上去。
-- **所有 e2e 结论必须注明用的哪个库**（端口 + 库名，如 `55460/workhub`）。数对不上时，先看两边是不是同一个库——这一轮已经出现过三次「数字对不上」，全是串库。
+- **所有 e2e 结论必须注明用的哪个库**（端口 + 库名，如 `55460/oams`）。数对不上时，先看两边是不是同一个库——这一轮已经出现过三次「数字对不上」，全是串库。
 
-**命名现状（2026-11-01）**：库名和容器名正在从旧名统一成 `oams`——库 `workhub` → `oams`，容器 `workhub-live` / `workhub-pg` → `oams-demo` / `oams-pg`，由负责人在真机上改名，不动数据、不动成员 id。上表写的是改名前的实际名字；收到改名完成的通知后，把连接串里的库名、容器名一起换掉。
+**改名已落地（2026-11-01）**：库名和容器名都已从旧名改成 `oams`，改名不动数据、不动成员 id（演示库 16 页 / 144 条会话 / 4 成员 / 373 条审计原样，开发库 8 页 / 35 条会话原样）。上表就是现在真机上的名字；如果看到 `workhub` 开头的容器名或 `/workhub` 结尾的连接串，那是改名前的旧记录（`docs/reports/` 里有），按上表为准。
 
 仓库目录 `company-os` 与 `.local-backups/` 里已有的历史 bundle 文件名**沿用原样**：那是真机上已经存在的路径和文件，现在改名就跟备份对不上（恢复、排查都要按原文件名找）。
 
@@ -34,11 +34,10 @@
 # 用户名/口令按你本机的实际值填；口令不要写进文档、不要提交
 export OAMS_DB_USER=postgres
 export OAMS_DB_PASSWORD="<你的口令>"
-export OAMS_DATABASE_URL="postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:55460/workhub"
-export OAMS_MIGRATOR_URL="$OAMS_DATABASE_URL"
+export OAMS_DATABASE_URL="postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:55460/oams"
 
-docker run -d --name workhub-live \
-  -e POSTGRES_PASSWORD="$OAMS_DB_PASSWORD" -e POSTGRES_DB=workhub \
+docker run -d --name oams-demo \
+  -e POSTGRES_PASSWORD="$OAMS_DB_PASSWORD" -e POSTGRES_DB=oams \
   -p 127.0.0.1:55460:5432 postgres:16-alpine
 
 .venv/bin/python -m oams.cli db init
@@ -65,7 +64,7 @@ export OAMS_ADMIN_MEMBER_ID=<上一步的 member_id>
 
 不想敲命令也可以跳过这一节：服务起来之后用 [`/setup` 引导页](#建部门岗位成员用-setup-引导页最快) 点几下就建好了，那是本机试用里最快的一条路。
 
-它会自己起一个临时服务把部门、岗位、成员、授权跑一遍完整接口（跑完自动关），默认在 127.0.0.1:8126，端口被占用时用 `OAMS_LOADER_PORT` 换一个。`OAMS_MIGRATOR_URL` 和 `OAMS_ADMIN_MEMBER_ID` 两个都要给，缺一个会直接报错退出。
+它会自己起一个临时服务把部门、岗位、成员、授权跑一遍完整接口（跑完自动关），默认在 127.0.0.1:8126，端口被占用时用 `OAMS_LOADER_PORT` 换一个。`OAMS_DATABASE_URL` 和 `OAMS_ADMIN_MEMBER_ID` 两个都要给，缺一个会直接报错退出（双角色那套 `OAMS_MIGRATOR_URL` 已随机制移除，不用再设）。
 
 第二个脚本会把[设计部打样进度界面](data/live-design-interface.json)启用，作为你点开就能看的示例。它每跑一次都是「归档上一版、启用新的一版」，所以**页面的地址（`/interfaces/<id>` 里那个 id）会变**，之前收藏的旧链接会失效、打开后被带回能看的页面。要的就是这个效果：页面描述升级过之后重跑一次，旧版自动退场。
 
@@ -174,8 +173,8 @@ http://127.0.0.1:8000/login?token=<access_token>&next=/interfaces
 ## 停掉服务
 
 - 停止网站：在运行 uvicorn 的终端按 Ctrl+C。
-- 停止数据库：`docker stop workhub-live`，下次 `docker start workhub-live` 即可，数据保留。
-- 完全重来：`docker rm -f workhub-live`，然后从"一次性准备"重新开始。
+- 停止数据库：`docker stop oams-demo`，下次 `docker start oams-demo` 即可，数据保留。
+- 完全重来：`docker rm -f oams-demo`，然后从"一次性准备"重新开始。
 
 ## 注意
 

@@ -30,7 +30,7 @@
 - HRMS 若手动拷入 `apps/` 再 `pip install -e`，需先装 `flit_core`；装入后**必须重启 backend/frontend/worker 进程**，否则 REST 报 500（`ModuleNotFoundError: hrms`）。
 - 建 Company 前须先存在 Warehouse Type `Transit`；Employee 强制 `gender` 与 `date_of_birth`，而 Gender 初始为空需自建；Department 的 name 带公司后缀（如「招聘部 - POC」），引用须用完整名。
 
-清理该组容器与卷：
+清理该组容器与卷（`workhub-poc` 是那组容器的历史项目名，已清理；直接跑这条会「没有这个项目」，属正常）：
 
 ```sh
 docker compose -p workhub-poc down -v
