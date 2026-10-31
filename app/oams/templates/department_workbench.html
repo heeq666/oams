@@ -50,14 +50,14 @@
         {% if page.status == 'pending' %}
           <p class="meta">当前版本 v{{ page.version_no }}。已在等公司审核；审核期间仍可继续试填。</p>
           {% if not page.reviewed_at %}
-          <form method="post" action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/withdraw-review" style="margin-top:10px">
+          <form method="post" action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/withdraw-review" style="margin-top:12px">
             <input type="hidden" name="review_csrf" value="{{ review_csrf }}">
             <button type="submit" class="link" style="color:var(--muted)">撤回提交</button>
           </form>
           {% endif %}
         {% else %}
           <p class="meta">当前版本 v{{ page.version_no }}。试填满意后提交审核：只给本部门用的，部门初审通过就正式使用；要对外公开或进公司汇总的，再走公司终审。</p>
-          <form method="post" action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/submit-review" style="margin-top:10px">
+          <form method="post" action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/submit-review" style="margin-top:12px">
             <input type="hidden" name="review_csrf" value="{{ review_csrf }}">
             <button type="submit">提交审核</button>
           </form>
@@ -87,8 +87,11 @@
           {% if e.note %}<p class="note">{{ e.note }}</p>{% endif %}
           {% if e.evidence %}<p class="evidence">依据：{{ e.evidence }}</p>{% endif %}
           {% if e.rollup_blocker %}<p class="meta">{{ e.rollup_blocker }}</p>{% endif %}
-          {% if e.rollup_state != 'rolled' %}
-          {# The link form: the only thing that moves an entry into the company number. #}
+          {% if e.rollup_state == 'counted_unlinked' %}
+          {# The link form: the only thing that moves an entry into the company number.
+             Only shown for a live entry that already counts for the department --
+             a draft entry cannot be linked into the company number, and an entry
+             already feeding the company has nothing left to link. #}
           <form method="post"
                 action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/entries/{{ e.entry_id }}/link"
                 class="field" style="margin-top:8px">
@@ -112,12 +115,16 @@
       {% endif %}
 
       {# The department's own numbers, with the count of what is not in them. A
-         department that only sees a total cannot tell whether it did the work. #}
+         department that only sees a total cannot tell whether it did the work.
+         Two counts, because the new department rule counts live entries whether or
+         not they are linked: 计入本部门 = counted + counted_unlinked, and only
+         `counted` also reaches the company. Zero-counted states are left out so the
+         line stays one sentence. #}
       {% if rollup and rollup.available %}
-      <div class="card" style="margin-top:14px">
+      <div class="card" style="margin-top:16px">
         <div class="row1">
           <strong>{{ unit.name }}的汇总</strong>
-          <span class="pos">{{ rollup_counts.rolled or 0 }} 条进汇总 / {{ rollup_counts.unlinked or 0 }} 条未关联 / {{ rollup_counts.draft or 0 }} 条草稿</span>
+          <span class="pos">本部门计入 {{ (rollup_counts.counted or 0) + (rollup_counts.counted_unlinked or 0) }} 条（{{ rollup_counts.counted or 0 }} 条进公司汇总）{% if rollup_counts.draft %} · {{ rollup_counts.draft }} 条草稿{% endif %}{% if rollup_counts.retracted %} · {{ rollup_counts.retracted }} 条已撤回{% endif %}</span>
         </div>
         {% if rollup.metrics %}
         <ul class="items">
@@ -142,7 +149,7 @@
         {% endif %}
       </div>
       {% elif rollup %}
-      <div class="card" style="margin-top:14px">
+      <div class="card" style="margin-top:16px">
         <p class="empty" style="margin:0">汇总暂不可用：{{ rollup.reason }}</p>
       </div>
       {% endif %}
@@ -150,7 +157,7 @@
       {% if can_manage_work_items %}
       {# Without a work item there is nothing to link to, so the department page
          also carries the creation form -- otherwise the chain is uncompletable. #}
-      <div class="card" style="margin-top:14px">
+      <div class="card" style="margin-top:16px">
         <div class="row1">
           <strong>新建工作项</strong>
           <span class="pos">先有工作项，条目才能进公司汇总</span>
