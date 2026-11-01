@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 from oams.metrics import (  # noqa: E402
     AGG_MODES,
     BINDING_MODES,
+    DATA_RULE_VIOLATION,
     DEPARTMENT_METRIC_PREFIX,
     GROUPS,
     METRIC_CATALOG,
@@ -239,6 +240,104 @@ def test_emit_binding_status_filter_must_be_a_standard_status(fields):
     assert len(problems) == 1
     assert problems[0].startswith("[METRIC_UNDEFINED]")
     assert ".where_status:" in problems[0]
+
+
+def test_emit_binding_may_declare_a_label_and_a_unit(fields):
+    """人话名与单位属**声明方**：写在 emit 绑定上，页面照着显示（契约 §2/§7）。
+
+    两个字段都可选——不写就回落键末段、无单位，所以「不写」和「写空串」必须
+    是两件事（后一种见下面那条拒绝用例）。
+    """
+    problems = validate_metric_binding(
+        {"metric_key": "dept.PRODUCTION.weekly_done", "mode": "emit",
+         "agg": "count", "from_field": "stage", "where_status": "done",
+         "label": "本周完成", "unit": "项"},
+        "PRODUCTION", fields,
+    )
+    assert problems == []
+
+    # 边界正好卡在上限：24 个人话名 / 8 个单位仍然合法，别把上限写成「小于」。
+    at_limit = validate_metric_binding(
+        {"metric_key": "dept.PRODUCTION.weekly_done", "mode": "emit", "agg": "count",
+         "from_field": "stage", "label": "一二三四五六七八九十一二三四五六七八九十一二三四",
+         "unit": "一二三四五六七八"},
+        "PRODUCTION", fields,
+    )
+    assert at_limit == []
+
+    # 长度按去掉首尾空白之后算：两边补空格不该把人话名挤超。
+    padded = validate_metric_binding(
+        {"metric_key": "dept.PRODUCTION.weekly_done", "mode": "emit", "agg": "count",
+         "from_field": "stage", "label": "  本周完成  ", "unit": " 项 "},
+        "PRODUCTION", fields,
+    )
+    assert padded == []
+
+
+def test_display_binding_may_not_carry_a_label_or_a_unit(fields):
+    """display 是引用方，不是声明方：名字与单位只能跟着 emit 绑定走。
+
+    否则同一页上同一个指标能有两套名字、两种单位——读数的人没法判断哪个算数。
+    """
+    key = "dept.PRODUCTION.weekly_done"
+    problems = validate_metric_binding(
+        {"metric_key": key, "mode": "display", "label": "本周完成", "unit": "项"},
+        "PRODUCTION", fields, own_metrics={key},
+    )
+    # 键本身合法（自产自用），所以这两条只能是 label / unit 引起的。
+    assert len(problems) == 2
+    assert all(p.startswith(f"[{DATA_RULE_VIOLATION}]") for p in problems)
+    label_problem = next(p for p in problems if ".label:" in p)
+    unit_problem = next(p for p in problems if ".unit:" in p)
+    assert "只有 mode=emit 的声明方" in label_problem
+    assert "只有 mode=emit 的声明方" in unit_problem
+    # 「名字跟着指标走」这句要说出来，不然读者会以为是被表单校验拦的。
+    assert "人话名与单位跟着指标走" in label_problem
+    assert "display 是引用方" in unit_problem
+
+
+@pytest.mark.parametrize("bad", ["", "   ", None, 3, [], {"name": "x"}])
+def test_emit_label_and_unit_must_be_non_empty_strings(fields, bad):
+    """写了这个字段就得有内容：空串、null、数字一律拒。
+
+    不写字段是合法的（回落键末段），但写成空串等于「声明了一个空名字」——
+    两种意图必须能分开，否则前端出现一个没有标签的空卡片，谁也说不清是哪边错。
+    """
+    for field_name in ("label", "unit"):
+        problems = validate_metric_binding(
+            {"metric_key": "dept.PRODUCTION.weekly_done", "mode": "emit",
+             "agg": "count", "from_field": "stage", field_name: bad},
+            "PRODUCTION", fields,
+        )
+        assert len(problems) == 1, (field_name, bad, problems)
+        assert problems[0].startswith(f"[{METRIC_UNDEFINED}]")
+        assert f".{field_name}:" in problems[0]
+        assert "必须是非空字符串" in problems[0]
+        assert "不写这个字段等于没有" in problems[0]
+
+
+def test_emit_label_and_unit_are_length_limited(fields):
+    """超长要报出「上限多少、现在多少」，只说「太长」等于没说。"""
+    long_label = "一二三四五六七八九十一二三四五六七八九十一二三四五"  # 25
+    problems = validate_metric_binding(
+        {"metric_key": "dept.PRODUCTION.weekly_done", "mode": "emit",
+         "agg": "count", "from_field": "stage", "label": long_label},
+        "PRODUCTION", fields,
+    )
+    assert len(problems) == 1
+    assert ".label:" in problems[0]
+    assert "最多 24 个字" in problems[0]
+    assert "现在是 25 个" in problems[0]
+
+    problems = validate_metric_binding(
+        {"metric_key": "dept.PRODUCTION.weekly_done", "mode": "emit",
+         "agg": "count", "from_field": "stage", "unit": "一二三四五六七八九"},
+        "PRODUCTION", fields,
+    )
+    assert len(problems) == 1
+    assert ".unit:" in problems[0]
+    assert "最多 8 个字" in problems[0]
+    assert "现在是 9 个" in problems[0]
 
 
 def test_binding_mode_and_shape_errors():
