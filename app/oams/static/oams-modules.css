@@ -418,14 +418,25 @@
 .wh-input {
   width: 100%;
   /* 内距统一 12，与外壳 textarea 的 `12px 12px` 同档：模块里的 textarea.wh-input
-     此前是 6/8，和同页的外壳文本域并排会一高一矮。input/select 这里的 12 不生效
-     ——外壳的「控件基准线」规则（height 30 + padding 0 12）特异性更高，先命中。 */
+     此前是 6/8，和同页的外壳文本域并排会一高一矮。
+     注意：单行控件必须把上下内距压回 0（见下面 .wh-input:not(textarea)）——这里
+     是类选择器（0,1,0），外壳那条 `input…, select { height: 30px; padding: 0 12px }`
+     是元素选择器（0,0,1），**类更高**，所以 12 + 12 会真的落到 30 高的 select 上，
+     内容盒只剩 6px，文字被上下切掉。 */
   padding: 12px 12px;
   font-size: 13px;
   color: var(--oams-ink);
   background: var(--oams-bg);
   border: 1px solid var(--oams-line-strong);
   border-radius: var(--oams-radius-sm);
+}
+
+.wh-input:not(textarea) {
+  /* 单行控件（input / select）的外壳基准线：30 高、左右 12、上下 0。
+     不写这条，30 高的 select 内距 12+12 会把 13px 的字切掉一半；
+     textarea 保留 12 的上下内距、最小高 120。 */
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .wh-input:focus-visible {
