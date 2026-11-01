@@ -27,9 +27,18 @@
           }
         },
         {
+          "key": "parcel_lookup",
+          "type": "lookup_box",
+          "order": 1,
+          "params": {
+            "key_field": "evidence",
+            "label": "单号"
+          }
+        },
+        {
           "key": "parcel_table",
           "type": "table",
-          "order": 1,
+          "order": 2,
           "params": {
             "columns": [
               {
@@ -59,7 +68,7 @@
         {
           "key": "two_up",
           "type": "columns",
-          "order": 2,
+          "order": 3,
           "params": {
             "columns": 2
           },
