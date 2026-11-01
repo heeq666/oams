@@ -18,9 +18,13 @@
     <div class="wh-lookup-line">
       {#- Enter 在输入框里会提交外面那个填报表单（等于随手存一条空条目），先挡掉；
           Enter 不自己发请求，直接转给「查询」按钮——按钮那条路已验证过（含空输入
-          的拦截），两处只有一条路径，行为不会分叉。空输入后端也把全空白当没输入。 -#}
+          的拦截），两处只有一条路径，行为不会分叉。空输入后端也把全空白当没输入。
+          这里**不许写 required**：整块长在填报表单里，带 required 的控件会被浏览器
+          算进那张表单的约束校验——查件框空着（绝大多数时候都空着）就点不动「提交
+          这次汇报」，等于把整张表卡死（2026-11-02 实测：form.checkValidity() 唯一
+          的 invalid 就是它）。空输入由按钮的 onclick 拦，不靠浏览器校验。 -#}
       <input class="wh-input" id="{{ uid }}-input" name="lookup" type="search"
-             placeholder="输入{{ label }}" autocomplete="off" required
+             placeholder="输入{{ label }}" autocomplete="off"
              {%- if live %} onkeydown="if (event.key === 'Enter') { event.preventDefault(); this.parentNode.querySelector('.wh-lookup-go').click(); }"
              {%- else %} disabled{% endif %}>
       <button class="wh-lookup-go" type="button"
