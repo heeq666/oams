@@ -544,9 +544,15 @@ def _visible_departments(conn, member_id):
 
 
 def _department_pages(conn, org_unit_id):
-    """Every page of a department, drafts included: a department must see what it is building."""
+    """Every page of a department, drafts included: a department must see what it is building.
+
+    ``slug`` rides along because a page is addressed by ``(org_code, slug)``, not by
+    its version row (contract 6.4): anything that links to a page from here must be
+    able to build ``/pages/{org_code}/{slug}`` instead of a link that rots at the
+    next publish.
+    """
     return conn.execute(
-        """SELECT i.interface_id, i.name, i.status, i.version_no, i.visibility,
+        """SELECT i.interface_id, i.slug, i.name, i.status, i.version_no, i.visibility,
                   (SELECT count(*) FROM oams.interface_entries e
                     WHERE e.interface_id = i.interface_id AND e.status_entry = 'active') AS entry_count
            FROM oams.interfaces i
@@ -1693,7 +1699,7 @@ def interfaces(request: Request, saved: str | None = None, error: str | None = N
         scoped = list(active_org_unit_ids(conn, principal["member_id"]))
         rows = conn.execute(
             """SELECT i.interface_id, i.slug, i.name, i.visibility, i.version_no,
-                      o.name AS org_name, p.title AS position_title,
+                      o.name AS org_name, o.org_code AS org_code, p.title AS position_title,
                       (SELECT count(*) FROM oams.interface_entries e
                         WHERE e.interface_id = i.interface_id AND e.status_entry = 'active') AS entry_count
                FROM oams.interfaces i
