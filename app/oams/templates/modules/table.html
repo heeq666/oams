@@ -2,8 +2,10 @@
 {% set p = params_of(module) %}
 {% set cols = as_list(p.get('columns')) %}
 {% set row_count = as_int(p.get('rows'), 1, low=1, high=5) %}
-<section class="wh-m wh-input wh-table-module" data-type="table">
+<section class="wh-m wh-input wh-table-module{% if inline_widgets() %} wh-table-controls{% endif %}" data-type="table">
   {% if cols %}
+  {#- data-label 只给窄档换排布用（<=900px 每条记录拆成一块，字段名靠 ::before 回显）；
+      宽档不读它，视觉不变。 -#}
   <table class="wh-table">
     <thead>
       <tr>
@@ -14,7 +16,7 @@
       {% for row in range(row_count) %}
       <tr>
         {% for col in cols %}
-        <td>
+        <td data-label="{{ col.get('label') or col.get('key') }}">
           {% set key = col.get('key') %}
           {% if inline_widgets() %}{{ input_for_key(key, labelled=False) or static_for(key) }}{% else %}{{ static_for(key) }}{% endif %}
         </td>
