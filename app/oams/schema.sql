@@ -3,7 +3,7 @@
 -- 用法：oams db init
 -- 幂等：所有对象都是 IF NOT EXISTS / CREATE OR REPLACE，或包在 DO 块里吞掉「已存在」；
 --       在一个已建好的库上重复执行只会输出「已存在」而不是报错。
--- 来源：2026-11-01 由开发库 pg_dump --schema-only 导出的 workhub schema 归一化而来
+-- 来源：2026-11-01 由开发库 pg_dump --schema-only 导出的 schema 归一化而来
 --       （schema 名改成 oams，去 owner/ACL，去掉旧的迁移台账表 schema_migrations）。
 
 SET statement_timeout = 0;

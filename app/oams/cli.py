@@ -26,8 +26,8 @@ def db_init():
             conn.execute(sql)
     except psycopg.errors.InsufficientPrivilege:
         raise SystemExit(
-            "当前角色没有建表权限：建库要用拥有该库的角色（或 DBA）执行，"
-            "见 db/deploy/ 的三步；运行时角色故意不给 DDL 权限。"
+            "当前角色没有建表权限：换个拥有该库的角色（或请 DBA）重跑 `oams db init`；"
+            "建库、建 schema、建表都走这一条命令，不再有分角色的建库脚本。"
         )
     print(f"建表完成：{SCHEMA_FILE.name}（幂等，可重复执行）")
 
@@ -168,18 +168,8 @@ def _run_plugin(args):
     return plugin_main(args.plugin_args)
 
 
-def _prog_name():
-    """帮助里的程序名跟着入口走：`oams` 与兼容别名 `workhub` 各自报各自的名字。
-
-    两个入口都指向这里，写死 "workhub" 会让 `oams --help` 冒充成 workhub；
-    其它调用方式（如模块方式、测试里直接调 main()）仍报 workhub。
-    """
-    name = Path(sys.argv[0]).name if sys.argv and sys.argv[0] else ""
-    return name if name in {"oams", "workhub"} else "workhub"
-
-
 def main():
-    parser = argparse.ArgumentParser(prog=_prog_name())
+    parser = argparse.ArgumentParser(prog="oams")
     commands = parser.add_subparsers(dest="command", required=True)
     db = commands.add_parser("db", help="数据库结构与初始化")
     db_commands = db.add_subparsers(dest="db_command", required=True)
