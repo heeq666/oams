@@ -435,6 +435,7 @@ GROUP · 浮层（在 B2）： Tooltip、 Menu（面板 200 宽、圆角 18 —�
 - **preview（审核视角）渲染 disabled 控件，不是静态文本**（2026-10-30 定）：审核审的是这页的**定义**——能不能填、填完什么形状，所以 preview 走 `INLINE_MODES = ("edit", "preview")`，控件在场但 `disabled tabindex="-1"`，值用样例数据；`readonly`（上级看结果）才降级成 `.wh-field-static` 纯文本。旧的「preview 不许出现控件」口径与 `render.py:51` 的常量互相矛盾，已按本条统一。
 
 - **模块层样式表从来没被加载（2026-10-26 修）**：`static/oams-modules.css`（662 行，模块层全部规格）此前没有任何模板引用它——部门界面渲染出的 `wh-m / wh-input / wh-table` 在浏览器里一条规则都没生效（实测：外壳 radius 0、padding 0，真控件被外壳的 `input` 规则预制成 9/12）。现在在 `base.html` 的 `<head>` 里、内联 `<style>` 之前挂 `<link rel="stylesheet" href="/static/oams-modules.css">`：模块层先落，外壳的同名规则后落，冲突以外壳为准。
+- **`.page-tab` 在 ≤900px 覆盖成 `8 12`（2026-11-01）**：§8.2「间距一次性扫平」里记的 `8 16` 是外壳默认值，仍然准，别去改那条记录。768 档上部门有 4 个页面时页签条可用 609px、实际需要 622.7px，差 14px 就折成两排、下边框压到第二排底下；`base.html` 补 `@media (max-width: 900px) { .page-tab { padding: 8px 12px; } }`（12 是同一档），一排 590.7px 装下。页面再多仍折行——不裁、也不压省略号。
 
 ## 9. 怎么在别的对话里用
 
