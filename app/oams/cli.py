@@ -82,8 +82,55 @@ def bootstrap_admin(args):
     print(json.dumps({"member_id": str(member["member_id"]), "position_id": str(position["position_id"]), "org_unit_id": str(org["org_unit_id"])}, indent=2))
 
 
+def _member_id_from_code(employee_code):
+    """按员工编号取成员 id。
+
+    存在的理由：`/setup` 的成员表只显示姓名与员工编号，全仓没有「列出成员」的命令，
+    UUID 在页面和命令行里都查不到——只照说明书走的人会卡在「member id 填什么」。
+    员工编号在 schema 里是 UNIQUE（`workforce_members_employee_code_key`），不会一对多。
+    """
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
+            (employee_code,),
+        ).fetchone()
+    if row is None:
+        raise SystemExit(
+            f"找不到员工编号「{employee_code}」对应的成员（编号区分大小写）。"
+            "先用 /setup 第 3 步那张成员表核对，或改用 --member-id <UUID>。"
+        )
+    return str(row["member_id"])
+
+
 def issue(args):
-    token, expires_at = issue_session(str(UUID(args.member_id)))
+    """签一张临时会话令牌。
+
+    `--member-id <UUID>` 与 `--employee-code <员工编号>` 二选一，签出来等价。两种写法都给
+    就报错而不是挑一个：挑哪个都会让人以为另一个起了作用。
+    """
+    member_id = getattr(args, "member_id", None)
+    employee_code = getattr(args, "employee_code", None)
+    if member_id and employee_code:
+        raise SystemExit(
+            "--member-id 与 --employee-code 只能给一个：两种写法签出来的令牌等价，同时给不知道该按哪个签。"
+        )
+    if employee_code:
+        member_id = _member_id_from_code(employee_code)
+    elif not member_id:
+        raise SystemExit(
+            "缺成员：给 --member-id <UUID> 或 --employee-code <员工编号>（例如 DESIGN001）。"
+        )
+    try:
+        member_uuid = str(UUID(member_id))
+    except (TypeError, ValueError):
+        raise SystemExit(
+            f"--member-id 要的是成员 UUID，「{member_id}」不是。"
+            "手上只有员工编号时改用 --employee-code。"
+        )
+    try:
+        token, expires_at = issue_session(member_uuid)
+    except ValueError as exc:  # 成员不存在或已离职：给一句人话，不甩 traceback
+        raise SystemExit(f"签不出令牌：{exc}（成员可能不存在或已不在职）。")
     print(json.dumps({"access_token": token, "expires_at": expires_at.isoformat()}, indent=2))
 
 
@@ -124,7 +171,8 @@ def main():
     bootstrap.add_argument("--position-code", default="SYSADMIN")
     bootstrap.set_defaults(func=bootstrap_admin)
     token = commands.add_parser("issue-token", help="issue a temporary session to an active member from a trusted operator shell")
-    token.add_argument("--member-id", required=True)
+    token.add_argument("--member-id", help="成员 UUID（bootstrap-admin 会打印）")
+    token.add_argument("--employee-code", help="员工编号（例如 DESIGN001），与 --member-id 二选一")
     token.set_defaults(func=issue)
     commands.add_parser("serve", help="run the API").set_defaults(func=lambda _: serve())
     plugin = commands.add_parser("plugin", help="validate and preview a department plugin offline")
