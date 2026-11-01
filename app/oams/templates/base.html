@@ -85,6 +85,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .field { display: flex; flex-direction: column; gap: 8px; }
   .flash { padding: 8px 12px; border-radius: var(--r-small); margin-bottom: 12px; font-size: 14px; background: var(--success-soft); color: var(--done); }
   .flash.error { background: var(--danger-soft); color: var(--blocked); }
+  /* 说明型提示（例如「你打开的是归档版本」）：一行字，无底色、无边框、无图标。
+     它不是错误也不是成功，所以不借 success-soft / danger-soft，只用正文次级色；内距上下 8。 */
+  .flash.note { background: none; color: var(--ink-2); padding: 8px 0; }
   .pagehead { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
   .pagehead h1 { margin: 0; }
   /* Department navigation is a segmented control on purpose: it navigates space,
