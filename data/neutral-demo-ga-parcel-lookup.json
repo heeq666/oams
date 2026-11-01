@@ -151,7 +151,9 @@
       "mode": "emit",
       "agg": "count",
       "from_field": "state_word",
-      "where_status": "planned"
+      "where_status": "planned",
+      "label": "待取件",
+      "unit": "件"
     }
   ],
   "rules": {

@@ -1041,6 +1041,29 @@ def _field_label(descriptor, field_key):
     return None
 
 
+def _binding_label(descriptor, binding):
+    """What to call this metric on a page: 声明方写的 `label` 优先，其次是字段名，最后才是键。
+
+    名字属声明方（emit 绑定，契约 §2/§7）；键名 `dept.OPS.weekly_done` 是给机器看的，
+    只有前两条都拿不到时才拿它兜底——总比空白好，但页面上不该出现它。
+    """
+    if not isinstance(binding, dict):
+        return None
+    declared = binding.get("label")
+    if isinstance(declared, str) and declared.strip():
+        return declared.strip()
+    return (_field_label(descriptor, binding.get("from_field"))
+            or binding.get("metric_key") or None)
+
+
+def _binding_unit(binding):
+    """Unit the declaration carried, or "" — 空串合法，不猜。"""
+    if not isinstance(binding, dict):
+        return ""
+    unit = binding.get("unit")
+    return unit.strip() if isinstance(unit, str) else ""
+
+
 INTERFACES_SQL = """
     SELECT i.interface_id, i.name, i.org_unit_id, i.version_no, i.descriptor,
            o.org_code, o.name AS org_unit_name
@@ -1199,8 +1222,8 @@ def _combine_pages(agg, page_rows):
 def _format_metric(metric_key, value, unit=""):
     """The shared formatter, so a department number reads like any other one.
 
-    单位由调用方给：binding 上写了 `unit` 就用它，没写就传空串（不带单位是允许的
-    显示结果，不猜）。部门指标的 unit 目前没有契约字段，见 p0-interface-contract §7。
+    单位由调用方给：emit 绑定可选的 `unit` 原样传进来（`_binding_unit`），没写就传空串
+    ——不带单位是允许的显示结果，不猜。声明方写单位这条口径见 p0-interface-contract §2/§7。
     """
     try:
         from oams.metric_format import format_metric
@@ -1279,7 +1302,7 @@ def rollup_entries(conn, interface_id, metric_key=None):
                          "where_status": binding.get("where_status")})
         base.update({
             "value": value,
-            "formatted": _format_metric(metric_key, value, binding.get("unit") if binding else "") if metric_key else None,
+            "formatted": _format_metric(metric_key, value, _binding_unit(binding)) if metric_key else None,
             "entry_count": len(rows),
             "entries": [_entry_brief(row) for row in rows],
         })
@@ -1343,7 +1366,7 @@ def aggregate_entries(conn, org_unit_id, metric_key, interface_id=None):
             "agg": agg,
             "from_field": first_binding.get("from_field"),
             "where_status": first_binding.get("where_status"),
-            "label": _field_label(first_page["descriptor"], first_binding.get("from_field")) or metric_key,
+            "label": _binding_label(first_page["descriptor"], first_binding),
             "interface_id": first_page["interface_id"],
             "interface_name": first_page["name"],
             "org_unit_id": first_page["org_unit_id"],
@@ -1392,15 +1415,14 @@ def build_department_aggregates(conn, org_unit_id, descriptor=None, interface_id
                 value = None if column is None else _aggregate_value(binding.get("agg"), column, rows)
                 metric = {
                     "metric_key": binding.get("metric_key"),
-                    "label": (_field_label(page.get("descriptor"), binding.get("from_field"))
-                              or binding.get("metric_key")),
+                    "label": _binding_label(page.get("descriptor"), binding),
                     "mode": "emit",
                     "agg": binding.get("agg"),
                     "from_field": binding.get("from_field"),
                     "where_status": binding.get("where_status"),
                     "value": value,
                     "formatted": _format_metric(binding.get("metric_key"), value,
-                                                binding.get("unit")),
+                                                _binding_unit(binding)),
                     "entry_count": len(rows),
                     "interface_id": page_interface_id,
                     "interface_name": page.get("name"),

@@ -207,10 +207,35 @@ def _metric_tail(metric_key: str) -> str:
     return metric_key.split(".", 2)[2]
 
 
+def _emit_binding_meta(metric_key: str) -> dict[str, str]:
+    """This page's own `mode=emit` declaration for `metric_key`, if there is one.
+
+    名字与单位属**声明方**（契约 §2/§7）：只有 emit 绑定能写 `label` / `unit`，
+    display 绑定写了会被 descriptor 校验判红。所以这里只找 emit，不找 display。
+    没有渲染上下文（纯函数测试直接调 metric_name）时返回空——回落逻辑照旧。
+    """
+    if not metric_key:
+        return {}
+    state = _STATE.get()
+    if state is None:
+        return {}
+    for binding in state.descriptor.get("metrics") or []:
+        if not isinstance(binding, dict) or binding.get("mode") != "emit":
+            continue
+        if str(binding.get("metric_key") or "").strip() != metric_key:
+            continue
+        label = binding.get("label")
+        unit = binding.get("unit")
+        return {"label": str(label).strip() if isinstance(label, str) else "",
+                "unit": str(unit).strip() if isinstance(unit, str) else ""}
+    return {}
+
+
 def metric_meta(metric_key: str | None) -> dict[str, str]:
     """Name and unit for a metric key, without ever trusting the descriptor."""
     if not metric_key:
         return {"key": "", "name": "", "unit": ""}
+    declared = _emit_binding_meta(str(metric_key))
     spec = None
     if _real_get_metric is not None:
         try:
@@ -219,11 +244,13 @@ def metric_meta(metric_key: str | None) -> dict[str, str]:
             spec = None
     if spec is not None:
         return {"key": metric_key,
-                "name": str(getattr(spec, "name", "") or metric_key),
-                "unit": str(getattr(spec, "unit", "") or "")}
-    # 平台指标下线后没有镜像表可查：名字就用键本身，单位交给调用方（空串合法）。
-    # 部门 emit 指标再多切一层 `dept.<代码>.`（见 _metric_tail）。
-    return {"key": metric_key, "name": _metric_tail(metric_key), "unit": ""}
+                "name": declared.get("label") or str(getattr(spec, "name", "") or metric_key),
+                "unit": declared.get("unit") or str(getattr(spec, "unit", "") or "")}
+    # 平台指标下线后没有镜像表可查：名字先看本页 emit 绑定的 `label`，再退到键末段
+    # （部门 emit 指标多切一层 `dept.<代码>.`，见 _metric_tail）；单位同理。
+    return {"key": metric_key,
+            "name": declared.get("label") or _metric_tail(metric_key),
+            "unit": declared.get("unit") or ""}
 
 
 def _number(value: Any) -> float | None:

@@ -170,11 +170,32 @@ binding 形状（descriptor `metrics[]` 的一项）：
   agg: count                                   # count | sum | avg | count_distinct
   from_field: status_word                      # 必须是本插件已声明的 field.key
   where_status: done                           # 可选，四态之一
+  label: 本周完成                              # 可选，人话名（≤24 字）
+  unit: 项                                     # 可选，计量单位（≤8 字）
 - metric_key: funnel.sample_done                # display：platform 指标（目录里有才行）
   mode: display
 - metric_key: dept.PRODUCTION.finished_count   # display：本页自己 emit 的那条（同为 ①②）
   mode: display
 ```
+
+### 名字与单位属声明方（2026-11-02 定）
+
+页面上那个指标叫什么、带什么单位，由**声明这条指标的 emit 绑定**说了算，不是渲染层猜的：
+
+- `label`（可选，非空字符串，≤24 字）——人话名，如「本周完成」「待取件」「本部门支出」；
+  不写就回落键的末段（`dept.OPS.weekly_done` → `weekly_done`），那是机器名，能看但不是给
+  人看的，所以正式页面一律写上。
+- `unit`（可选，非空字符串，≤8 字）——计量单位，如「项」「元」「件」「%」；不写就**不带
+  单位**渲染，空串是合法的显示结果，`render`/`api` 都不替它编一个。`format_number` 里
+  `元` / `%` 有形状兜底（写成 `¥1,280.00` / `59%`），那两条是格式规则，不替代 `unit`。
+- 两个字段是**新增的可选字段**，不写不会报错，写了形状不对一律 `METRIC_UNDEFINED`
+  （空串、null、超长、非字符串各报一条点名文案）；写 `label`/`unit` 而键不是
+  `dept.<本单位CODE>.` 的，仍按 §2 的命名规则拒。
+- **display 绑定不得自带 `label`/`unit`**（`[DATA_RULE_VIOLATION]`）：display 是引用方，
+  名字与单位跟着被引用的那条指标走；渲染时 `render.metric_meta()` 通过
+  `render._emit_binding_meta()` 从本页 `metrics[]` 的 emit 绑定里读，`api` 侧用
+  `_binding_label()` / `_binding_unit()` 读同一条绑定——两个出口同一份来源。
+
 
 ---
 
@@ -359,10 +380,12 @@ def format_metric(metric_key: str, value: float | int | None, unit: str = "") ->
 ```
 
 **单位从哪来**：`unit` 一律由调用方传入，不在格式化函数里查表——`render.aggregate` 取
-`MetricSpec.unit`（经 `metric_meta`），`api._format_metric` 取 binding 上若有的 `unit`；
-部门指标的 binding **目前没有 `unit` 字段**（emit 只声明 `metric_key`/`agg`/`from_field`/
-`where_status`），所以部门数字现在按「无单位」渲染，空串是合法的显示结果。要给部门指标
-配单位，先在本契约里给 binding 加 `unit`，再实现，不要在渲染层硬编码。
+`metric_meta()`（内部走 `render._emit_binding_meta()`，读本页 emit 绑定的 `unit`），
+`api._format_metric` 取 `_binding_unit(binding)`。部门 emit 绑定的 `unit` 是 §2 里的可选字段
+（2026-11-02 加），没有写就传空串、按「无单位」渲染，**空串是合法的显示结果，不猜**。
+display 绑定不得自带 `unit`（引用方的名字与单位跟着被引用的那条走，见 §2「名字与单位属
+声明方」）。同理，页面上那个指标的名字来自 `label`，没有才回落键末段；这条也只在 §2 定义，
+渲染层不得硬编码。
 
 展示类模块（`metric_card`/`metric_grid`/`rank_list`/`flow_strip`）能引哪些键、为什么
 不许引别部门的，见 §2「display 能引什么」——一句话：**platform 指标，或本页自己 emit 的
