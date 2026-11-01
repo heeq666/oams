@@ -787,7 +787,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="list_modules",
         description=(
-            "列出模块注册表（container/input/display 三层，20 个白名单模块）及其参数、"
+            "列出模块注册表（container/input/display 三层，21 个白名单模块）及其参数、"
             "可消费/产出的标准字段、是否可汇总。descriptor 里的 modules[].type 只能取这里的 key。"
         ),
         input_schema=_schema({

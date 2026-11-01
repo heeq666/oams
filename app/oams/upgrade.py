@@ -2,7 +2,7 @@
 
 为什么需要这个工具：0.1 与 0.2 的外层形状几乎一样，变的是模块词汇表。
 0.1 的 11 个旧类型（item_card / progress_bar / blocked_card / ...）在 0.2 里作废，
-渲染器只认 MODULE_REGISTRY 里的 20 个 key，所以任何存量 0.1 页面在 0.2 渲染器上
+渲染器只认 MODULE_REGISTRY 里的 21 个 key，所以任何存量 0.1 页面在 0.2 渲染器上
 都会直接抛 RenderError(MODULE_NOT_WHITELISTED)，而 validate_descriptor 对 0.1 文档
 走旧分支、照旧返回 []，两套口径不一致。这个模块负责把存量文档搬到新词汇表上。
 
