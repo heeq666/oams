@@ -10,7 +10,7 @@
       {% elif p.status != 'active' %}<span class="badge vacant">待提交</span>{% endif %}
     </a>
   {% endfor %}
-  <a class="page-tab add on" href="/departments/{{ unit.org_unit_id }}/new">＋ 新页面</a>
+  <a class="page-tab add on" aria-current="page" href="/departments/{{ unit.org_unit_id }}/new">＋ 新页面</a>
 </nav>
 
 <h1>在 {{ unit.name }} 里新建页面</h1>
