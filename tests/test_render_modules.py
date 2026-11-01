@@ -500,6 +500,48 @@ def test_rank_list_sorts_descending_and_honours_the_limit():
     assert labels == ["抖音", "天猫"]      # limit=2, highest first
 
 
+def test_the_same_number_reads_the_same_in_a_card_a_grid_and_a_rank():
+    """同一份聚合喂三处（卡片 / 网格 / 排行），那个数三处必须一字不差。
+
+    排行就是「首页那一行」的同款：同一个 `rank_list` 模板、同一份 aggregates，
+    只是挂在别的页面上。聚合层现在还不产 `rank.*` 键（`rank_rows` 是唯一的读方，
+    全仓没有写方），所以这条钉的是渲染口径：等生产端接上，三处不许对同一个数
+    给出两种写法（`820` 与 `820.00` 就是两个数，用户会以为其中一个是错的）。
+    """
+    key = "dept.DESIGN.qty"
+    html = render_interface(
+        page({"type": "metric_card", "params": {"metric_key": key}},
+             {"type": "metric_grid", "params": {"metric_keys": [key]}},
+             {"type": "rank_list", "params": {"metric_key": key, "limit": 5}}),
+        {}, {key: 820, f"rank.{key}.抖音": 820},
+    )
+    card, grid = re.findall(r'<span class="wh-metric-value">(.*?)</span>', html)
+    rank = re.search(r'class="wh-rank-value">([^<]*)<', html).group(1)
+    assert card == grid == rank == "820"
+
+
+def test_money_reads_the_same_in_a_card_a_grid_and_a_rank():
+    """带单位的数同理：元自带 `¥`，三处都印 `¥1,280.00`，且都不另说一个「元」。
+
+    排行行内承载单位（`¥1,280.00`），卡片与网格把单位让给数字本身（`metric_unit`
+    对「元」返回空串），所以三处能直接比字符串。
+    """
+    money = "dept.DESIGN.spend"
+    html = render_interface(
+        page({"type": "metric_card", "params": {"metric_key": money}},
+             {"type": "metric_grid", "params": {"metric_keys": [money]}},
+             {"type": "rank_list", "params": {"metric_key": money, "limit": 5}},
+             metrics=[{"metric_key": money, "mode": "emit", "agg": "sum",
+                       "from_field": "f_metric", "label": "本部门支出", "unit": "元"}]),
+        {}, {money: 1280.0, f"rank.{money}.设计部": 1280.0},
+    )
+    values = re.findall(r'<span class="wh-metric-value">(.*?)</span>', html)
+    rank = re.search(r'class="wh-rank-value">([^<]*)<', html).group(1)
+    assert values == ["\u00a51,280.00", "\u00a51,280.00"]
+    assert rank == "\u00a51,280.00"
+    assert "元" not in html
+
+
 def test_activity_feed_honours_the_limit():
     html = render_interface(one("activity_feed"), {}, AGGREGATES)
     assert html.count("<li>") == 1
