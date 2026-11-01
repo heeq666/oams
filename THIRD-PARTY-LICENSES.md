@@ -8,7 +8,7 @@
 
 ### htmx 1.9.12 · 0BSD
 
-- 文件：`app/workhub/static/vendor/htmx.min.js`
+- 文件：`app/oams/static/vendor/htmx.min.js`
 - 版本：**1.9.12**（文件内 `version:"1.9.12"`）
 - 许可证：**0BSD（Zero-Clause BSD）**
 - 来源：<https://unpkg.com/htmx.org@1.9.12/>（上游仓库 <https://github.com/bigskysoftware/htmx>，标签 `v1.9.12`）
