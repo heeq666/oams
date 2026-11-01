@@ -36,7 +36,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
@@ -746,6 +746,83 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
     return RedirectResponse(url=f"/departments/{org_unit_id}/{row['interface_id']}?saved=1", status_code=303)
 
 
+# ---------------------------------------------------------------------------
+# 页面身份：`(org_unit_id, slug)` 是页面，`interface_id` 只是它某一版
+#
+# 契约 6.4。读旧版本要落到这一页现在的版本上——旧版本记的条目在新版本的数字里
+# 照旧算数；但往旧版本里写必须拒，否则一个开着没关的旧标签页会往一个没人再看的
+# 版本上追加条目，人却以为写进了页面。
+# ---------------------------------------------------------------------------
+
+ARCHIVED_WRITE_REFUSAL = ("这一版已归档，不能再往里写。刷新页面会回到这个页面现在的版本；"
+                          "旧版本上记的条目在新的版本里照旧算数。")
+
+
+def _current_version_id(conn, org_unit_id, slug):
+    """The version a page currently publishes, or None when it has none."""
+    row = conn.execute(
+        "SELECT interface_id FROM oams.interfaces WHERE org_unit_id = %s AND slug = %s "
+        "AND status = 'active'", (org_unit_id, slug)).fetchone()
+    return row["interface_id"] if row else None
+
+
+def _page_version(conn, org_unit_id, interface_id):
+    """Any version of this page, archived included (the default lookups skip it)."""
+    return conn.execute(
+        "SELECT * FROM oams.interfaces WHERE interface_id = %s AND org_unit_id = %s",
+        (interface_id, org_unit_id)).fetchone()
+
+
+def _archived_reader_response(request: Request, conn, org_unit_id, row):
+    """Send a reader of an archived version to the page's current one."""
+    current = _current_version_id(conn, org_unit_id, row["slug"])
+    if current is None:
+        return _denied(request, "这一版已归档，这个页面目前没有在用的版本。")
+    response = RedirectResponse(url=f"/departments/{org_unit_id}/{current}", status_code=303)
+    return response
+
+
+def _archived_writer_response(org_unit_id, row, conn):
+    """Refuse a write aimed at an archived version, and say where to go instead."""
+    current = _current_version_id(conn, org_unit_id, row["slug"])
+    if current is None:
+        return PlainTextResponse(ARCHIVED_WRITE_REFUSAL, status_code=409)
+    body = (ARCHIVED_WRITE_REFUSAL + "\n\n现在的版本：/departments/" + str(org_unit_id)
+            + "/" + str(current) + "\n")
+    return PlainTextResponse(body, status_code=409)
+
+
+@router.get("/pages/{org_code}/{slug}", response_class=HTMLResponse)
+def page_by_slug(request: Request, org_code: str, slug: str):
+    """The page's address that does not change when it is re-published.
+
+    A page is identified by `(org_code, slug)`; the version id changes at every
+    publish, so a link built from it rots the moment somebody edits the page. This
+    route resolves the current version and hands off to the workbench, which is
+    the one place the page is actually drawn.
+    """
+    try:
+        principal = _require(request, "workforce.reports", "read")
+        _require(request, "workforce.reports", "submit")
+    except _NotSignedIn:
+        return RedirectResponse(url=f"/login?next=/pages/{org_code}/{slug}", status_code=302)
+    except _NotPermitted:
+        return _denied(request, "填写部门页面需要 workforce.reports/read 与 submit 权限。")
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT i.interface_id, i.org_unit_id
+                 FROM oams.interfaces i
+                 JOIN oams.org_units o ON o.org_unit_id = i.org_unit_id
+                WHERE o.org_code = %s AND i.slug = %s AND i.status = 'active'""",
+            (org_code, slug)).fetchone()
+        if row is None:
+            return _denied(request, "这个页面不存在，或者目前没有在用的版本。")
+        if _resolve_department(conn, principal, row["org_unit_id"]) is None:
+            return _denied(request, "你不在这个部门的范围内。")
+    return RedirectResponse(url=f"/departments/{row['org_unit_id']}/{row['interface_id']}",
+                            status_code=303)
+
+
 @router.get("/departments/{org_unit_id}/{interface_id}", response_class=HTMLResponse)
 def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
                     saved: str | None = None, error: str | None = None):
@@ -773,12 +850,14 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         unit = _resolve_department(conn, principal, org_unit_id)
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
-        page = conn.execute(
-            """SELECT * FROM oams.interfaces
-               WHERE interface_id = %s AND org_unit_id = %s AND status <> 'archived'""",
-            (interface_id, org_unit_id)).fetchone()
+        page = _page_version(conn, org_unit_id, interface_id)
         if page is None:
             return _denied(request, "这个页面不存在或不属于该部门。")
+        if page["status"] == "archived":
+            # Contract 6.4: the page is addressed by (org_unit_id, slug); this row
+            # is only one version of it, and the entries recorded here still count
+            # on the current one. Send the reader there instead of a dead end.
+            return _archived_reader_response(request, conn, org_unit_id, page)
         mode = _entry_mode_for(page["status"])
         descriptor = page["descriptor"]
         # The rollup view of the same page: every entry with the state that says
@@ -868,12 +947,11 @@ async def department_page_submit(request: Request, org_unit_id: UUID, interface_
         unit = _resolve_department(conn, principal, org_unit_id)
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
-        page = conn.execute(
-            """SELECT * FROM oams.interfaces
-               WHERE interface_id = %s AND org_unit_id = %s AND status <> 'archived'""",
-            (interface_id, org_unit_id)).fetchone()
+        page = _page_version(conn, org_unit_id, interface_id)
         if page is None:
             return _denied(request, "这个页面不存在或不属于该部门。")
+        if page["status"] == "archived":
+            return _archived_writer_response(org_unit_id, page, conn)
         descriptor = page["descriptor"]
         fields = [f for f in descriptor.get("fields", []) if isinstance(f, dict) and f.get("key")]
         form = await request.form()
@@ -993,12 +1071,11 @@ def department_submit_review(request: Request, org_unit_id: UUID, interface_id: 
         unit = _resolve_department(conn, principal, org_unit_id)
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
-        prior = conn.execute(
-            """SELECT interface_id, status FROM oams.interfaces
-               WHERE interface_id = %s AND org_unit_id = %s AND status <> 'archived'""",
-            (interface_id, org_unit_id)).fetchone()
+        prior = _page_version(conn, org_unit_id, interface_id)
         if prior is None:
             return _denied(request, "这个页面不存在或不属于该部门。")
+        if prior["status"] == "archived":
+            return _archived_writer_response(org_unit_id, prior, conn)
         if prior["status"] == "pending":
             return RedirectResponse(url=base + "?error=" + urllib.parse.quote("这个页面已经提交，正在等审核"),
                                     status_code=303)
@@ -1037,11 +1114,13 @@ def department_withdraw_review(request: Request, org_unit_id: UUID, interface_id
         if unit is None:
             return _denied(request, "你不在这个部门的范围内。")
         prior = conn.execute(
-            """SELECT interface_id, status, reviewed_at FROM oams.interfaces
-               WHERE interface_id = %s AND org_unit_id = %s AND status <> 'archived' FOR UPDATE""",
+            """SELECT * FROM oams.interfaces
+               WHERE interface_id = %s AND org_unit_id = %s FOR UPDATE""",
             (interface_id, org_unit_id)).fetchone()
         if prior is None:
             return _denied(request, "这个页面不存在或不属于该部门。")
+        if prior["status"] == "archived":
+            return _archived_writer_response(org_unit_id, prior, conn)
         if prior["status"] != "pending":
             return RedirectResponse(
                 url=base + "?error=" + urllib.parse.quote("只有正在等审核的页面可以撤回"), status_code=303)
