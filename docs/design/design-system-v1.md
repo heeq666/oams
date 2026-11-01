@@ -277,7 +277,7 @@ GROUP · 浮层（在 B2）： Tooltip、 Menu（面板 200 宽、圆角 18 —�
 
 **验收口径（改这类表照这六条量）**：① 三档 1440/1024/768 页面 `scrollWidth === clientWidth`；② 控件不裁字（`input` 判 `scrollWidth > clientWidth + 1`；`select` 按最长选项量字宽 + 左右内距 + 24 箭头区，与控件宽比）；③ 页面上不出现 `…` 或「请选…」当显示值；④ 1440 视觉与改前一致（财务报销表 1183 / 容器 1217）；⑤ 768 下真填一行真提交（303 + `?saved=1`、条目 +1，验完删掉新增条目）；⑥ 越界元素为 0（排除 `position:fixed` 与祖先是滚动容器的）。
 
-**落地位置**：`app/oams/templates/modules/table.html`（`td` 加 `data-label`，`section` 在 `inline_widgets()` 为真时加 `wh-table-controls`）+ `app/oams/static/oams-modules.css` 末尾的 `@media (max-width: 1100px)`。**`inline_widgets()` 覆盖的是 `INLINE_MODES = ("edit", "preview")` 两个模式**（`render.py:52`），不是只管填报表单页——所以改这一段 CSS 时，`edit`（填报页与工作台孪生页）和 `preview`（审核侧预览片、MCP 的 `preview_descriptor` → `mcp/tools.py:563`、`plugin_cli.py:137`）一起变，`readonly` 不动。排查与取舍过程见 `docs/reports/20261102-narrow-table-audit.md`（2026-11-01 随目录拆分移入内部仓 `oams-internal`，主仓不再有）。
+**落地位置**：`app/oams/templates/modules/table.html`（`td` 加 `data-label`，`section` 在 `inline_widgets()` 为真时加 `wh-table-controls`）+ `app/oams/static/oams-modules.css` 末尾的 `@media (max-width: 1100px)`。**`inline_widgets()` 覆盖的是 `INLINE_MODES = ("edit", "preview")` 两个模式**（`render.py:52`），不是只管填报表单页——所以改这一段 CSS 时，`edit`（填报页与工作台孪生页）和 `preview`（审核侧预览片、MCP 的 `preview_descriptor` → `mcp/tools.py:563`、`plugin_cli.py:137`）一起变，`readonly` 不动。排查与取舍过程见 `docs/reports/20261102-narrow-table-audit.md`（该报告不随公开源码发布）。
 
 > 分层判断：**骨架层** = 页面外壳（一页一套，全站复用）；**组件层** = 卡片 / 面板内部用的控件与数据件；**浮层** = 浮在整页之上的东西；**协作室** = 右下角圆按钮呼出的全局讨论层；**模块层** = 与 `MODULE_REGISTRY` 对齐、由容器 + 组件拼成的内容块。新组件先判断属于哪一层，再进对应分区。
 

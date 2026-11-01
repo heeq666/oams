@@ -4,7 +4,10 @@
 // 而是 ego 浏览器（AGENTS.md「浏览器自动化」）。服务仍自己起一个——不占演示站 8000，
 // 也不假设本机已经有服务在跑；跑完关掉。
 //
-// 用法：ego-browser nodejs < scripts/ego-grid-check.mjs
+// 用法：`ego-browser nodejs < scripts/ego-grid-check.mjs`（在仓库根跑，或设 OAMS_REPO）。
+// 仓库根怎么找：ego 的 node 运行器（本机 0.6.2.5 实测）把 cwd 设成 `/`、不继承 shell 环境变量、
+// 也不传 argv，所以依次试 OAMS_REPO → `/tmp/oams-ego-root.txt` 里那一行 → 从 cwd 往上逐级找。
+// 第一次跑之前，在仓库根执行一次 `echo "$PWD" > /tmp/oams-ego-root.txt`。
 // 退出码：0 通过 / 1 有页面不合规 / 2 环境起不来
 //
 // 口径（docs/design/layout-grid.md）：三档 1440 / 1024 / 768，页面不许横向滚动
@@ -15,9 +18,29 @@
 // 所以配置只能是下面的常量；要临时改，写 /tmp/oams-ego-grid.json 覆盖即可。
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
-const ROOT = "/Volumes/工作/aiworkspace/oams";
+// 认出仓库的判据：有 app/oams/api.py，也有 .venv 里的 python。
+async function resolveRoot() {
+  const isRepo = (dir) => !!dir && existsSync(dir + "/app/oams/api.py") && existsSync(dir + "/.venv/bin/python");
+  const candidates = [];
+  if (process.env.OAMS_REPO) candidates.push(process.env.OAMS_REPO);
+  try {
+    candidates.push((await readFile("/tmp/oams-ego-root.txt", "utf8")).trim());
+  } catch {}
+  for (let dir = process.cwd(); dir && dir !== "/"; dir = dirname(dir)) candidates.push(dir);
+  for (const dir of candidates) if (isRepo(dir)) return dir;
+  console.error(
+    "找不到仓库根（试过：" + (candidates.filter(Boolean).join("、")
+      || "cwd=" + process.cwd() + "，且没有 /tmp/oams-ego-root.txt") + "）。"
+    + "在仓库根执行一次 `echo \"$PWD\" > /tmp/oams-ego-root.txt`，或设 OAMS_REPO=<仓库根>。",
+  );
+  process.exit(2);
+}
+
+const ROOT = await resolveRoot();
 const PYTHON = ROOT + "/.venv/bin/python";
 const CONFIG_PATH = "/tmp/oams-ego-grid.json";
 
