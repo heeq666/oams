@@ -98,7 +98,7 @@ oams issue-token --member-id <bootstrap 打印的 member_id>   # 真实会话：
 
 ## 许可与署名
 
-- **作者**：[@heeq666](https://github.com/heeq666)
+- **作者**：[@heeq666](https://github.com/heeq666)。项目自 2026 年 10 月起由作者发起并持续开发。
 - **许可**：**GNU AGPL-3.0** 或**商业授权**，二选一。
   - AGPL-3.0：免费，**商用也免费**；但如果你改了它并让别人通过网络使用这个修改版，你要以 AGPL-3.0 公开修改后的源码。
   - 商业授权：想做成闭源产品售卖、或不接受 AGPL 传染的，向作者购买商业授权即可闭源。联系方式见 [LICENSING.md](LICENSING.md)。
