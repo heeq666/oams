@@ -185,8 +185,10 @@
 </div>
 
 {# 收起预览时连内容一起清掉：留着 DOM 就是留着一份旧版本的渲染，下次展开前审核人
-   会以为看的是当前版本。错误态三种（403 没权限 / 404 没这页 / 500 这一版渲不出来）
-   都由 htmx 的非 2xx 触发——htmx 默认不换 DOM，所以这里只补一行说明。 #}
+   会以为看的是当前版本。错误态由 htmx 的非 2xx 触发——htmx 默认不换 DOM，所以这里
+   只补一行说明。403 的那句话用后端给的（拒绝原因很具体：自己提交的要别人审 / 不在
+   你的部门 / 缺公司终审权限 / 不在待审状态），前端再写一套会把这些差异抹平成一个
+   笼统的「没有权限」，审核人拿着它没法判断该找谁。200 的降级片段不算错误。 #}
 <script>
   function oamsTogglePreview(btn) {
     var panel = document.getElementById(btn.dataset.previewTarget);
@@ -215,17 +217,27 @@
     }
     return null;
   }
+  // 非 2xx 的正文就是一句可插入的说明（带 HX-Request 时后端回 <div class="flash error">），
+  // 取它的文字，不另起一套：直开 URL 与卡内两条路因此是同一句话。
+  function oamsRefusalText(xhr) {
+    var raw = (xhr && xhr.responseText) || "";
+    if (!raw || raw.length > 2000) return "";
+    var el = new DOMParser().parseFromString(raw, "text/html")
+      .querySelector(".flash.error, .flash, [role=alert]");
+    return el ? (el.textContent || "").trim() : "";
+  }
   document.body.addEventListener("htmx:responseError", function (evt) {
     var block = oamsPreviewBlock(evt);
     if (!block) return;
     var code = evt.detail.xhr.status;
     var note = block.querySelector(".preview-note");
     var btn = block.querySelector("button");
+    var refusal = oamsRefusalText(evt.detail.xhr);
     note.classList.add("is-error");
-    note.textContent = code === 403 ? "你没有这一页的预览权限。"
+    note.textContent = refusal || (code === 403 ? "你没有这一页的预览权限。"
       : code === 404 ? "找不到这一页。"
       : code === 500 ? "这一版渲不出来（模块可能已下线），先按差异表审。"
-      : "预览加载失败（" + code + "）";
+      : "预览加载失败（" + code + "）");
     btn.setAttribute("aria-expanded", "false");
     btn.textContent = "预览这一页";
   });
