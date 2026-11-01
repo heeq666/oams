@@ -437,6 +437,29 @@ def test_preview_reports_every_contract_problem_with_a_code_prefix(registry):
     assert registry.context.store.all_versions() == []
 
 
+def test_a_descriptor_the_renderer_cannot_draw_is_reported_instead_of_raised(registry):
+    """渲染不了就说渲染不了：不抛异常、也不把半张图混进 `errors` 里。
+
+    HTTP 那边（`/reviews/{id}/preview`）遇到这种版本已经改成降级 200 加一句人话
+    （`_preview_degraded`，见 tests/test_review_preview.py）；MCP 的
+    `preview_descriptor` 本来就吃外部传进来的文件，未注册模块在这里是合法输入，
+    所以它仍然如实分两组：契约错误留在 `errors`，渲染意外另立 `render_error`，
+    不该把两者搅在一起、也不该崩。
+    """
+    broken = good_descriptor()
+    broken["modules"] = [{"key": "x", "type": "not_a_module"}]
+    result = registry.call("preview_descriptor", {"descriptor": broken})
+    assert result.ok is True                      # 工具层不许崩
+    assert result.payload["valid"] is False
+    assert result.payload["rendered_html"] == ""  # 画不出来就别给半张
+    assert "MODULE_NOT_WHITELISTED" in result.payload["render_error"]
+    # 契约判定仍按 code 给，客户端能分组；渲染意外另立字段，不混进 errors。
+    codes = {e.split("]")[0].strip("[") for e in result.payload["errors"]}
+    assert "MODULE_NOT_WHITELISTED" in codes
+    assert result.payload["persisted"] is False
+    assert registry.context.store.all_versions() == []
+
+
 def test_preview_reports_every_binding_as_unresolved_while_the_catalog_is_empty(registry):
     """空目录下，「解析不出来」必须如实说，不能假装解析到了。
 
