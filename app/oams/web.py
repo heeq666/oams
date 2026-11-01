@@ -2594,6 +2594,13 @@ def setup_pilot_member(request: Request, csrf: str = Form(...), display_name: st
         token, expires_at = issue_session(str(member_id), "pilot-setup")
     except HTTPException as exc:
         if exc.status_code == 409:
+            # 409 有两件事：员工编号被人用了，或者这个岗位已经坐着别人（一个岗位同时
+            # 只能坐一个人）。两者以前都翻成「这个员工编号已经存在」——第二次把人往
+            # 同一岗位放的人就去改一个没错的编号。判据是 api 侧给的稳定标记
+            # （api.CONFLICT_HEADER），不是 detail 的措辞。
+            conflict = (exc.headers or {}).get(api.CONFLICT_HEADER)
+            if conflict == api.CONFLICT_POSITION_OCCUPIED:
+                return RedirectResponse(url="/setup?error=pilot-position-taken", status_code=303)
             return RedirectResponse(url="/setup?error=pilot-duplicate", status_code=303)
         raise
     return RedirectResponse(url="/setup?saved=pilot&member_id=" + str(member_id)
