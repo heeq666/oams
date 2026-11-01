@@ -12,28 +12,47 @@ OAMS 是组织内 AI 应用的**宿主与应用商店**。应用由各部门自�
 
 ## 一条命令跑起来
 
-需要 Python 3.11+ 和一个 PostgreSQL 数据库。
+需要 Python 3.11+ 和一个 PostgreSQL 数据库。机器上的 `python3` 版本不够时（macOS 自带的是 3.9）：`brew install python@3.11`，或者用 `uv venv --python 3.12 .venv`。
 
 ```sh
+# 0. 先有一个库 —— db init 只建表，不替你建库
+docker run -d --name oams-pg -e POSTGRES_PASSWORD='<你的口令>' \
+  -e POSTGRES_DB='<库名>' -p 127.0.0.1:<你的端口>:5432 postgres:16-alpine
+# 机器上已经装好 PostgreSQL 的，只建库也行：createdb '<库名>'
+
+# 1. 装依赖、建表、建管理员
 python -m venv .venv
 . .venv/bin/activate
 pip install -e .
 cp .env.example .env          # 再把库地址填进 .env（口令别提交进仓库）
-export OAMS_DATABASE_URL="postgresql://<账号>:<口令>@127.0.0.1:5432/<库名>"
+export OAMS_DATABASE_URL="postgresql://<账号>:<口令>@127.0.0.1:<你的端口>/<库名>"
 oams db init                  # 建表：把库结构建出来
 oams bootstrap-admin --name "系统管理员" --employee-code "ADMIN001" --org-code "COMPANY" --org-name "公司"
-oams serve                    # 默认 http://127.0.0.1:8000
+oams serve                    # 默认 http://127.0.0.1:8000；端口被占就设 OAMS_BIND_PORT=<你的端口>
 ```
 
-起来后打开 <http://127.0.0.1:8000> 就能用。本机试用可以设 `OAMS_DEV_AUTOLOGIN=1` 免登录（页面右下角会出现身份切换角标），**部署到任何共享环境前必须去掉**。
+起来后打开 <http://127.0.0.1:8000>，会先停在登录页。进去有两条路：
+
+```sh
+export OAMS_DEV_AUTOLOGIN=1   # 本机试用：免登录，右下角出现身份切换角标；部署到共享环境前必须去掉
+
+oams issue-token --member-id <bootstrap 打印的 member_id>   # 真实会话：签一张令牌
+# 然后打开 /login?token=<令牌> 进去（或在登录页地址后面加 ?token=<令牌>）
+```
 
 命令是 `oams`。完整步骤与常见报错见[在你电脑上跑起来（本地试用）](docs/runbooks/local-trial.md)。
 
 ## 建第一页
 
-三步：**建部门、岗位、成员** → **写一个页面**（一段 JSON 描述）→ **提交审核，过一审后上线**。
+前提：**先有一个部门，以及那个部门里能签字的负责人**——在 `/setup` 建成员时勾上「部门负责人」，这个人才有权一审；没人能签，下面这一步会卡死。
+
+然后三步：**建部门、岗位、成员** → **写一个页面**（一段 JSON 描述）→ **提交审核，过一审后上线**。
 
 照[建一页、过一审（一页纸）](docs/runbooks/first-page-trial.md)走一遍即可，里面有可直接粘贴的 JSON 和三张截图。页面从草稿到上线要过部门初审；要对外公开或进公司汇总的，再过一道公司终审。
+
+## 本项目自己的环境（维护者用，读者可跳过）
+
+作者本机跑着两套库：演示站 **55460**（容器 `oams-demo`）、本机开发库 **55433**（容器 `oams-pg`），`pytest` 默认连后者。这两个数字只对作者的机器成立，照抄到你的机器上要换成 `<你的端口>` 与 `<你的库名>`。两套库的数据不同步，同一个数字在两边查出来不一样是正常的。
 
 ## 开发档案
 
