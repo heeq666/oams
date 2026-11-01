@@ -27,10 +27,17 @@ import conftest as suite
 pytestmark = pytest.mark.db
 
 
-def _run(*args: str, url: str) -> subprocess.CompletedProcess:
-    """跑真 CLI（子进程），与 `oams issue-token` 在运维机器上看到的一样。"""
+def _run(*args: str, url: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
+    """跑真 CLI（子进程），与 `oams issue-token` 在运维机器上看到的一样。
+
+    `OAMS_BASE_URL` 一律先摘掉：跑测这台机器上要是正好设了它，不摘就等于把别人的
+    环境当成了被测对象的默认值。
+    """
 
     env = dict(os.environ)
+    env.pop("OAMS_BASE_URL", None)
+    if env_extra:
+        env.update(env_extra)
     env["OAMS_DATABASE_URL"] = url
     env["PYTHONPATH"] = str(suite.APP_DIR) + (
         os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
@@ -130,3 +137,63 @@ def test_neither_flag_gives_a_hint(seeded_oams):
     assert "缺成员" in completed.stderr
     assert "--employee-code" in completed.stderr
     _no_traceback(completed)
+
+
+# --------------------------------------------------------------------------- #
+# 顺带给出的登录地址：三级取源、末尾斜杠要吞掉、打印出来的那串真的能登进去
+# --------------------------------------------------------------------------- #
+
+DEFAULT_BASE = "http://127.0.0.1:8000"
+
+
+def _issued(*args: str, url: str, env_extra: dict | None = None):
+    completed = _run(*args, url=url, env_extra=env_extra)
+    assert completed.returncode == 0, completed.stderr
+    return completed, json.loads(completed.stdout)
+
+
+def test_the_login_url_follows_the_flag_then_the_env_then_the_default(seeded_oams):
+    """`--base-url` > `OAMS_BASE_URL` > 默认 `http://127.0.0.1:8000`，末尾斜杠被吞。"""
+
+    url = seeded_oams["url"]
+
+    # ① 参数：故意带尾斜杠——`http://x//login?token=` 在浏览器里也能开，但没人该看到两个斜杠
+    by_flag, doc = _issued("--employee-code", "DESIGN001",
+                           "--base-url", "http://demo.example:9000/", url=url)
+    assert doc["login_url"] == "http://demo.example:9000/login?token=" + doc["access_token"]
+    assert doc["login_url"] in by_flag.stderr  # 那行提示里贴的就是这串
+    assert "//login" not in doc["login_url"]
+
+    # ② 环境变量：这次不给参数
+    by_env, doc = _issued("--employee-code", "DESIGN001", url=url,
+                          env_extra={"OAMS_BASE_URL": "http://env.example:9100/"})
+    assert doc["login_url"] == "http://env.example:9100/login?token=" + doc["access_token"]
+    assert doc["login_url"] in by_env.stderr
+
+    # ③ 都不给：回默认（值来自 app/oams/cli.py 的 DEFAULT_BASE_URL）
+    by_default, doc = _issued("--employee-code", "DESIGN001", url=url)
+    assert doc["login_url"] == DEFAULT_BASE + "/login?token=" + doc["access_token"]
+
+    # 三次是三次新会话，令牌各不相同——上面比的是各自那串，不是同一串
+    assert len({by_flag.stdout, by_env.stdout, by_default.stdout}) == 3
+
+
+def test_a_blank_base_url_env_falls_back_to_the_default(seeded_oams):
+    """`OAMS_BASE_URL` 只剩空白：别拼出 `/login?token=` 这种没有主机的地址。"""
+
+    _, doc = _issued("--employee-code", "DESIGN001", url=seeded_oams["url"],
+                     env_extra={"OAMS_BASE_URL": "   "})
+
+    assert doc["login_url"] == DEFAULT_BASE + "/login?token=" + doc["access_token"]
+
+
+def test_the_printed_login_url_really_signs_you_in(seeded_oams, site):
+    """打印出来的那串直接粘进浏览器，要能落到自己的看板——不是「像那么回事」。"""
+
+    _, doc = _issued("--employee-code", "DESIGN001", "--base-url", site,
+                     url=seeded_oams["url"])
+
+    status, body, final = _open(doc["login_url"])
+    assert status == 200, (status, final)
+    assert final.endswith("/board")
+    assert "设计负责人" in body
