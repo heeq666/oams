@@ -375,6 +375,57 @@ def test_list_metric_catalog_only_takes_origin_and_says_so(registry):
     assert "group" in both.payload["message"] and "home_only" in both.payload["message"]
 
 
+def _descriptor_that_trips(code):
+    """照 can_bind 自己那句话，造一份只该踩这一条的 descriptor。
+
+    `reject_codes` 是对外的承诺：「写成这样就吃这个码」。所以这里不比较文案，
+    而是把文案说的情形真造出来，再问校验器要码——规则改了、码被吞了、或者码与
+    情形对不上，这条用例都会红。
+    """
+    descriptor = good_descriptor()
+    if code == "METRIC_UNDEFINED":
+        # 展示了本页没有声明的指标：引了别的部门的键。
+        descriptor["metrics"] = descriptor["metrics"] + [
+            {"metric_key": "dept.OTHER.nope", "mode": "display"}
+        ]
+    elif code == "DATA_RULE_VIOLATION":
+        # emit 写进别部门的命名空间。
+        descriptor["metrics"] = [{
+            "metric_key": "dept.OTHER.sample_done", "mode": "emit", "agg": "count",
+            "from_field": "status", "where_status": "done",
+        }]
+    elif code == "FIELD_UNMAPPED":
+        # emit 的 from_field 不是本页 fields[] 里声明过的字段。
+        descriptor["metrics"] = [{
+            "metric_key": "dept.PRODUCTION.sample_done", "mode": "emit", "agg": "count",
+            "from_field": "not_a_field",
+        }]
+    else:  # pragma: no cover - 只服务下面三条，写错名字要看得见
+        raise AssertionError(f"没有为 {code} 准备样本")
+    return descriptor
+
+
+@pytest.mark.parametrize(
+    "code", ["METRIC_UNDEFINED", "DATA_RULE_VIOLATION", "FIELD_UNMAPPED"]
+)
+def test_can_bind_reject_codes_are_real_contract_codes(registry, code):
+    """can_bind.reject_codes 不许变成一段没人核对过的说明文字。
+
+    三件事一起钉：这三个码必须在镜子（can_bind）里，镜子里每一个码都必须是
+    契约里真会发出的码（不许自己发明），而且它描述的情形真能触发这个码。
+    """
+    result = registry.call("list_metric_catalog", {}, session_id="s")
+    rules = result.payload["can_bind"]["reject_codes"]
+
+    # 码的集合两边对得上：少一个，外部 AI 就不知道该防什么。
+    assert {"METRIC_UNDEFINED", "DATA_RULE_VIOLATION", "FIELD_UNMAPPED"} <= set(rules)
+    assert set(rules) <= set(descriptor_contract.REJECT_CODES)
+    assert isinstance(rules[code], str) and rules[code].strip()
+
+    problems = descriptor_contract.validate_descriptor(_descriptor_that_trips(code))
+    assert any(problem.startswith(f"[{code}]") for problem in problems), problems
+
+
 def test_list_canonical_fields_serves_the_frozen_vocabulary(registry):
     result = registry.call("list_canonical_fields", {}, session_id="s")
     assert result.ok is True
