@@ -83,6 +83,13 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   label { font-size: 13px; color: var(--muted); }
   .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
   .field { display: flex; flex-direction: column; gap: 8px; }
+  /* 勾选行（例如 /setup 的「部门负责人」）：勾选框 16 方，与文字之间 8；
+     说明文字在下一行、跟着 .field 的 8。控件基准线管不到 16 方的框，所以这里不写高。
+     整行占满一行：勾选加一句说明是两行字，跟姓名/岗位那排挤在一起会把
+     提交按钮拽到说明文字右边，看着像按钮属于那句话。 */
+  .lead-check { flex-basis: 100%; align-items: flex-start; }
+  .lead-check label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+  .lead-check .sub { margin: 0; }
   .flash { padding: 8px 12px; border-radius: var(--r-small); margin-bottom: 12px; font-size: 14px; background: var(--success-soft); color: var(--done); }
   .flash.error { background: var(--danger-soft); color: var(--blocked); }
   /* 说明型提示（例如「你打开的是归档版本」）：一行字，无底色、无边框、无图标。
