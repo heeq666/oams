@@ -1,4 +1,4 @@
-"""Module registry acceptance tests (contract §1, frozen 20-module table).
+"""Module registry acceptance tests (contract §1, frozen 21-module table).
 
 Every assertion here is a frozen fact from docs/architecture/p0-interface-contract.md
 §1: the key set, the layer split, what a container may nest, and how layout depth is
@@ -37,7 +37,7 @@ INPUT_KEYS = {
 }
 DISPLAY_KEYS = {
     "metric_card", "metric_grid", "flow_strip", "status_chart", "rank_list",
-    "activity_feed", "note_block",
+    "activity_feed", "note_block", "lookup_box",
 }
 
 
@@ -46,12 +46,12 @@ DISPLAY_KEYS = {
 # --------------------------------------------------------------------------- #
 
 
-def test_registry_holds_exactly_the_twenty_frozen_keys():
+def test_registry_holds_exactly_the_twenty_one_frozen_keys():
     assert set(MODULE_REGISTRY) == CONTAINER_KEYS | INPUT_KEYS | DISPLAY_KEYS
-    assert len(MODULE_REGISTRY) == 20
+    assert len(MODULE_REGISTRY) == 21
 
 
-def test_layer_split_is_seven_six_seven():
+def test_layer_split_is_seven_six_eight():
     assert LAYERS == ("container", "input", "display")
     by_layer: dict[str, set[str]] = {layer: set() for layer in LAYERS}
     for spec in MODULE_REGISTRY.values():
@@ -59,7 +59,7 @@ def test_layer_split_is_seven_six_seven():
     assert by_layer["container"] == CONTAINER_KEYS
     assert by_layer["input"] == INPUT_KEYS
     assert by_layer["display"] == DISPLAY_KEYS
-    assert (len(by_layer["container"]), len(by_layer["input"]), len(by_layer["display"])) == (7, 6, 7)
+    assert (len(by_layer["container"]), len(by_layer["input"]), len(by_layer["display"])) == (7, 6, 8)
 
 
 def test_only_containers_can_nest():
@@ -70,6 +70,12 @@ def test_only_containers_can_nest():
 def test_aggregatable_flags():
     for spec in MODULE_REGISTRY.values():
         if spec.layer in ("container", "display"):
+            # `lookup_box` 是唯一一个「层是 display、但明确不参与汇总（False 而不是
+            # None）」的模块：它既不产数据，也不是「本部门专属的一份数据」，所以
+            # 只读视角整块剔除它，而 None 的含义是「这类模块根本不谈汇总」。
+            if spec.key == "lookup_box":
+                assert spec.aggregatable is False, spec.key
+                continue
             assert spec.aggregatable is None, spec.key
     assert get_module("progress_row").aggregatable is True
     assert get_module("table").aggregatable is True
@@ -78,6 +84,7 @@ def test_aggregatable_flags():
     assert get_module("metric_input").aggregatable is True
     # Evidence is stored but never rolled up into the company aggregate.
     assert get_module("evidence_gallery").aggregatable is False
+    assert get_module("lookup_box").aggregatable is False
 
 
 def test_display_modules_consume_aggregates_not_fields():
@@ -115,9 +122,9 @@ def test_get_module_unknown_and_non_string():
 
 
 def test_list_modules_filters_by_layer():
-    assert len(list_modules()) == 20
-    assert len(list_modules(None)) == 20
-    assert len(list_modules("all")) == 20
+    assert len(list_modules()) == 21
+    assert len(list_modules(None)) == 21
+    assert len(list_modules("all")) == 21
     assert {m["key"] for m in list_modules("container")} == CONTAINER_KEYS
     assert {m["key"] for m in list_modules("input")} == INPUT_KEYS
     assert {m["key"] for m in list_modules("display")} == DISPLAY_KEYS
