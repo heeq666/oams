@@ -1009,9 +1009,21 @@ def entry_link(request: Request, org_unit_id: UUID, interface_id: UUID, entry_id
             unit = _resolve_department(conn, principal, org_unit_id)
             if unit is None:
                 return _denied(request, "你不在这个部门的范围内。")
+            page = _page_version(conn, org_unit_id, interface_id)
+            if page is None:
+                return _denied(request, "这个页面不存在或不属于该部门。")
+            if page["status"] == "archived":
+                # The entry itself is still the page's entry (contract 6.4), but a
+                # write aimed at an archived version is refused like the other three
+                # entry paths: a form left open in an old tab must not edit a version
+                # nobody is looking at. Linking from the current version works.
+                return _archived_writer_response(org_unit_id, page, conn)
             entry = conn.execute(
-                """SELECT entry_id, interface_id, title FROM oams.interface_entries
-                   WHERE entry_id = %s AND interface_id = %s""", (entry_id, interface_id)).fetchone()
+                """SELECT e.entry_id, e.interface_id, e.title FROM oams.interface_entries e
+                   WHERE e.entry_id = %s AND e.interface_id IN (
+                       SELECT v.interface_id FROM oams.interfaces v
+                        WHERE v.org_unit_id = %s AND v.slug = %s)""",
+                (entry_id, org_unit_id, page["slug"])).fetchone()
             if entry is None:
                 return _denied(request, "找不到这条汇报记录。")
             if target is not None:
