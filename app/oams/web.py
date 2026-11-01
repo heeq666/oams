@@ -24,6 +24,7 @@ Progress arrives through MCP.
 """
 import hashlib
 import hmac
+import html as html_text
 import json
 import logging
 import urllib.parse
@@ -45,7 +46,7 @@ from oams import admin_labels, api, collab, metrics, review as review_rules
 from oams.config import settings
 from oams.db import connection
 from oams.descriptor import recorded_approval_gaps, validate_descriptor
-from oams.render import RenderError, render_interface, render_read_only
+from oams.render import RenderError, render_interface, render_preview, render_read_only
 from oams.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, WorkItemCreate)
 from oams.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
@@ -1382,6 +1383,96 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
         "pending": review_cards, "others": others, "decided": decided_cards, "member": principal,
         "powers": powers, "saved": saved, "error": error, "reasons": review_rules.REJECTION_CHOICES,
         "csrf": _form_token(request, "oams:review-form:v1")})
+
+
+#: Statuses a reviewer may look at a drawn version in: the one being decided, and
+#: the one already live (looking back at what was signed off).
+PREVIEW_STATUSES = ("pending", "active")
+
+
+def _preview_refusal(powers: dict[str, Any], page: Any) -> str | None:
+    """Why this member may not open the preview of this version, or None.
+
+    Same predicate as `approve` -- one rule, so a card can never offer a preview
+    the server then refuses. Only the first branch is widened: `_review_refusal`
+    requires `status = 'pending'`, while a version that already went live is a
+    page the same people are still entitled to look at. Everything else (authors
+    cannot sign their own page, a department's reviewer only sees her own
+    departments, the company stage needs `review_company`, the stand-in branch)
+    is asked unchanged, by handing the same row back with a pending status.
+    """
+    if page["status"] not in PREVIEW_STATUSES:
+        return "这个页面现在既不在待审核、也没有上线，没有可预览的版本"
+    if page["status"] == "pending":
+        return _review_refusal(powers, page)
+    probe = dict(page)
+    probe["status"] = "pending"
+    return _review_refusal(powers, probe)
+
+
+def _preview_problem(request: Request, message: str, *, status_code: int):
+    """Refusals from the preview route keep their own status and their own shape.
+
+    The route is an htmx fragment target, not a page anybody navigates to: a
+    redirect here would swap the landing page into the review card, and a 200
+    with an empty body would look like a version that draws nothing. So the
+    status says what happened (403 not allowed, 404 no such page, 500 will not
+    render) and the body says why -- as a one-block fragment when htmx asked
+    (it would otherwise paste a whole page inside the card), as a normal page
+    when a person opened the URL.
+    """
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            f'<div class="flash error" role="alert">{html_text.escape(message)}</div>',
+            status_code=status_code)
+    return TEMPLATES.TemplateResponse(request, "denied.html",
+                                      {"message": message, "member": _member(request)},
+                                      status_code=status_code)
+
+
+@router.get("/reviews/{interface_id}/preview", response_class=HTMLResponse)
+def review_preview(request: Request, interface_id: UUID):
+    """Draw one version the way it will look live -- from its descriptor alone.
+
+    The reviewer signs off "can this definition go live", so what is drawn is the
+    definition: `render_preview(sample=True)` takes every value from
+    `_sample_values()` / `_sample_aggregates()` (status word, `example`, a neutral
+    128 for the page's own emit metrics) and **no department's real entries**. This
+    route therefore never reads `interface_entries`, never calls
+    `build_department_aggregates`, and passes neither `values` nor `aggregates`:
+    that is exactly what separates it from `/interfaces/{id}`, which is the
+    "fill in real data" screen and needs `reports/read + submit` plus a live page.
+    """
+    principal = _member(request)
+    if principal is None:
+        return RedirectResponse(url="/login?next=/reviews", status_code=302)
+    with connection() as conn:
+        powers = _review_powers(conn, principal)
+        page = conn.execute(
+            """SELECT i.interface_id, i.name, i.slug, i.status, i.version_no, i.schema_version,
+                      i.descriptor, i.org_unit_id, i.review_stage, i.updated_by, i.based_on,
+                      o.name AS org_name
+               FROM oams.interfaces i
+               JOIN oams.org_units o USING (org_unit_id)
+               WHERE i.interface_id = %s""", (interface_id,)).fetchone()
+    if page is None:
+        return _preview_problem(request, "找不到这个页面。", status_code=404)
+    refusal = _preview_refusal(powers, page)
+    if refusal is not None:
+        return _preview_problem(request, refusal + "。", status_code=403)
+    try:
+        # descriptor only: no connection is open here on purpose.
+        html = render_preview(page["descriptor"] or {})
+    except RenderError as exc:
+        _RENDER_LOG.error("preview failed: interface=%s slug=%s schema=%s org=%s error=%s",
+                          page.get("interface_id"), page.get("slug"),
+                          page.get("schema_version"), page.get("org_name"), exc)
+        return _preview_problem(request, f"这一版渲不出来：{exc}", status_code=500)
+    response = HTMLResponse(html)
+    # A version changes while it waits in the queue; a cached preview would show
+    # the reviewer the previous drawing.
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.post("/reviews/{interface_id}/approve")
