@@ -29,6 +29,7 @@ pytestmark = pytest.mark.db
 # A scratch world, inserted for real and rolled back
 # ---------------------------------------------------------------------------
 
+
 DESCRIPTOR = {
     "schema_version": "0.2",
     "interface_id": "rollup-fixture",
@@ -70,6 +71,18 @@ DESCRIPTOR = {
 }
 
 
+#: 一页 emit 一个金额指标，字段落在 `extra.amount`（没有自己的列）。
+#: 单独一份，不去动共享的 DESCRIPTOR——那会把「金额」塞进所有既有用例的世界。
+REPUBLISHED_DESCRIPTOR = json.loads(json.dumps(DESCRIPTOR))
+REPUBLISHED_DESCRIPTOR["fields"].append(
+    {"key": "amount", "label": "金额", "type": "number", "required": False,
+     "map_to": "amount", "aggregatable": True})
+REPUBLISHED_DESCRIPTOR["metrics"] = [
+    {"metric_key": "dept.ROLLUPD.expense_total", "mode": "emit", "agg": "sum",
+     "from_field": "amount", "label": "本部门支出", "unit": "元"},
+]
+
+
 def _insert_org(conn, code, name, unit_type, parent=None):
     return conn.execute(
         "INSERT INTO oams.org_units (org_code, name, unit_type, parent_org_unit_id) "
@@ -94,15 +107,15 @@ def _insert_work_item(conn, org_unit_id, position_id, title, status="in_progress
 
 
 def _insert_interface(conn, org_unit_id, member_id, position_id, status="active",
-                      descriptor=None, slug="rollup-fixture"):
+                      descriptor=None, slug="rollup-fixture", version_no=1):
     return conn.execute(
         "INSERT INTO oams.interfaces "
         "(org_unit_id, slug, name, status, visibility, schema_version, descriptor, "
         " position_id, version_no, created_by, updated_by) "
-        "VALUES (%s, %s, %s, %s, 'department', '0.2', %s::jsonb, %s, 1, %s, %s) "
+        "VALUES (%s, %s, %s, %s, 'department', '0.2', %s::jsonb, %s, %s, %s, %s) "
         "RETURNING interface_id",
         (org_unit_id, slug, "汇总测试页", status, json.dumps(descriptor or DESCRIPTOR),
-         position_id, member_id, member_id)).fetchone()["interface_id"]
+         position_id, version_no, member_id, member_id)).fetchone()["interface_id"]
 
 
 def _insert_entry(conn, interface_id, member_id, note, status="done", progress=None,
@@ -209,6 +222,44 @@ def scratch_world(db_ready):
             }
         finally:
             conn.execute("ROLLBACK TO SAVEPOINT rollup_fixture")
+
+
+@pytest.fixture()
+def republished_world(bootstrapped_database):
+    """同一个世界，外加两个「重发过的页」——一页两版，旧版归档、新版在线。
+
+    单独一个夹具而不是往 `world` 里塞：这些页属于同一个部门，塞进去会改变所有
+    部门级断言的数字，而它们要钉的恰恰是「数字按页面算、不按版本行算」。
+    """
+    with scratch_world(bootstrapped_database) as data:
+        conn, member_id, position, dept = (data["conn"], data["member_id"],
+                                           data["position"], data["dept"])
+        # 两版各记一条 1280：两版看到的总数都该是 2560，不是各自那一版的 1280。
+        both_v1 = _insert_interface(conn, dept, member_id, position, status="archived",
+                                    slug="rollup-fixture-vnext", version_no=1,
+                                    descriptor=REPUBLISHED_DESCRIPTOR)
+        both_v2 = _insert_interface(conn, dept, member_id, position, status="active",
+                                    slug="rollup-fixture-vnext", version_no=2,
+                                    descriptor=REPUBLISHED_DESCRIPTOR)
+        both_old = _insert_entry(conn, both_v1, member_id, "republished-v1-1280",
+                                 extra={"amount": "1280"})
+        both_new = _insert_entry(conn, both_v2, member_id, "republished-v2-1280",
+                                 extra={"amount": "1280"})
+        # 只发过一版有账：重发之后，那笔账必须还在新版本上看得见、算得进。
+        old_v1 = _insert_interface(conn, dept, member_id, position, status="archived",
+                                   slug="rollup-fixture-carried", version_no=1,
+                                   descriptor=REPUBLISHED_DESCRIPTOR)
+        old_v2 = _insert_interface(conn, dept, member_id, position, status="active",
+                                   slug="rollup-fixture-carried", version_no=2,
+                                   descriptor=REPUBLISHED_DESCRIPTOR)
+        carried = _insert_entry(conn, old_v1, member_id, "republished-only-1280",
+                                extra={"amount": "1280"})
+        data["republished"] = {
+            "both": {"v1": both_v1, "v2": both_v2,
+                     "entries": {"old": both_old, "new": both_new}},
+            "carried": {"v1": old_v1, "v2": old_v2, "entry": carried},
+        }
+        yield data
 
 
 @pytest.fixture()
@@ -772,3 +823,69 @@ def test_work_item_limit_survives_junk_instead_of_raising(world):
     assert len(api.list_open_work_items(conn, world["dept"], limit=0)) == 1
     assert api.list_open_work_items(conn, world["dept"], limit=9999)
 
+
+
+# ---------------------------------------------------------------------------
+# A page outlives its versions: the number follows (org_unit_id, slug)
+# ---------------------------------------------------------------------------
+
+
+def _expense(conn, org_unit_id, interface_id):
+    panel = api.build_department_aggregates(conn, org_unit_id,
+                                            descriptor=REPUBLISHED_DESCRIPTOR,
+                                            interface_id=interface_id)
+    return next(metric for metric in panel["metrics"]
+                if metric["metric_key"] == "dept.ROLLUPD.expense_total")
+
+
+def test_a_pages_total_survives_the_republish_seen_from_either_version(republished_world):
+    """两版各一条 1280：拿旧 id 也算 2560，不是只算自己那一版。
+
+    这条能区分两种实现：按版本行算时旧 id 得 1280、新 id 得 1280；按页面算时两边
+    都是 2560。若哪天有人把 scope 改回 `e.interface_id = %s`，这里立刻红。
+    """
+    data = republished_world
+    both = data["republished"]["both"]
+
+    old_side = _expense(data["conn"], data["dept"], both["v1"])
+    new_side = _expense(data["conn"], data["dept"], both["v2"])
+
+    for metric in (old_side, new_side):
+        assert metric["value"] == 2560, metric
+        assert metric["entry_count"] == 2, metric
+
+
+def test_an_entry_recorded_before_the_republish_still_counts_on_the_new_version(republished_world):
+    """只发过一版有账：归档那一版上记的 1280，在新版本上照旧算数、照旧点得到。"""
+    data = republished_world
+    carried = data["republished"]["carried"]
+
+    metric = _expense(data["conn"], data["dept"], carried["v2"])
+    assert metric["value"] == 1280, metric
+    assert metric["entry_count"] == 1, metric
+
+    listed = api.page_entries(data["conn"], carried["v2"])
+    assert [row["entry_id"] for row in listed] == [carried["entry"]]
+
+
+def test_the_counts_line_and_the_table_describe_the_same_entries(republished_world):
+    """「计入 N 条」和下面那张表必须是同一批条目，否则页面会自相矛盾。"""
+    data = republished_world
+    both = data["republished"]["both"]
+
+    listed = api.page_entries(data["conn"], both["v2"])
+    counts = api.entry_state_counts(data["conn"], both["v2"])
+
+    assert sum(counts.values()) == len(listed)
+    assert len({row["entry_id"] for row in listed}) == len(listed)
+
+
+def test_page_entries_never_lists_the_same_entry_twice(republished_world):
+    """去重按 entry_id：一页跨多版时，同一条不许在表里出现两次。"""
+    data = republished_world
+    both = data["republished"]["both"]
+
+    ids = [row["entry_id"] for row in api.page_entries(data["conn"], both["v2"])]
+
+    assert len(ids) == 2
+    assert sorted(ids) == sorted([both["entries"]["old"], both["entries"]["new"]])
