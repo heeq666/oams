@@ -186,6 +186,11 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .preview-note.is-error { display: block; color: var(--blocked); }
   .preview-panel:not(:empty) { margin-top: 8px; padding: 16px;
                                border: 1px solid var(--line); border-radius: var(--r-control); }
+  /* 这一版渲不出来时后端回的是降级片段（200，不是错误）：面板还是那块 18 的板，
+     里面换成两句说明，不再套一层边框——框里的框会把提示读成另一个页面。 */
+  .preview-degraded { display: flex; flex-direction: column; gap: 8px; }
+  .preview-degraded .caption { margin: 0; font-size: 12px; font-weight: 500; }
+  .preview-degraded .sub { margin: 0; }
   /* The bar is a floating capsule of three grid cells now: the old flex rules
      here (wrapping the nav onto its own row, order: 3) moved the account into
      the middle cell and overflowed the page, so only the page padding is kept. */
