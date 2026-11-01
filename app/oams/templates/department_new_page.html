@@ -3,7 +3,10 @@
 {% block content %}
 <nav class="page-tabs" aria-label="部门内页面">
   {% for p in pages %}
-    <a href="/departments/{{ unit.org_unit_id }}/{{ p.interface_id }}" class="page-tab">
+    {# 与工作台同一口径：上线页用不随版本变化的地址，未上线页只能按版本行开。 #}
+    {% set tab_href = '/pages/' ~ unit.org_code ~ '/' ~ p.slug if p.status == 'active'
+                      else '/departments/' ~ unit.org_unit_id ~ '/' ~ p.interface_id %}
+    <a href="{{ tab_href }}" class="page-tab">
       {{ p.name }}
       {% if p.status == 'pending' %}<span class="badge decision">审核中</span>
       {% elif p.status != 'active' %}<span class="badge vacant">待提交</span>{% endif %}

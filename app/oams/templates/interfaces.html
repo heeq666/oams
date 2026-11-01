@@ -19,7 +19,7 @@
       <td>{{ '全公司公共模板' if i.visibility == 'public' else '仅本部门' }}</td>
       <td>v{{ i.version_no }}</td>
       <td>{{ i.entry_count }}</td>
-      <td><a href="/interfaces/{{ i.interface_id }}">打开填写 →</a></td>
+      <td><a href="/pages/{{ i.org_code }}/{{ i.slug }}">打开填写 →</a></td>
     </tr>
   {% endfor %}
   </tbody>
