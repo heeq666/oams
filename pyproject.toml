@@ -23,9 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-# 主名 oams；workhub 作为兼容别名留着——手册、脚本、别人的肌肉记忆都还叫它。
 oams = "oams.cli:main"
-workhub = "oams.cli:main"
 
 [build-system]
 requires = ["setuptools>=75"]

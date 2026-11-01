@@ -171,10 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import sys
 
-    # 帮助里的程序名跟着入口走：oams 与兼容别名 workhub 各自报各自的名字
-    entry = Path(sys.argv[0]).name
-    prog = entry if entry in {"oams", "workhub"} else "workhub"
-    parser = argparse.ArgumentParser(prog=f"{prog} plugin", description="离线校验与预览部门插件")
+    parser = argparse.ArgumentParser(prog="oams plugin", description="离线校验与预览部门插件")
     verbs = parser.add_subparsers(dest="verb", required=True)
     for name, help_text in (
         ("check", "静态校验：字段映射、状态映射、模块版本、容器深度"),

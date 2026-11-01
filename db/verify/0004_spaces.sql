@@ -1,23 +1,23 @@
--- Verification for migration 0004 (spaces / floor plan).
+-- 验证记录（增量迁移时期：0004，空间 / 工位图）。对象名按今天的 oams schema 写。
 -- Expects a throwaway database with migrations already applied:
 --
---   docker run -d --name workhub-space-test -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=workhub_test \
---       -p 55437:5432 postgres:16-alpine
---   export WORKHUB_DATABASE_URL=postgresql://postgres:pw@localhost:55437/workhub_test
---   python -m workhub.cli migrate
---   docker exec -i workhub-space-test psql -U postgres -d workhub_test -f db/verify/0004_spaces.sql
+--   docker run -d --name <测试容器> -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=<测试库> \
+--       -p <测试端口>:5432 postgres:16-alpine
+--   export OAMS_DATABASE_URL=postgresql://postgres:pw@localhost:<测试端口>/<测试库>
+--   oams db init
+--   docker exec -i <测试容器> psql -U postgres -d <测试库> -f db/verify/0004_spaces.sql
 --
 -- Every check rolls itself back, and the negative cases are written as DO blocks
 -- that catch the expected error: a constraint nobody can violate is not verified.
 -- Anything printing FAIL is a real regression.
-SET search_path = workhub, public;
+SET search_path = oams, public;
 
 \echo '=== 1. table and indexes ==='
 SELECT CASE WHEN count(*) = 1 THEN 'PASS' ELSE 'FAIL' END AS spaces_table_exists
-  FROM pg_tables WHERE schemaname = 'workhub' AND tablename = 'spaces';
+  FROM pg_tables WHERE schemaname = 'oams' AND tablename = 'spaces';
 
 SELECT CASE WHEN count(*) = 2 THEN 'PASS' ELSE 'FAIL' END AS unique_indexes_present
-  FROM pg_indexes WHERE schemaname = 'workhub' AND tablename = 'spaces'
+  FROM pg_indexes WHERE schemaname = 'oams' AND tablename = 'spaces'
    AND indexname IN ('spaces_one_zone_per_org_unit', 'spaces_one_desk_per_position');
 
 SELECT CASE WHEN count(*) = 1 THEN 'PASS' ELSE 'FAIL' END AS desk_department_trigger_exists
