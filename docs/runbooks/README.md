@@ -6,7 +6,7 @@
 
 | 手册 | 什么时候看 | 大概多久 |
 |---|---|---|
-| [local-trial.md](local-trial.md) | 在本机把整套系统跑起来：装依赖、两个库、建库建表、建管理员、起服务、拿 token | 30 分钟 |
+| [local-trial.md](local-trial.md) | 在本机把整套系统跑起来：装依赖、建库建表、建管理员、起服务、拿 token | 30 分钟 |
 | [first-page-trial.md](first-page-trial.md) | 第一次给真人试用：部门管理员建一页、部门负责人初审通过 | 15 分钟 |
 | [mvp-pilot-guide.md](mvp-pilot-guide.md) | 试点期间的日常：建人、发权限、改状态、看汇报 | 20 分钟 |
 | [department-page-lifecycle.md](department-page-lifecycle.md) | 部门页面的生命周期：建、改、提交、初审、公司终审、撤回 | 20 分钟 |
