@@ -551,12 +551,21 @@ def input_for(source: Any, *, textarea: bool = False, labelled: bool = True) -> 
     return _input_html(field, _value_for(source), textarea=textarea, labelled=labelled)
 
 
-def input_for_key(field_key: Any, *, textarea: bool = False, labelled: bool = True) -> Markup:
-    """Widget addressed by the descriptor field key itself (table columns)."""
+def input_for_key(field_key: Any, *, textarea: bool = False, labelled: bool = True,
+                  prefill: bool = True) -> Markup:
+    """Widget addressed by the descriptor field key itself (table columns).
+
+    `prefill=False` renders the widget empty even when the page has values. 表格
+    模块连着画好几行"填新记录"的空行（`rows` 1–5），它们共用同一份 `values`；
+    每行都预填的话，一次提交后重开页面会看到 5 条一模一样的值（演示站实测：
+    `#wh-f-title` … `#wh-f-title-5` 都是同一条记录），人以为已经存了 5 条，
+    再点一次提交就又多一条。所以只有第 1 行带预填，第 2 行起一律空。
+    """
     field = _state().fields_by_key.get(field_key) or field_of(field_key)
     if field is None:
         return Markup("")
-    return _input_html(field, _value_for(field.get("key")), textarea=textarea, labelled=labelled)
+    value = _value_for(field.get("key")) if prefill else None
+    return _input_html(field, value, textarea=textarea, labelled=labelled)
 
 
 def static_for(source: Any) -> Markup:
