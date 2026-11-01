@@ -298,6 +298,7 @@ class _RenderState:
     status_words: tuple
     seen_fields: dict  # field key -> how many widgets already rendered for it
     uid_seq: int = 0  # monotonic counter for unique in-page DOM ids
+    lookup: str = ""  # 查件框的预填结果：整页带 ?lookup= 打开时由 web.py 先算好
 
 
 _STATE: contextvars.ContextVar = contextvars.ContextVar("oams_render_state", default=None)
@@ -699,6 +700,21 @@ def bucket(value: Any, total: Any) -> str:
     return f"p{max(0, min(100, step))}"
 
 
+def lookup_result() -> Markup:
+    """What a lookup box's result area holds right now.
+
+    On a full page opened with ``?lookup=<单号>`` the answer is already known and
+    web.py hands it in; otherwise the box shows its own prompt. The markup is built
+    by web.py (the only place that may read entries) and passed through as text, so
+    the two paths cannot disagree about what a query produces.
+    """
+    state = _STATE.get()
+    prefill = state.lookup if state is not None else ""
+    if prefill:
+        return Markup(prefill)
+    return Markup('<p class="wh-empty">输入单号后在这里看结果。</p>')
+
+
 def private_note(module: Any, spec: Any = None) -> Markup:
     """Inline honesty note in the department view for never-aggregated modules."""
     if _state().mode != "edit":
@@ -750,6 +766,7 @@ _ENV.globals.update({
     "progress_text": progress_text,
     "tabs_uid": tabs_uid,
     "uid_for": uid_for,
+    "lookup_result": lookup_result,
     "inline_widgets": inline_widgets,
     "aggregate": aggregate,
     "aggregate_raw": aggregate_raw,
@@ -919,7 +936,7 @@ def _sorted_modules(descriptor: dict) -> list[dict]:
 
 
 def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
-            mode: str) -> str:
+            mode: str, lookup: str = "") -> str:
     if mode not in MODES:
         raise RenderError(f"mode: 未知视角 {mode!r}")
     problems = _structural_problems(descriptor)
@@ -930,7 +947,8 @@ def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
     state = _RenderState(descriptor=descriptor, values=dict(values or {}),
                          aggregates=dict(aggregates or {}), mode=mode,
                          fields_by_key=fields, key_by_standard=key_by_standard,
-                         status_words=status_words, seen_fields={}, uid_seq=0)
+                         status_words=status_words, seen_fields={}, uid_seq=0,
+                         lookup=lookup)
     token_state = _STATE.set(state)
     token_depth = _DEPTH.set(0)
     token_stack = _STACK.set(())
@@ -948,9 +966,16 @@ def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
 
 
 def render_interface(descriptor: dict, values: dict | None = None,
-                     aggregates: dict[str, float] | None = None) -> str:
-    """Department viewpoint: input modules render widgets, display modules real numbers."""
-    return _render(descriptor, values, aggregates, mode="edit")
+                     aggregates: dict[str, float] | None = None,
+                     lookup: str = "") -> str:
+    """Department viewpoint: input modules render widgets, display modules real numbers.
+
+    ``lookup`` is the already-rendered result block a lookup box should show on a
+    full page (the same fragment the htmx partial returns). Empty means "nobody
+    has asked yet", which is the box's own prompt -- so the renderer never talks to
+    the database and never decides what a query means.
+    """
+    return _render(descriptor, values, aggregates, mode="edit", lookup=lookup)
 
 
 def render_read_only(descriptor: dict, values: dict | None = None,
