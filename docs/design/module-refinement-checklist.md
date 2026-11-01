@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | G1 | **preview 与 readonly 渲染的是同一段模板**。模板一律只判 `{% if mode == 'edit' %}`，preview 落进 else 分支 | 6 个分支模板（`blocker_list` / `evidence_gallery` / `metric_input` / `progress_row` / `table` / `timeline`），其余 14 个完全不判 mode | 20/20 |
 | G2 | 三视图 = 一档半。真正要画的是「填报」与「只读」两档，preview 只是只读 + 角标 | `render.py` 的 `preview_tag` 只在 preview 输出角标 | 20/20 |
-| G3 | **空态只有 5 个模块有**，文案三套句式各写各的 | `activity_feed`「暂无动态。」`flow_strip`「还没有绑定流程指标。」`metric_grid`「还没有绑定指标。」`rank_list`「暂无排行数据。」`table`「这个明细表还没有配置列。」 | 5/20 有，15/20 无 |
+| G3 | **空态只有 5 个模块有**，文案三套句式各写各的（取证时 5 个；2026-11-02 已是 8 个、文案统一成「还没有…。」一句，现行口径见 `design-system-v1.md` §6 的「内容为空时一律一行灰字」那条） | `activity_feed`「暂无动态。」`flow_strip`「还没有绑定流程指标。」`metric_grid`「还没有绑定指标。」`rank_list`「暂无排行数据。」（`rank_list` 现在**不可用**，见 §18）`table`「这个明细表还没有配置列。」 | 5/20 有，15/20 无（取证时的数） |
 | G4 | **空值与 0 不分**：未填的进度被算成 0% | `render.py` `progress_percent()` 对 None/"" 返回 0，模板 `progress_row.html:16` 直接拼 `%` | 录入层 6 件 |
 | G5 | 空值符号不统一：`--`（两个连字符）与 `&mdash;` 混用 | `aggregate()` / `format_number()` 返回 `"--"`，`static_for()` / `status_badge()` 返回 `&mdash;` | 展示层 7 件 |
 | G6 | **排版容器也带灰底 + 1px 边框 + 内距 16**：columns / rows / grid 会长出一个多余的框 | `oams-modules.css:64-77`（`.wh-container` 命中三者），`columns.html:3`、`rows.html:2`、`grid.html:3` 都带 `wh-container` | 3 个容器 + 所有用到它们的页面 |
@@ -221,8 +221,9 @@
 
 #### 18. `rank_list` 排行榜 — 内容高 168
 
+- **状态：暂不可用（2026-11-02 实测）**——在部门指标下它永远走空态，不是没接线：它只认 `rank.<指标键>.<标签>` 形状的聚合键（`app/oams/render.py:622-626` 的 `rank_rows()`，全仓只此一处读、**零写方**），而部门 emit 指标的聚合键是 `dept.<部门代码>.<指标键>`。**启用条件**（其一即可）：有人真写这种聚合键，或模块改成按字段 / 状态分组。口径见 `design-system-v1.md` §6 里 `rank_list` 那条；在那之前别为它接 aggregates、也别当回归查。
 - **三视图**：同形。
-- **空 / 不全**：空态有「暂无排行数据。」（✅）；名次连续（✅ 用 `loop.index`，跳过的行不占号）。
+- **空 / 不全**：空态一句「还没有排行数据。」（`rank_list.html:18`；本文取证时记的是「暂无排行数据。」，2026-11-02 已按模板更正）；名次连续（✅ 用 `loop.index`，跳过的行不占号）。空态只有一行灰字，不画名次占位（见 §6 的空态口径）。
 - **图标**：不要。前三名不加奖牌——颜色即层级，一个强调色。
 - **边界**：`limit 1..20`，但模块高度 → > 8 行折叠「还有 N 名」；label 超长省略 + `title`；数值右对齐（✅）。
 - **形态**：须支持 2 个形态（有数据 / 空）。
