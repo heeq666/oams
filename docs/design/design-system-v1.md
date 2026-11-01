@@ -357,6 +357,7 @@ GROUP · 浮层（在 B2）： Tooltip、 Menu（面板 200 宽、圆角 18 —�
 
 - 字号与行高收口：徽章 `11.5px → 12px`、开发角标箭头 `10px → 11px`、模块层指标 `.wh-metric-value` `22px → 24px`（与外壳 `.metric .n` 同号）。
 - **表格密度统一到 30（2026-10-26）**：外壳表（`base.html` 的 `th/td`）从 `padding:10px 12px; line-height:21px; font-size:14px`（行高 41）改成 `padding:6px 8px; line-height:18px`（`td` 13 / `th` 12），加 1px 分隔线实测 31；`.wh-table` 补 `line-height:18px`。同轮给页面数据表加 `white-space:nowrap + overflow:hidden + text-overflow:ellipsis + max-width:320px`（超宽省略，不靠折行把行撑高）。复核：量 `td` 计算值 `padding=6px 8px`、行盒 18，整行 31。
+  **例外：含控件的行按控件撑开**——控件 30 + 单元格上下内距 6 + 1px 线 = **43**；纯文字行仍是 31。**不要为凑行高 30 去压单元格内距**：控件会贴到分割线上（最小也只能压到 32），控件贴边比多 13px 难看得多——「行高 30」是纯文字行的描述，不是带控件行要硬凑的目标（2026-11-01 拍板）。
 - **`.wh-input` 同名冲突修掉（2026-10-26）**：模块外壳类 `.wh-m.wh-input`（metric_input / progress_row / table / timeline / blocker_list / evidence_gallery 六个模板的面板类）被模块样式表里的 `.wh-input` 一起命中，内距压成 6/8、圆角压成 12。面板那一组改用双类名 `.wh-m.wh-input`（外壳自带两个类），真控件保留单类名 `.wh-input`，外壳回到 `padding 18/16/14` + 圆角 18。控件内距 2026-10-31 收成 12（见 §4）。复核：`grep -n 'wh-m.wh-input' app/oams/static/oams-modules.css`。
 
 **圆角与间距定稿（2026-10-27）**
