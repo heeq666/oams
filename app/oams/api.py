@@ -994,6 +994,38 @@ ENTRY_COLUMNS_SQL = ("e.entry_id, e.interface_id, e.work_item_id, e.title, e.sta
                      "e.blocked_reason, e.progress_value, e.note, e.evidence, e.extra, "
                      "e.reported_by, e.reported_at, e.entry_mode, e.status_entry")
 
+#: Which entries belong to *the page* as opposed to one version row of it.
+#:
+#: `interface_entries.interface_id` points at a version, and every re-publish
+#: inserts a new version row (the identity of a page is `(org_unit_id, slug)`,
+#: enforced by two partial unique indexes). Reading numbers per version therefore
+#: dropped whatever was recorded before the last publish: on the dev database seven
+#: rows were already invisible to the total, and the same rows were unreachable
+#: from the workbench. This scope resolves the page from whichever version id the
+#: caller holds and matches every version of it, so a ledger row keeps counting
+#: after the page is re-published.
+PAGE_ENTRY_SCOPE_SQL = (
+    "e.interface_id IN (SELECT v.interface_id FROM oams.interfaces v "
+    " WHERE (v.org_unit_id, v.slug) = (SELECT w.org_unit_id, w.slug "
+    "   FROM oams.interfaces w WHERE w.interface_id = %s))")
+
+
+def _distinct_entries(rows):
+    """Rows of the same entry exactly once, keeping the first (newest) one.
+
+    One entry row lives on one version, so the page scope above cannot return it
+    twice; this is here because "sum it once" is the promise a number makes, and a
+    join that grows later must not silently double a total.
+    """
+    seen, out = set(), []
+    for row in rows:
+        key = row.get("entry_id")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
 
 def _reason(exc):
     """One short sentence, never a stack trace: the tone the metrics panel uses."""
@@ -1108,6 +1140,10 @@ def _binding_entries(conn, interface_id, binding, company=False):
     ``company=False`` is the department side: an entry counts as soon as it is
     real, so a ledger row does not need a work item first. ``company=True`` is the
     strict side used when a number is meant to speak for the whole company.
+
+    Scoped to the page, not to the version row the caller happens to hold (see
+    PAGE_ENTRY_SCOPE_SQL): re-publishing a page must not make its earlier entries
+    disappear from its own numbers.
     """
     if company:
         predicate, state_sql = ROLLUP_PREDICATE, ROLLUP_STATE_SQL
@@ -1115,14 +1151,14 @@ def _binding_entries(conn, interface_id, binding, company=False):
         predicate, state_sql = DEPARTMENT_ROLLUP_PREDICATE, DEPARTMENT_ROLLUP_STATE_SQL
     sql = ("SELECT " + ENTRY_COLUMNS_SQL + ", " + state_sql + " AS rollup_state, "
            + FEEDS_COMPANY_SQL + " AS feeds_company "
-           "FROM oams.interface_entries e WHERE e.interface_id = %s AND " + predicate)
+           "FROM oams.interface_entries e WHERE " + PAGE_ENTRY_SCOPE_SQL + " AND " + predicate)
     params = [interface_id]
     where_status = binding.get("where_status")
     if where_status:
         sql += " AND e.status = %s"
         params.append(where_status)
     sql += " ORDER BY e.reported_at DESC, e.entry_id DESC"
-    return conn.execute(sql, tuple(params)).fetchall()
+    return _distinct_entries(conn.execute(sql, tuple(params)).fetchall())
 
 
 def page_entries(conn, interface_id):
@@ -1132,12 +1168,17 @@ def page_entries(conn, interface_id):
     because the point of the badge is that people can see, per entry, why a number
     is smaller than the work they did. ``feeds_company`` travels alongside so the
     same row can say "counts here, not in the company number yet".
+
+    Page-scoped like the numbers (PAGE_ENTRY_SCOPE_SQL): an entry recorded on an
+    earlier version is still this page's entry, and the workbench is where people
+    go to link or retract it.
     """
-    return conn.execute(
+    rows = conn.execute(
         "SELECT " + ENTRY_COLUMNS_SQL + ", " + DEPARTMENT_ROLLUP_STATE_SQL + " AS rollup_state, "
         + FEEDS_COMPANY_SQL + " AS feeds_company "
-        "FROM oams.interface_entries e WHERE e.interface_id = %s "
+        "FROM oams.interface_entries e WHERE " + PAGE_ENTRY_SCOPE_SQL + " "
         "ORDER BY e.reported_at DESC, e.entry_id DESC", (interface_id,)).fetchall()
+    return _distinct_entries(rows)
 
 
 def _column_value(row, column):
@@ -1233,10 +1274,15 @@ def _format_metric(metric_key, value, unit=""):
 
 
 def entry_state_counts(conn, interface_id):
-    """How many entries of this page sit in each department state."""
+    """How many entries of this page sit in each department state.
+
+    Page-scoped like the numbers and the list (PAGE_ENTRY_SCOPE_SQL): the counts
+    line and the table beside it must describe the same set of entries, otherwise
+    the page says "计入 3 条" above a table showing one.
+    """
     rows = conn.execute(
         "SELECT state, count(*) AS n FROM (SELECT " + DEPARTMENT_ROLLUP_STATE_SQL + " AS state "
-        "FROM oams.interface_entries e WHERE e.interface_id = %s) t GROUP BY state",
+        "FROM oams.interface_entries e WHERE " + PAGE_ENTRY_SCOPE_SQL + ") t GROUP BY state",
         (interface_id,)).fetchall()
     counts = {state: 0 for state in DEPARTMENT_ROLLUP_STATES}
     for row in rows:
