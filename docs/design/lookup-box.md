@@ -6,7 +6,7 @@
 
 ## 1. 形态
 
-- **叶子**：不带 `children`（容器才有子件），也不套 `.card`——它自己就是一块模块块，跟 `.wh-m` 那 20 件同级。
+- **叶子**：不带 `children`（容器才有子件），也不套 `.card`——它自己就是一块模块块，跟 `.wh-m` 那批（加上它自己共 21 件）同级。
 - **内部纵向三件**：输入行（`Search`，30 高、内距 0·12、圆角 **18**）+ 查询按钮（30 高、胶囊 **999**，按钮那一档才给 999）+ 结果区。行与行 8，结果区与输入行 8；块与块对外 16。
 - **为什么输入框不写 999**：999 那一档给的是外壳搜索框（`Search` 40 高）；模块块里这个输入跟同排的字段行是一层，走 `radius/control` 18（`design-system-v1.md` §3）。
 - **三态，每态一句人话**，都用一行 `.wh-empty`（13px、`--oams-muted`、`margin:0`、句末带句号），不画空框、不画骨架、不用 `—` 撑（§6「内容为空时一律一行灰字」）：
@@ -52,7 +52,7 @@
 
 ## 5. 契约面清单（只列名，不实现；各自归写区）
 
-1. `docs/architecture/p0-interface-contract.md` §1 —— **先加一行**。`app/oams/modules.py` 的注册表 docstring 写着「adding a module means adding a row to the contract first」，注册表跟着从 20 个 key 变 21。
+1. `docs/architecture/p0-interface-contract.md` §1 —— **先加一行**。`app/oams/modules.py` 的注册表 docstring 写着「adding a module means adding a row to the contract first」，注册表跟着从 20 个 key 变 21。→ **已落**：契约 `49d2d88`、模块 `4506cc7`，注册表实测 **21 个键**。
 2. `app/oams/modules.py` —— `_register(_spec("lookup_box", "查件框", "display", …, params={"key_field": _param("str", default="order_no")}, consumes=("order_no","status","completed_at","due_at","note"), produces=(), aggregatable=False))`。
 3. `app/oams/descriptor.py` —— 三条校验：① `key_field` 必须在 `STANDARD_FIELD_VOCAB` 里；② 它读的这几个字段必须**已被本页某个录入件映射**（否则永远查不到东西，给 `DATA_RULE_VIOLATION`，别让作者上线后才发现）；③ 叶子规则：`display` 层不许 `children`（现有容器规则按 layer 判，顺带就挡）。
 4. `app/oams/render.py` —— 一个 `lookup_box(module)` 渲染函数 + 分派表一项；**`private_note` 跳过查询件**（§3，2026-11-01 拍板：那句「本部门可见，不参与公司汇总」是给数据来源用的，查询框不是数据来源，多印一行读者会以为它在报数）；`_hidden_in_readonly` 保持原样——只读视角整块剔除已拍板接受，别按类型放行。
