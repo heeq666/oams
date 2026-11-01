@@ -171,7 +171,9 @@
       "metric_key": "dept.FIN.expense_total",
       "mode": "emit",
       "agg": "sum",
-      "from_field": "amount"
+      "from_field": "amount",
+      "label": "本部门支出",
+      "unit": "元"
     }
   ],
   "rules": {

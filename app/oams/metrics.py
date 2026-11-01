@@ -161,8 +161,9 @@ def validate_metric_binding(binding: dict, org_unit_code: str,
     emit    -- declares a department metric over this interface's own fields.
                Key must start with `dept.<org_unit_code>.`, `from_field` must be a
                declared field key, and it must not shadow a platform metric.
+               可选 `label`（人话名）与 `unit`（单位）——名字与单位属声明方，见契约 §2/§7。
     display -- references a platform metric, **或本页自己 emit 的指标**
-               （`own_metrics`，见契约 §2）；本身不带聚合字段。
+               （`own_metrics`，见契约 §2）；本身不带聚合字段，也**不带** `label`/`unit`。
     """
     problems: list[str] = []
     if not isinstance(binding, dict):
@@ -211,6 +212,15 @@ def validate_metric_binding(binding: dict, org_unit_code: str,
                     f"[{DATA_RULE_VIOLATION}] {where}.{forbidden}: a display binding only "
                     f"references a platform metric and must not carry its own aggregation"
                 )
+        # 名字与单位属**声明方**（emit 绑定，见契约 §2/§7）：引用方照着原样显示，
+        # 不许自己改口径——否则同一页上同一个指标能有两套名字与两种单位。
+        for owned in ("label", "unit"):
+            if owned in binding:
+                problems.append(
+                    f"[{DATA_RULE_VIOLATION}] {where}.{owned}: 只有 mode=emit 的声明方"
+                    f"能写 {owned}（人话名与单位跟着指标走）；display 是引用方，"
+                    f"照原样显示即可，不能自带 {owned}"
+                )
         return problems
 
     # --- mode == "emit" ---------------------------------------------------- #
@@ -249,6 +259,26 @@ def validate_metric_binding(binding: dict, org_unit_code: str,
             problems.append(
                 f"[{METRIC_UNDEFINED}] {where}.where_status: {status!r} must be one of "
                 f"{STANDARD_STATUSES}"
+            )
+
+    # 可选的两个显示字段（契约 §2/§7）：都属声明方。不给也能用——名字回落键末段，
+    # 单位为空串（空串是合法的显示结果，不要编）。
+    for field_name, limit, hint in (
+        ("label", 24, "人话名，如「本周完成」"),
+        ("unit", 8, "计量单位，如「项」「元」「件」"),
+    ):
+        if field_name not in binding:
+            continue
+        value = binding.get(field_name)
+        if not isinstance(value, str) or not value.strip():
+            problems.append(
+                f"[{METRIC_UNDEFINED}] {where}.{field_name}: 必须是非空字符串（{hint}）；"
+                f"不写这个字段等于没有，不要写成空串或 null"
+            )
+        elif len(value.strip()) > limit:
+            problems.append(
+                f"[{METRIC_UNDEFINED}] {where}.{field_name}: 最多 {limit} 个字（{hint}），"
+                f"现在是 {len(value.strip())} 个"
             )
 
     return problems

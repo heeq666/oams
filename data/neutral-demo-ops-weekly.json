@@ -171,7 +171,9 @@
       "mode": "emit",
       "agg": "count",
       "from_field": "state_word",
-      "where_status": "done"
+      "where_status": "done",
+      "label": "本周完成",
+      "unit": "项"
     }
   ],
   "rules": {

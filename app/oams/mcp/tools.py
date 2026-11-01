@@ -457,7 +457,7 @@ def _metric_binding_rules(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     规则原文见契约 §2/§5.2，这里只做机器可读的镜像，别在这里发明新规矩。
     """
     platform_count = sum(1 for m in metrics if m.get("origin") == "platform")
-    contract = _import_contract("metrics", "AGG_MODES", "ORIGINS", "GROUPS")
+    contract = _import_contract("metrics", "AGG_MODES", "ORIGINS")
     return {
         "platform": {
             "available": platform_count > 0,
@@ -477,21 +477,30 @@ def _metric_binding_rules(metrics: list[dict[str, Any]]) -> dict[str, Any]:
             "aggs": list(contract.AGG_MODES),
             "from_field": "本页 fields[] 里声明过的字段键（emit 必填）",
             "where_status": "可选，限定只统计某个标准状态",
+            "label": "可选，人话名（如「本周完成」）；不写就回落键末段 weekly_done",
+            "unit": "可选，计量单位（如「项」「元」「件」）；不写就不带单位，空串合法",
             "display": (
                 "展示模块（metric_card/metric_grid/rank_list/flow_strip）的指标参数只能引"
                 "本页自己 emit 的键；引 dept.<别的CODE>.* 会被 METRIC_UNDEFINED 拒绝——"
                 "跨部门读数是汇总能力的事，不是显示参数能做的事。"
             ),
-            "display_binding": "mode=display 的绑定只写 metric_key，不带 agg/from_field/where_status",
+            "display_binding": (
+                "mode=display 的绑定只写 metric_key：不带 agg/from_field/where_status，"
+                "也不带 label/unit——名字与单位属声明方（emit），引用方照原样显示"
+            ),
         },
         "filters": {
             "origin": list(contract.ORIGINS),
-            "group": list(contract.GROUPS),
-            "note": "group 分组随平台指标下线，现在没有任何可选值；传 group 会被判为不认识的组。",
+            "note": (
+                "参数表只剩 origin。group 与 home_only 两条过滤已随平台指标与首页默认值下线，"
+                "参数表里没有它们：传了会被判为不认识的参数（INVALID_ARGUMENTS），不会静默忽略。"
+            ),
         },
         "reject_codes": {
-            "METRIC_UNDEFINED": "键非法、未声明，或引了不存在/不属于本页的指标",
-            "DATA_RULE_VIOLATION": "字段用法违规（如 emit 用了别部门命名空间、display 带了聚合字段）",
+            "METRIC_UNDEFINED": "键非法、未声明，或引了不存在/不属于本页的指标；label/unit 形状不对",
+            "DATA_RULE_VIOLATION": (
+                "字段用法违规（如 emit 用了别部门命名空间、display 带了聚合字段或 label/unit）"
+            ),
             "FIELD_UNMAPPED": "emit 的 from_field 没有映射到标准字段",
         },
     }
