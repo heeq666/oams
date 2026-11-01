@@ -15,6 +15,11 @@
     <div class="wh-lookup-line"><dt>取件点</dt><dd>{{ hit.place }}</dd></div>
     {% endif %}
   </dl>
+  {#- 整页口径（2026-11-01 起，web.py 的 PAGE_ENTRY_SCOPE_SQL）：命中的条目可能记在更早
+     那一版上，而字段是按当前这一版的 descriptor 映射的——老条目里没有的字段就是空的。
+     这句必须说出来，否则读到空字段的人只会以为数据丢了。hit 是普通字典，且 _lookup_hit
+     每条路径都带 older；这里仍用 .get 取，少一层「键没了就 500」的风险。 #}
+  {% if hit.get('older') %}<p class="wh-meta">这条记在更早的那一版上，字段按现在这一版显示。</p>{% endif %}
   {% if more %}<p class="wh-meta">另外还有 {{ more }} 条同号，这里显示最新的一条。</p>{% endif %}
 </div>
 {% elif query %}
