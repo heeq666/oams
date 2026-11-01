@@ -659,6 +659,23 @@ def _lookup_row(conn, interface_id, mode, descriptor, key_field, query):
     return row, int(row.get("same_number") or 1) - 1
 
 
+def _entry_status_word(descriptor, row):
+    """这一页给某条记录显示的状态名：部门自己的词优先，取不到才退回标准态的显示名。
+
+    与表格那一列同一个口径、同一条优先级（`_interface_values` 里同一段说明）：条目里
+    留着部门词（`extra[<字段 key>]`）就用它，否则用 `STATUS_LABELS`。两处各写一套的话，
+    同一条记录会在同一屏上被叫两个名字——「待取」与「未开始」，读的人以为状态被改了。
+    """
+    for field in descriptor.get("fields") or []:
+        if not isinstance(field, dict) or field.get("map_to") != "status" or not field.get("key"):
+            continue
+        word = (row.get("extra") or {}).get(field["key"])
+        if word:
+            return word
+    raw = row.get("status") or ""
+    return STATUS_LABELS.get(raw, raw)
+
+
 def _lookup_hit(descriptor, row, key_field, query):
     """Shape one entry for lookup_result.html: numbers, words and dates, not keys."""
     key_field_value = ""
@@ -685,9 +702,8 @@ def _lookup_hit(descriptor, row, key_field, query):
             if place:
                 break
     # 「借 note 当取件点」是形态稿 §2 的已知限制，不是这里漏了字段。
-    raw_status = row.get("status") or ""
     return {"number": key_field_value or query,
-            "status": STATUS_LABELS.get(raw_status, raw_status),
+            "status": _entry_status_word(descriptor, row),
             "date_value": date_value, "date_label": date_label, "place": place}
 
 
