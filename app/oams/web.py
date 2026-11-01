@@ -1410,6 +1410,29 @@ def _preview_refusal(powers: dict[str, Any], page: Any) -> str | None:
     return _review_refusal(powers, probe)
 
 
+def _preview_degraded(exc: RenderError) -> str:
+    """What the card shows when this version cannot be drawn at all.
+
+    A descriptor that calls a module nobody registers any more (the platform
+    indicators and their modules went away with the product hub) is a fact about
+    *that version*, not a server failure: it renders nothing, but the reviewer is
+    still owed a sentence -- which module, and what to do -- instead of a 500 that
+    htmx will not swap in. The exception text never reaches the page whole; only
+    the module name it names is quoted, and the rest goes to the log.
+    """
+    text = str(exc)
+    marker = "未注册的模块类型 '"
+    at = text.find(marker)
+    module = text[at + len(marker):].split("'", 1)[0] if at != -1 else ""
+    reason = (f"{module} 已下线" if module else "描述符里有渲染器不认识的写法")
+    return (
+        '<div class="preview-degraded" data-degraded="1" role="status">'
+        '<p class="caption">预览不可用</p>'
+        f'<p class="sub">这一版渲不出来：{html_text.escape(reason)}。'
+        '先按差异表审，或让作者改完重发。</p>'
+        '</div>')
+
+
 def _preview_problem(request: Request, message: str, *, status_code: int):
     """Refusals from the preview route keep their own status and their own shape.
 
@@ -1464,10 +1487,15 @@ def review_preview(request: Request, interface_id: UUID):
         # descriptor only: no connection is open here on purpose.
         html = render_preview(page["descriptor"] or {})
     except RenderError as exc:
-        _RENDER_LOG.error("preview failed: interface=%s slug=%s schema=%s org=%s error=%s",
-                          page.get("interface_id"), page.get("slug"),
-                          page.get("schema_version"), page.get("org_name"), exc)
-        return _preview_problem(request, f"这一版渲不出来：{exc}", status_code=500)
+        # A version that cannot be drawn is the descriptor's problem, not the
+        # route's: the reviewer gets a sentence she can act on, and the details
+        # go to the log rather than into a 500 the card cannot render. A real
+        # 500 stays for the failures that mean the route itself is broken.
+        _RENDER_LOG.warning(
+            "preview degraded: interface=%s slug=%s schema=%s org=%s error=%s",
+            page.get("interface_id"), page.get("slug"), page.get("schema_version"),
+            page.get("org_name"), exc)
+        return HTMLResponse(_preview_degraded(exc), status_code=200)
     response = HTMLResponse(html)
     # A version changes while it waits in the queue; a cached preview would show
     # the reviewer the previous drawing.
