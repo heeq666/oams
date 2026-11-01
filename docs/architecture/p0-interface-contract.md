@@ -72,6 +72,9 @@ def validate_module_tree(modules: list[dict]) -> list[str]        # 全部结构
 | `rank_list` | display | `metric_key: str`、`limit: int = 5` | — | — | None |
 | `activity_feed` | display | `limit: int = 10` | — | — | None |
 | `note_block` | display | `text: str` | — | — | None |
+| `lookup_box` | display | `key_field: str = "order_no"`、`label: str = ""` | — | — | False |
+
+> **`lookup_box` 是唯一一个 `aggregatable=False` 的 display 模块**（2026-11-01 加，注册表第 21 个键）：它按 `key_field` 查**正在看的这一版**的条目，只看本页、不跨页跨部门、不参与公司汇总；只读视角整块剔除它。形态与三态文案见 `docs/design/lookup-box.md`。
 
 **参数写法（2026-10-30 补）**：声明过的参数可以写在 `params` 里，也可以平铺在节点上（`rows: 3` 与 `params: {rows: 3}` 等价；两处都写时以 `params` 为准）。两种写法都按声明校验：`table` 的 `rows` 只能是 1–5 的整数，越界或写错类型**明确报错**（`DATA_RULE_VIOLATION`），不再静默忽略。节点上出现既不是声明参数、也不在节点固定键（`key`/`type`/`order`/`params`/`module_version`/`children`/`source_fields`/`aggregatable`）里的键，同样报错。
 
