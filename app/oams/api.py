@@ -81,6 +81,24 @@ def insert_org_unit(conn, payload: OrgUnitCreate, actor_member_id: Any) -> dict[
         raise HTTPException(status_code=422, detail="parent org unit does not exist")
 
 
+# 409 的两种真相各有自己的机器可读标记（放在响应头里，不进 detail）。
+#
+# 为什么需要它：两个冲突都走 409，但说的是两件完全不同的事——「这个员工编号已经
+# 有人用了」和「这个岗位已经坐着别人了」。调用方（/setup 建成员那张表单）如果把
+# 两者都翻成前者，第二次把人往同一岗位放的人会被一句假话堵住，回头去改一个根本
+# 没错的编号。detail 是给人看的英文句子，随时可以改措辞，不能当判据；psycopg 抛
+# 出来的约束名在 api 这一层已经变成了 HTTPException，所以在这里把它转成一个稳定
+# 的标记，调用方按标记分，不按字符串分。
+CONFLICT_EMPLOYEE_CODE = "employee_code_taken"
+CONFLICT_POSITION_OCCUPIED = "position_occupied"
+CONFLICT_HEADER = "X-OAMS-Conflict"
+
+
+def _conflict(code: str, detail: str) -> HTTPException:
+    """409 with a stable machine-readable reason beside the human sentence."""
+    return HTTPException(status_code=409, detail=detail, headers={CONFLICT_HEADER: code})
+
+
 def insert_assignment(conn, payload: AssignmentCreate, actor_member_id: Any) -> dict[str, Any]:
     """Shared position assignment for the JSON API and the setup page."""
     if payload.ends_at and payload.ends_at <= payload.starts_at:
@@ -111,9 +129,14 @@ def insert_assignment(conn, payload: AssignmentCreate, actor_member_id: Any) -> 
         audit(conn, actor_member_id, "assignment.created", "assignment", row["assignment_id"], payload.reason, row)
         return row
     except UniqueViolation:
-        raise HTTPException(status_code=409, detail="assignment conflicts with existing data")
+        raise _conflict(CONFLICT_EMPLOYEE_CODE, "assignment conflicts with existing data")
     except ExclusionViolation:
-        raise HTTPException(status_code=409, detail="overlapping assignment for this member and position")
+        # 走到这里几乎总是 schema.sql:753 的
+        # position_assignments_single_primary_per_position（一个岗位同时只能坐一个人）；
+        # 同一个人在同一岗位的两段重叠由 :729 的 position_assignments_no_overlap 挡，
+        # 两条约束说的都是「这段安排和已有安排撞了」，而 /setup 这张表单只会遇到前者
+        # ——它每次都新造成员，成员不可能已在这个岗位上。
+        raise _conflict(CONFLICT_POSITION_OCCUPIED, "overlapping assignment for this member and position")
     except ForeignKeyViolation:
         raise HTTPException(status_code=422, detail="member or position does not exist")
 
@@ -169,7 +192,7 @@ def insert_member(conn, payload: MemberCreate, actor_member_id: Any) -> dict[str
         audit(conn, actor_member_id, "member.created", "member", member["member_id"], "created through management API", member)
         return member
     except UniqueViolation:
-        raise HTTPException(status_code=409, detail="employee code already exists")
+        raise _conflict(CONFLICT_EMPLOYEE_CODE, "employee code already exists")
 
 
 def activate_member(conn, member_id: Any, actor_member_id: Any, reason: str) -> dict[str, Any]:
