@@ -21,7 +21,7 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 
 ## 做部门界面（descriptor）之前必读
 
-`skills/oams-department-interface/SKILL.md` + `docs/architecture/p0-interface-contract.md`。硬约束：容器只排版不做数据；字段必须映射标准字段（至少 `title` / `status` / `evidence`）；状态必须映射到 `planned / in_progress / blocked / done`；模块只能从 `app/oams/modules.py` 的 `MODULE_REGISTRY` 白名单（20 个 key）里选。
+`skills/oams-department-interface/SKILL.md` + `docs/architecture/p0-interface-contract.md`。硬约束：容器只排版不做数据；字段必须映射标准字段（至少 `title` / `status` / `evidence`）；状态必须映射到 `planned / in_progress / blocked / done`；模块只能从 `app/oams/modules.py` 的 `MODULE_REGISTRY` 白名单（21 个 key）里选。
 
 ## 运行
 

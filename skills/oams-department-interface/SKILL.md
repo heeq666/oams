@@ -10,7 +10,7 @@ description: 按 OAMS 插件契约（descriptor v0.2）帮部门负责人制作�
 ## 开工前必读（按顺序）
 
 1. `docs/architecture/plugin-host-concept.md` —— 三条共识、六个名词、三张契约。
-2. `docs/architecture/p0-interface-contract.md` —— **模块注册表（20 个，key 冻结）、指标目录、descriptor v0.2 结构、能力集合、标准字段词汇表（37 项）**。
+2. `docs/architecture/p0-interface-contract.md` —— **模块注册表（21 个，key 冻结）、指标目录、descriptor v0.2 结构、能力集合、标准字段词汇表（37 项）**。
 3. `examples/production-dept.yaml` —— 一份能过校验的真实样本，照它的骨架改最快。
 
 ## 三条硬约束（违反即被校验器拒绝）
@@ -37,7 +37,7 @@ python -m oams.cli plugin upgrade old.yaml             # 存量 0.1 描述自动
 
 1. **问清部门与主事项。** 部门名、岗位、每周或每波段重复汇报的事项、现在怎么同步（群 / 表 / 会）。
 2. **列出部门自己的字段与黑话。** 每个字段决定 ``map_to``（标准字段 / `display_only`）与 `aggregatable`。
-3. **选模块。** 只能从 20 个预设模块里选（7 容器 / 6 录入 / 7 展示）。默认优先 `progress_row` + `blocker_list` 做录入、`metric_grid` + `flow_strip` 做展示。
+3. **选模块。** 只能从 21 个预设模块里选（7 容器 / 6 录入 / 8 展示）。默认优先 `progress_row` + `blocker_list` 做录入、`metric_grid` + `flow_strip` 做展示。
 4. **写状态映射表。** 部门每个状态词 → 四个标准状态之一。
 5. **声明能力与指标。** `capabilities` 没有声明就没有权限（`entries:write` / `entries:read:dept` / `entries:read:self` / `aggregate:read:dept` / `aggregate:read:company` / `entries:link:work_item` / `export:dept`）；部门自建指标命名必须是 `dept.<ORG_CODE>.<slug>`，平台指标只能引用不能改口径。
 6. **check → preview → 试填一遍。** 用一个代表性事项走完整流程：能不能 5 分钟填完；缺依据时是否被拦住；填完能不能进公司汇总（需要关联到工作项）。
