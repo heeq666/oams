@@ -28,6 +28,7 @@ pytestmark = pytest.mark.db
 ROOM_COOKIE = "review-stage-test"
 
 ARCHIVED_REASON = "这一版已归档，不能再往里写"
+ARCHIVED_NOTICE = "你打开的是这一页的归档版本"
 
 
 def _form_csrf(purpose: str) -> str:
@@ -106,9 +107,8 @@ def test_an_unknown_slug_is_sent_away_rather_than_drawn(room):
 def test_reading_an_archived_version_lands_on_the_current_one(room):
     """旧链接不是死胡同，但也不许「静默换个版本给你看」——跳转带 `?archived=1` 说明原因。
 
-    注意：现在只到「带标记跳走」这一步。`archived_notice` 已经传进模板、
-    模板还没渲染那句提示（web.py:948 有值、模板无引用），所以这里不断言提示句；
-    模板接上后要在这里补一条断言，否则这个功能在页面上是看不见的。
+    跳过去之后页面上有一句话说明原因（模板 :24，`archived_notice` 只在为真时进 DOM），
+    不带参数时它不在 DOM 里——不靠 CSS 藏，所以直接断字符串在不在。
     """
     first, second, _, _ = _republish(room)
     room["as_"](DESIGN_AUTHOR)
@@ -118,10 +118,17 @@ def test_reading_an_archived_version_lands_on_the_current_one(room):
 
     assert opened.status_code == 303, opened.text
     assert opened.headers["location"] == f"/departments/{room['design']}/{second}?archived=1"
-    # 跟过去是当前版本、照常能看。
+    # 跟过去是当前版本、照常能看，并且页面上有一句话说明「你拿的是旧链接」。
     landed = room["client"]().get(opened.headers["location"])
     assert landed.status_code == 200, landed.text[:300]
     assert f"/departments/{room['design']}/{second}" in landed.text
+    assert ARCHIVED_NOTICE in landed.text
+    assert 'class="flash note" role="status"' in landed.text
+
+    # 不带参数时这句话在 DOM 里根本不存在——不是靠 CSS 藏起来。
+    plain = room["client"]().get(f"/departments/{room['design']}/{second}")
+    assert plain.status_code == 200
+    assert ARCHIVED_NOTICE not in plain.text
 
 
 # ---------------------------------------------------------------- 归档闸
