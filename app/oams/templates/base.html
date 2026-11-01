@@ -213,6 +213,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .page-tab:hover { color: var(--ink); background: var(--subtle); }
   .page-tab.on { background: var(--card); border-color: var(--line); color: var(--ink); font-weight: 600; margin-bottom: -1px; }
   .page-tab.add { color: var(--muted); }
+  /* 768 档：部门有 4 个页面时页签条差 14px 装不下一排（实测可用 609 / 需要 622.7），
+     折成两排后下边框会压在第二排底下。内距 16→12 是同一档（间距只用 16/12/8），
+     一排就装得下；页面再多也还是折行，不裁、不压省略号。 */
+  @media (max-width: 900px) { .page-tab { padding: 8px 12px; } }
   /* One persistent frame: the department rail is a column that stays put while the
      content scrolls, and the top bar stays above both. */
   :root { --rail-w: 208px; }
