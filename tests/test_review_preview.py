@@ -283,6 +283,70 @@ def test_the_preview_shows_the_descriptors_sample_not_what_people_typed(room):
     assert LIVE_ENTRY_CANARY in filled.text
 
 
+#: 只存在于「这一版 descriptor」里的标记：预览画样本时该出现，审核列表页不该出现。
+LEAK_PROBE = "PREVIEW-LEAK-PROBE"
+
+
+def _probe_descriptor() -> dict:
+    """同一份合法描述符，只把「款号」的样例值换成一个独一无二的标记。
+
+    标在 `example` 上：预览渲样本值时它一定出现（`progress_row` 会把 title 印出来），
+    而列表页只该给「改了什么」的差异摘要，不该把描述符里的样例值摊开。
+    """
+    descriptor = json.loads(json.dumps(METRIC_DESCRIPTOR))
+    for field in descriptor["fields"]:
+        if field["key"] == "title":
+            field["example"] = LEAK_PROBE
+    descriptor["modules"] = [{"key": "row", "type": "progress_row"}]
+    return descriptor
+
+
+def test_the_review_list_does_not_render_the_inside_of_a_descriptor(room):
+    """列表页读的是「谁在等、差在哪」，不是把 descriptor 摊开渲一遍。
+
+    标记放在 `fields[].example` 上：它 100% 会出现在预览（样本值就是它），所以列表页
+    只要顺手渲了描述符明细，这条就会红。
+    """
+    # 非首版：先有一版在线的，第二版才走「对比上一版」那个差异块——首版只显示一句
+    # 「首版」，那时列表页本来就不列明细，断言等于没测。
+    first = _a_live_page(room)
+    slug = room["conn"].execute(
+        "SELECT slug FROM oams.interfaces WHERE interface_id = %s", (first,)).fetchone()["slug"]
+    waiting = room["create"](room["design"], slug=slug, name="审核分级样张（第二版）",
+                             descriptor=_probe_descriptor())
+    room["submit"](room["design"], waiting)
+    room["as_"](DESIGN_REVIEWER)
+    listing = room["client"]().get("/reviews")
+    assert listing.status_code == 200, listing.text
+    assert LEAK_PROBE not in listing.text
+    drawn = _preview(room, waiting)
+    assert LEAK_PROBE in drawn.text, "标记得真在那一版里，否则上面那条断言是空的"
+
+
+def test_the_preview_body_is_identical_whether_the_page_has_entries(room):
+    """预览一个字都不吃条目：同一条 URL，条目从无到有，正文逐字相同。
+
+    这是「不查库」在路由层的可测形态。整条路由当然要读 `interfaces` 行才知道渲哪一版
+    （指一个不存在的库连 200 都拿不到），但「渲出来的正文」与库里的填报数据完全无关——
+    那正是它和 `/departments/...` 的区别。
+    """
+    live = _a_live_page(room)
+    room["as_"](DESIGN_REVIEWER)
+    empty = _preview(room, live)
+    assert empty.status_code == 200, empty.text
+
+    room["as_"](DESIGN_AUTHOR)
+    _fill_entry(room, live, {"title": "AW26-902 羊毛围巾",
+                             "state_word": "进行中",
+                             "evidence": "PREVIEW-NOT-FROM-ENTRY"})
+
+    room["as_"](DESIGN_REVIEWER)
+    filled = _preview(room, live)
+    assert filled.status_code == 200, filled.text
+    assert filled.text == empty.text
+    assert "PREVIEW-NOT-FROM-ENTRY" not in filled.text
+
+
 def test_the_preview_draws_the_metrics_the_page_declares(room):
     """自产指标的样本数由 render_preview 给，不查库也算得出来 —— 预览断的是定义。"""
     waiting = room["page"](room["design"], descriptor=METRIC_DESCRIPTOR)
