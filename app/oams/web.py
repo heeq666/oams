@@ -458,7 +458,15 @@ def _interface_values(fields, entry):
         map_to = field.get("map_to")
         if map_to == "display_only":
             values[key] = (entry["extra"] or {}).get(key)
-        elif map_to in ("title", "status", "blocked_reason", "progress_value", "note", "evidence"):
+        elif map_to == "status":
+            # 状态下拉框里的选项是本部门自己的词（「待取」），而 `status` 列存的是映射
+            # 后的标准态（planned）——直接回填标准态永远选不中，任何已存条目的下拉都
+            # 空着。写入时把部门词原样留一份在 extra[key]，这里优先取它；没留（本次
+            # 改动之前记的条目）就退回标准态，跟以前一样回不出词，但不猜：一个标准态
+            # 可能对上多个部门词，反推会把「待取」显示成「已取」。
+            word = (entry["extra"] or {}).get(key)
+            values[key] = word if word else entry["status"]
+        elif map_to in ("title", "blocked_reason", "progress_value", "note", "evidence"):
             values[key] = entry[map_to]
     return values
 
@@ -506,6 +514,10 @@ def _read_entry_form(fields, status_map, form):
             if mapped is None:
                 return {}, {}, "状态「" + raw + "」未映射，请联系本部门界面维护者补充映射"
             standard["status"] = mapped
+            # 部门词原样也留一份：`status` 列存标准态（汇总与四态靠它），而回填下拉框
+            # 需要的是「待取」这种本部门自己的词，标准态对不上任何选项。见
+            # _interface_values 里同一段说明。键用字段 key，与 display_only 的存法一致。
+            extra[key] = raw
             continue
         if map_to == "progress_value":
             try:
