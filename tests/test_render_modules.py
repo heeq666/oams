@@ -40,7 +40,7 @@ INPUT_KEYS = {
 }
 DISPLAY_KEYS = {
     "metric_card", "metric_grid", "flow_strip", "status_chart", "rank_list",
-    "activity_feed", "note_block",
+    "activity_feed", "note_block", "lookup_box",
 }
 
 FIELDS = [
@@ -62,6 +62,10 @@ FIELDS = [
      "example": "设计总监"},
     {"key": "f_metric", "label": "件数", "type": "number", "map_to": "metric_value",
      "required": True, "example": "128"},
+    # `lookup_box` 的 `key_field` 必须被某个字段映射到，否则校验会报
+    # `[DATA_RULE_VIOLATION] ... key_field 'order_no' 没有任何字段映射到它`。
+    {"key": "f_order", "label": "单号", "type": "text", "map_to": "order_no",
+     "example": "AW26-0007"},
 ]
 
 STATUS_MAP = {"待打样": "planned", "打样中": "in_progress", "等面料": "blocked", "已完成": "done"}
@@ -71,6 +75,7 @@ VALUES = {
     "f_evidence": "SY-2610", "f_url": "https://example.com/sheet.pdf",
     "f_due": "2026-11-05", "f_blocked": "等检测报告", "f_decision": "设计总监",
     "f_metric": "128",
+    "f_order": "AW26-0007",
 }
 
 AGGREGATES = {
@@ -139,6 +144,7 @@ MODULES: dict[str, dict] = {
     "rank_list": {"type": "rank_list", "params": {"metric_key": "dept.DESIGN.qty", "limit": 2}},
     "activity_feed": {"type": "activity_feed", "params": {"limit": 1}},
     "note_block": {"type": "note_block", "params": {"text": "这一页说明打样口径。"}},
+    "lookup_box": {"type": "lookup_box", "params": {"key_field": "order_no"}},
 }
 
 
@@ -171,8 +177,8 @@ BY_LAYER = [(key, get_module(key).layer) for key in ALL_KEYS]
 # --------------------------------------------------------------------------- #
 
 
-def test_registry_is_the_frozen_twenty():
-    assert len(MODULE_REGISTRY) == 20
+def test_registry_is_the_frozen_twenty_one():
+    assert len(MODULE_REGISTRY) == 21
     assert set(MODULE_REGISTRY) == CONTAINER_KEYS | INPUT_KEYS | DISPLAY_KEYS
     assert set(known_module_keys()) == set(MODULE_REGISTRY)
 
@@ -220,10 +226,13 @@ def test_every_module_renders_in_the_preview_viewpoint(key):
     assert f'data-type="{key}"' in html
 
 
-@pytest.mark.parametrize("key", sorted(set(ALL_KEYS) - {"evidence_gallery"}))
+@pytest.mark.parametrize("key", sorted(set(ALL_KEYS) - {"evidence_gallery", "lookup_box"}))
 def test_every_visible_module_renders_in_the_readonly_viewpoint(key):
     # evidence_gallery is department-private, so the manager view drops it by
     # design; test_readonly_skips_department_private_modules covers that case.
+    # lookup_box has aggregatable=False, which is the same signal the read-only
+    # view uses to drop a block -- it is a lookup widget, not this department's
+    # data, so it never appears in the company-wide view.
     html = render_read_only(one(key), VALUES, AGGREGATES)
     assert f'data-type="{key}"' in html
 
@@ -240,17 +249,37 @@ def test_input_modules_offer_widgets_in_edit(key):
     assert widgets >= 1, key
 
 
-@pytest.mark.parametrize("key", sorted(CONTAINER_KEYS | DISPLAY_KEYS))
+@pytest.mark.parametrize("key", sorted((CONTAINER_KEYS | DISPLAY_KEYS) - {"lookup_box"}))
 def test_containers_and_displays_never_offer_data_widgets(key):
     """容器只排版、展示件只读数，两者都不该长出一个可填的数据字段控件。
 
     例外是组件自己的视觉机制：tabs 用 `wh-tab-radio` 做纯 CSS 分段切换，
-    不绑任何字段，不算数据控件。
+    不绑任何字段，不算数据控件。`lookup_box` 单独一条测（见下）——它是
+    display 里唯一真有输入控件的模块，但那个控件填的是「查哪一条」，
+    不是任何一个字段的值。
     """
     html = render_interface(one(key), VALUES, AGGREGATES)
     assert 'class="wh-input"' not in html
     assert "<select" not in html
     assert "<textarea" not in html
+
+
+def test_the_lookup_box_is_the_one_display_module_that_takes_typing():
+    """查件框是唯一一个「层是 display、却有一个输入控件」的模块。
+
+    它填的是「要查哪个单号」（`name="lookup"`），不是本页任何一个字段的值：
+    控件上不该出现字段名，只读视角整块剔除，所以任何字段值都不会经它写回。
+    """
+    html = render_interface(one("lookup_box"), VALUES, AGGREGATES)
+    assert 'class="wh-input"' in html
+    assert 'name="lookup"' in html
+    assert f'data-key-field="order_no"' in html
+    for field in VALUES:
+        assert f'name="{field}"' not in html, field
+    assert "hx-get" in html  # 只有 edit 才真的能查
+
+    readonly = render_read_only(one("lookup_box"), VALUES, AGGREGATES)
+    assert "wh-lookup" not in readonly
 
 
 DATA_WIDGET = re.compile(r'<(?:input|select|textarea)\b[^>]*class="wh-input"[^>]*>')

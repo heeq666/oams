@@ -283,7 +283,7 @@ def test_the_sdk_server_serves_the_same_tools_and_refusals():
     assert [tool.name for tool in listed.tools] == [s.name for s in TOOL_SPECS]
     assert all(tool.input_schema for tool in listed.tools)
     assert called.is_error is False
-    assert json.loads(called.content[0].text)["count"] == 20
+    assert json.loads(called.content[0].text)["count"] == 21
     # A rejection must arrive as a tool error with its code intact, not as a
     # transport-level exception.
     assert refused.is_error is True
@@ -298,9 +298,9 @@ def test_list_modules_reads_the_module_registry(registry):
     assert result.ok is True
     modules = result.payload["modules"]
     expected = modules_contract.list_modules()
-    assert len(modules) == len(expected) == 20
+    assert len(modules) == len(expected) == 21
     assert [m["key"] for m in modules] == [m["key"] for m in expected]
-    assert result.payload["count"] == 20
+    assert result.payload["count"] == 21
     assert set(result.payload["by_layer"]) == {"container", "input", "display"}
     assert len(result.payload["by_layer"]["container"]) == 7
 

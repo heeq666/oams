@@ -257,7 +257,7 @@ def test_registry_comes_from_the_shared_module_table():
     # The renderer must not own a second copy of the module contract: once unit A
     # lands oams.modules it is the only source of truth.
     keys = set(known_module_keys())
-    assert len(keys) == 20
+    assert len(keys) == 21
     assert registry_source() in ("oams.modules", "contract-mirror")
     assert resolve_spec("metric_card") is not None
     assert resolve_spec("does_not_exist") is None
