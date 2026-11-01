@@ -1991,7 +1991,7 @@ def interface_board(request: Request, stale_days: int = Query(default=7, ge=1, l
 
 @router.get("/interfaces/{interface_id}", response_class=HTMLResponse)
 def interface_fill(request: Request, interface_id: UUID, saved: str | None = None,
-                   error: str | None = None):
+                   error: str | None = None, lookup: str | None = None):
     try:
         principal = _require(request, "workforce.reports", "read")
         _require(request, "workforce.reports", "submit")
@@ -2010,20 +2010,40 @@ def interface_fill(request: Request, interface_id: UUID, saved: str | None = Non
         if row is None:
             return _denied(request, "找不到这个部门界面，或你不在该部门范围内。")
         mode = _entry_mode_for(row["status"])
+        if lookup is not None and request.headers.get("HX-Request"):
+            # 填报表单页也画查件框（同一个 render_interface(edit)），模板里
+            # hx-get="?" 打的是页面地址，所以这条路由必须跟工作台一样回那一块。
+            # 少了这个分支，整页 HTML 会被 hx-swap 灌进结果区：盒子当场从一百多
+            # 像素撑成一千多（实测 119 → 1007），换页之后才恢复。
+            body = _lookup_fragment(conn, interface_id, mode, row["descriptor"], lookup)
+            if not body:
+                return HTMLResponse('<p class="wh-empty">这一页没有查件框。</p>', status_code=404,
+                                    headers={"Cache-Control": "no-store"})
+            return HTMLResponse(body, status_code=200, headers={"Cache-Control": "no-store"})
         latest = conn.execute(
             """SELECT * FROM oams.interface_entries
                WHERE interface_id = %s AND status_entry = 'active' AND entry_mode = %s
                ORDER BY reported_at DESC, entry_id DESC LIMIT 1""", (interface_id, mode)).fetchone()
-    return _interface_fill_page(request, row, latest=latest, saved=saved, error=error)
+        # 整页带 ?lookup= 打开时，结果区里放的必须是已经算好的那一块——否则同一
+        # 个单号在片段和整页上会显示两样东西。
+        lookup_html = (_lookup_fragment(conn, interface_id, mode, row["descriptor"], lookup)
+                       if lookup is not None else "")
+    return _interface_fill_page(request, row, latest=latest, saved=saved, error=error,
+                                lookup_prefill=lookup_html)
 
 
 def _interface_fill_page(request: Request, row: dict[str, Any], *, latest: dict[str, Any] | None = None,
                          saved: str | None = None, error: str | None = None,
-                         values: dict[str, Any] | None = None, status_code: int = 200):
+                         values: dict[str, Any] | None = None, status_code: int = 200,
+                         lookup_prefill: str = ""):
     """Draw a department interface for filling.
 
     ``values`` overrides what the fields show, so a refused POST can come back with
     the text the person typed instead of the last saved entry or an empty form.
+
+    ``lookup_prefill`` is the already-rendered lookup result for a full page opened
+    with ``?lookup=`` -- the same fragment the htmx partial returns, handed to the
+    renderer as text so the two paths cannot disagree.
     """
     descriptor = row["descriptor"]
     fields = [f for f in descriptor.get("fields", []) if isinstance(f, dict) and f.get("key")]
@@ -2038,7 +2058,8 @@ def _interface_fill_page(request: Request, row: dict[str, Any], *, latest: dict[
             interface_id=row.get("interface_id"))
     try:
         rendered = render_interface(descriptor, values=values,
-                                    aggregates=rollup.get("aggregates") or {})
+                                    aggregates=rollup.get("aggregates") or {},
+                                    lookup=lookup_prefill)
     except RenderError as exc:
         return _render_failed(request, page=row, exc=exc, org_name=row.get("org_name"),
                               back_href="/interfaces", back_label="返回界面列表")
