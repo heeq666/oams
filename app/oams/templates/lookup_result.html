@@ -1,0 +1,24 @@
+{#- 查件框的结果片段：由 web.py 的 partial 路由渲染，只换 #wh-lookup-…-result 这一块，
+    不整页返回（不带 HX-Request 时那条路由回整页）。
+    上下文三件：hit（命中条目，字典或 None）、query（这次查的单号）、more（同号条数）。
+    hit 的字段是「已经按状态映射好、已经按日期口径挑好标签」的显示值——映射与挑列在
+    web.py 做，模板只排版，免得同一套 status_map 在两个地方各解释一遍。 -#}
+{% if hit %}
+<div class="wh-lookup-hit" data-lookup-hit="1">
+  <dl class="wh-lookup-fields">
+    <div class="wh-lookup-line"><dt>单号</dt><dd>{{ hit.number }}</dd></div>
+    <div class="wh-lookup-line"><dt>状态</dt><dd>{{ hit.status or '—' }}</dd></div>
+    {% if hit.date_value %}
+    <div class="wh-lookup-line"><dt>{{ hit.date_label or '完成日期' }}</dt><dd>{{ hit.date_value }}</dd></div>
+    {% endif %}
+    {% if hit.place %}
+    <div class="wh-lookup-line"><dt>取件点</dt><dd>{{ hit.place }}</dd></div>
+    {% endif %}
+  </dl>
+  {% if more %}<p class="wh-meta">另外还有 {{ more }} 条同号，这里显示最新的一条。</p>{% endif %}
+</div>
+{% elif query %}
+<p class="wh-empty">本页没有这个单号。别跨页找——这个框只看当前这一页。</p>
+{% else %}
+<p class="wh-empty">输入单号后在这里看结果。</p>
+{% endif %}

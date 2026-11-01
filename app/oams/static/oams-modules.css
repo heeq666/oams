@@ -823,6 +823,83 @@
   color: var(--oams-blocked);
 }
 
+/* --- lookup_box（查件框）：输入 + 结果区，一个叶子模块 ---
+ * 面、边、内距 16、圆角 18 全部来自 .wh-display 那条共享规则，这里只排版内部：
+ * 标签↔控件 8、控件行内 8、结果区与输入行 8。按钮 30 高、999 圆角（只有按钮吃
+ * 999 这一档）；命中卡是块里的块，圆角走 9（18 减去 16 内距的同心值），不再套 18。 */
+.wh-lookup-box,
+.wh-lookup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wh-lookup-form {
+  margin: 0;
+}
+
+.wh-lookup-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wh-lookup-go {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--oams-radius-pill);
+  background: var(--oams-accent);
+  color: var(--oams-on-accent);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wh-lookup-go:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.wh-lookup-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wh-lookup-result:empty {
+  display: none;
+}
+
+.wh-lookup-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--oams-line);
+  border-radius: var(--oams-radius-sm);
+}
+
+.wh-lookup-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.wh-lookup-fields dt {
+  flex: 0 0 auto;
+  min-width: 64px;
+  font-size: 12px;
+  color: var(--oams-muted);
+}
+
+.wh-lookup-fields dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--oams-ink);
+}
+
 /* Preview mode is a review artefact: a dashed outline says "this is not live".
  * 原来这里还有一条 padding-top: 18px，是给「预览」角标让位置的——角标 2026-10-30
  * 就下线了（render_preview 的 docstring 写着），18 是档外值，随之删掉。 */

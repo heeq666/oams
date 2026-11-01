@@ -1,0 +1,27 @@
+{#- Display: 查件框 —— 输入单号，就地显示本页条目里的那一条。
+    它只查「正在看的这一页/这一版」的条目，不跨页、不跨部门、不按 slug 跳版本，
+    也不参与汇总：形态见 docs/design/lookup-box.md。 -#}
+{% set p = params_of(module) %}
+{% set key_field = p.get('key_field') or 'order_no' %}
+{% set label = p.get('label') or '单号' %}
+{% set uid = uid_for(module, 'wh-lookup') %}
+{#- 只有 edit 才真的能查：preview 是审核看的定义稿，控件在场但按死；
+    readonly 整块被 render.py 的 _hidden_in_readonly 剔除，模板里不用再判。 -#}
+{% set live = mode == 'edit' %}
+<section class="wh-m wh-display wh-lookup-box" data-type="lookup_box" data-key-field="{{ key_field }}">
+  <form class="wh-lookup-form" method="get" action=""
+        {%- if live %} hx-get="?" hx-target="#{{ uid }}-result" hx-swap="innerHTML"{% endif %}>
+    <label class="wh-field-label" for="{{ uid }}-input">{{ label }}</label>
+    <div class="wh-lookup-line">
+      {#- required 是「空输入不发请求」的第一道闸：浏览器校验不过就不会派发 submit，
+          htmx 也就不发这一次请求。服务端仍要把全空白当没输入，别只信前端。 -#}
+      <input class="wh-input" id="{{ uid }}-input" name="lookup" type="search"
+             placeholder="输入{{ label }}" autocomplete="off" required
+             {%- if not live %} disabled{% endif %}>
+      <button class="wh-lookup-go" type="submit"{% if not live %} disabled{% endif %}>查询</button>
+    </div>
+    <div class="wh-lookup-result" id="{{ uid }}-result" aria-live="polite">
+      <p class="wh-empty">输入单号后在这里看结果。</p>
+    </div>
+  </form>
+</section>

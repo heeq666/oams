@@ -12,7 +12,10 @@ Layer rules (§1 / concept §3.1):
     CONTAINER_DEPTH_LIMIT levels deep (concept §3.3: two levels, no more).
   * input     -- the only layer that produces entries and standard fields.
   * display   -- read-only views of already-computed metrics; produces nothing,
-    aggregatable is None (not applicable, not "no").
+    aggregatable is None (not applicable, not "no"). 唯一的例外是 `lookup_box`
+    （查件框）：它不是数据来源，也不是「本部门专属的一份数据」，所以声明
+    aggregatable=False —— 只读视角整块剔除它，页面上也不给它挂「本部门可见，
+    不参与公司汇总」那句话（2026-11-01 定，形态见 docs/design/lookup-box.md）。
 
 The table below is frozen by docs/architecture/p0-interface-contract.md §1.
 Keys may not be renamed; adding a module means adding a row to the contract first.
@@ -319,6 +322,20 @@ _register(
         "note_block", "说明块", "display",
         "纯文字说明，文字由参数给出。",
         {"text": _param("str", required=True)},
+    ),
+)
+
+
+# 查件框（2026-11-01 加，第 21 个 key）。它按一个标准字段查「正在看的这一版」的条目，
+# 所以 aggregatable=False：只读视角会整块剔除它，它也不参与公司汇总——它是查询工具，
+# 不是一份数据。`key_field` 必须是本页某个字段映射到的标准字段（descriptor.py 会拦）；
+# `label` 只改输入框前面那个词（默认「单号」），不改查询口径。
+_register(
+    _spec(
+        "lookup_box", "查件框", "display",
+        "输入单号，就地显示本页条目里的那一条。只查当前这一页，不跨页、不跨部门、不参与汇总。",
+        {"key_field": _param("str", default="order_no"), "label": _param("str", default="")},
+        aggregatable=False,
     ),
 )
 

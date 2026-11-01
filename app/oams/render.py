@@ -456,6 +456,19 @@ def tabs_uid(module: Any) -> str:
     return f"wh-tabs-{tail}"
 
 
+def uid_for(module: Any, prefix: Any) -> str:
+    """Unique-per-render id base for a module that has to name a DOM target.
+
+    The in-page id has to be unique per render (a page may draw the same module
+    twice), so the counter is the fallback whenever the node has no stable key.
+    """
+    state = _state()
+    state.uid_seq += 1
+    raw = str((module or {}).get("key") or "") if isinstance(module, dict) else ""
+    tail = re.sub(r"[^a-zA-Z0-9_-]+", "-", raw).strip("-") or str(state.uid_seq)
+    return f"{_text(str(prefix or 'wh-node'))}-{tail}"
+
+
 def progress_text() -> str:
     """Progress as the page shows it: "35%" or a dash when nothing was filled in."""
     percent = progress_percent()
@@ -691,6 +704,10 @@ def private_note(module: Any, spec: Any = None) -> Markup:
     if _state().mode != "edit":
         return Markup("")
     spec = spec or resolve_spec(module.get("type") if isinstance(module, dict) else None)
+    # 查件框不参与汇总是因为它不是数据来源，不是因为它只给本部门看：那句话挂在
+    # 它下面会把「查询工具」读成「一份不进汇总的数据」。2026-11-01 拍板跳过。
+    if str(getattr(spec, "key", "")) == "lookup_box":
+        return Markup("")
     if _aggregatable(module if isinstance(module, dict) else {}, spec) is False:
         return Markup('<p class="wh-meta">本部门可见，不参与公司汇总</p>')
     return Markup("")
@@ -732,6 +749,7 @@ _ENV.globals.update({
     "progress_percent": progress_percent,
     "progress_text": progress_text,
     "tabs_uid": tabs_uid,
+    "uid_for": uid_for,
     "inline_widgets": inline_widgets,
     "aggregate": aggregate,
     "aggregate_raw": aggregate_raw,
