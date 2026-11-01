@@ -475,6 +475,17 @@ def _check_modules_v02(problems: _Problems, modules: Any, fields: list[dict],
                                  f"{key!r} 既不是目录里的平台指标，也不是本页 emit 的指标"
                                  f"（后者须以 {own_prefix or 'dept.<CODE>.'} 开头并在本页声明）")
 
+        # 查件框按一个标准字段查本页条目：那个字段必须真的被这一页的某个字段映射到，
+        # 否则输入框问的是一个这页根本不记录的字段——查不到不是「本页没有这个单号」，
+        # 是配置错了。只查映射关系，不查数据（渲染器那侧也不许查库）。
+        if spec.key == "lookup_box":
+            raw_key_field = params.get("key_field")
+            named = raw_key_field.strip() if isinstance(raw_key_field, str) else ""
+            if named and named not in mapped_fields:
+                problems.add("DATA_RULE_VIOLATION", f"{path}.params.key_field",
+                             f"key_field {named!r} 没有任何字段映射到它；查件框只能查这一页"
+                             f"记下来的标准字段（本页已映射：{sorted(mapped_fields)}）")
+
         # source_fields must name fields this interface declares. A container
         # carrying source_fields was already refused by the structural gate; do not
         # repeat it.
