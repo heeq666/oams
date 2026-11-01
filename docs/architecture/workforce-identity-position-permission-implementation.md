@@ -2,7 +2,7 @@
 
 状态：首版服务代码与数据库迁移已实现，尚未部署到服务器或连接真实数据库。独立账号中心接入仍未开始。迁移只适用于 OAMS 专用 PostgreSQL 数据库。
 
-> **2026-11-01 补注（路径已变，结论不变）**：`db/migrations/` 与双角色机制已移除，表结构收成单个 `app/oams/schema.sql`（19 张表 + 1 个视图 `work_item_current_state`，`oams db init` 幂等执行，见 `app/oams/cli.py:15`、`:117`）。本节以下提到 `db/migrations/0001_…sql` 的地方保留当时的记录，实际建表以 `schema.sql` 为准；`db/deploy/` 是双角色时期遗留，别照它建角色。
+> **2026-11-01 补注（路径已变，结论不变）**：`db/migrations/` 与双角色机制已移除，表结构收成单个 `app/oams/schema.sql`（19 张表 + 1 个视图 `work_item_current_state`，`oams db init` 幂等执行，见 `app/oams/cli.py:15`、`:117`）。本节以下提到 `db/migrations/0001_…sql` 的地方保留当时的记录，实际建表以 `schema.sql` 为准；双角色时期的建库脚本已删除（2026-11-02），别照它建角色。
 
 ## 1. 已实现的代码
 
