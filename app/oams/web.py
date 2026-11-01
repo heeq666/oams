@@ -804,8 +804,15 @@ def page_by_slug(request: Request, org_code: str, slug: str):
 
     A page is identified by `(org_code, slug)`; the version id changes at every
     publish, so a link built from it rots the moment somebody edits the page. This
-    route resolves the current version and hands off to the workbench, which is
-    the one place the page is actually drawn.
+    route resolves which version is worth opening now and hands off to the
+    workbench, which is the one place the page is actually drawn.
+
+    "Worth opening" is not only the published one: a department has to be able to
+    open its own page while it is still a draft or waiting for review, otherwise
+    the stable address would refuse exactly the people who are working on it (the
+    two partial unique indexes allow at most one published and one open version,
+    so the order is well defined). Callers outside the department never get this
+    far -- the workbench re-checks the scope.
     """
     try:
         principal = _require(request, "workforce.reports", "read")
@@ -819,10 +826,12 @@ def page_by_slug(request: Request, org_code: str, slug: str):
             """SELECT i.interface_id, i.org_unit_id
                  FROM oams.interfaces i
                  JOIN oams.org_units o ON o.org_unit_id = i.org_unit_id
-                WHERE o.org_code = %s AND i.slug = %s AND i.status = 'active'""",
+                WHERE o.org_code = %s AND i.slug = %s AND i.status <> 'archived'
+                ORDER BY (i.status = 'active') DESC, i.version_no DESC
+                LIMIT 1""",
             (org_code, slug)).fetchone()
         if row is None:
-            return _denied(request, "这个页面不存在，或者目前没有在用的版本。")
+            return _denied(request, "这个页面不存在，或者还没有可打开的版本。")
         if _resolve_department(conn, principal, row["org_unit_id"]) is None:
             return _denied(request, "你不在这个部门的范围内。")
     return RedirectResponse(url=f"/departments/{row['org_unit_id']}/{row['interface_id']}",
