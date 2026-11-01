@@ -17,7 +17,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { readFile } from "node:fs/promises";
 
-const ROOT = "/Volumes/工作/aiworkspace/company-workhub";
+const ROOT = "/Volumes/工作/aiworkspace/oams";
 const PYTHON = ROOT + "/.venv/bin/python";
 const CONFIG_PATH = "/tmp/oams-ego-grid.json";
 

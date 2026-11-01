@@ -16,7 +16,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { readFile } from "node:fs/promises";
 
-const ROOT = "/Volumes/工作/aiworkspace/company-workhub";
+const ROOT = "/Volumes/工作/aiworkspace/oams";
 const PYTHON = ROOT + "/.venv/bin/python";
 const SPACE_NAME = "oams 断网重发验收";
 
