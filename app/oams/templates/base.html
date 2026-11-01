@@ -687,9 +687,9 @@ body { margin: 0; background: var(--bg); color: var(--ink);
                        padding: 0; color: var(--muted); font-size: 12px; font-weight: 400; }
   button.link:hover, .link:hover { background: none; color: var(--ink); opacity: 1; }
   .badge, .pill { min-height: 20px; padding: 1px 8px; font-size: 12px; line-height: 18px; }
-  /* A control inside a table row is one level down: 12, not 20, or the radius
-     eats the 32px row it lives in. */
-  td input, td select, td textarea { height: 32px; padding: 0 12px; font-size: 13px; }
+  /* 单元格里的控件跟控件基准线同高（30），不另立一档：同一行里 30 与 32 并排会
+     差 1px，表格行高由 td 内距撑，不靠控件高撑。 */
+  td input, td select, td textarea { height: 30px; padding: 0 12px; font-size: 13px; }
   @media (max-width: 900px) {
     header.topbar { width: 100%; padding: 0 16px; gap: 12px; }
     header.topbar.is-scrolled { width: 100%; padding: 0 16px; }
