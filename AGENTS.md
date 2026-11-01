@@ -49,7 +49,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 - `app/oams/` —— 应用本体：`modules.py`（模块注册表）、`templates/`、`static/`、`mcp/`（12 个 MCP 工具）、`cli.py`
 - `docs/architecture/` —— 契约与方案（`plugin-host-concept.md` 是现行主线，`v1-ui-redesign-plan.md` 已作废）；`collab-room-implementation-plan.md` 是协作室的实现清单（设计稿见 `docs/design/design-system-v1.md` §7）
 - `docs/design/` —— 界面规范与令牌
-- `app/oams/schema.sql` —— **唯一一份**建表脚本：**19 张表 + 1 个视图**（`work_item_current_state`），`oams db init` 幂等执行。按 `information_schema.tables` 数会是 **20**（视图也占一行），别当成多建了一张表；老库可能还留着旧的迁移台账 `oams.schema_migrations`（`db init` 既不再建也不删），那样会数出 21。`db/deploy/` —— 双角色时期的建库脚本遗留（已废弃，别照它建角色）
+- `app/oams/schema.sql` —— **唯一一份**建表脚本：**19 张表 + 1 个视图**（`work_item_current_state`），`oams db init` 幂等执行。按 `information_schema.tables` 数会是 **20**（视图也占一行），别当成多建了一张表；老库可能还留着旧的迁移台账 `oams.schema_migrations`（`db init` 既不再建也不删），那样会数出 21。双角色时期的建库脚本已删除（2026-11-02）；现在只有单角色，建库建表见 `oams db init`
 - `examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill（两个：`oams-department-interface` 做部门界面、`oams-design-system` 做页面与组件；引用时写真实目录名，别指向不存在的路径）
 
 ## 约定
