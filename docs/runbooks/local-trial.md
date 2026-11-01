@@ -4,26 +4,16 @@
 
 命令是 `oams`——下文出现的 `oams ...` 都是它。
 
-## 两个库，别串
+## 连库之前：认准你用的是哪个库
 
-本机有两个 PostgreSQL，**数据不同步**，同一句话在两边查出来的数不一样，这是正常的，不是 bug：
+本手册只建**一个** PostgreSQL（下一节就建）。容器名、端口、库名全由你定，下文一律写成 `<你的容器名>` / `<你的端口>` / `<你的库名>`——照抄别人机器上的数字没有意义。
 
-| 库 | 端口 | Docker 容器 | 连接串 | 谁在用 |
-|---|---|---|---|---|
-| 演示站库 | **55460** | `oams-demo` | `postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:55460/oams` | `scripts/start-local-trial.sh` 起的演示站，以及本手册下文所有手工命令 |
-| 本机开发库 | **55433** | `oams-pg` | `postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:55433/oams` | 项目根目录 `.env` 里那条，`pytest` 默认走它 |
+连接串里的用户名和口令**一律用变量拼**：口令只放在你自己的环境变量或项目根目录的 `.env` 里，不写进文档、不提交、不贴群里。变量怎么设见下一节。
 
-连接串里的用户名和口令**一律用变量拼**：口令只放在你自己的环境变量或项目根目录的 `.env` 里，不写进文档、不提交、不贴群里。两个库的用户名口令各不相同，按你本机的实际值填；变量怎么设见下一节。
+两条规矩：
 
-规则：
-
-- **下文命令里显式 `export` 的都是 55460**（演示站库）。别顺手改成 `.env` 里那条，改了就会看到「刚建的东西不见了」。
-- `.env` 是 `pytest` 与本地开发的默认库；跑 `pytest` 前确认环境里没有残留的 `OAMS_DATABASE_URL`，否则会打到演示站库上去。
-- **所有 e2e 结论必须注明用的哪个库**（端口 + 库名，如 `55460/oams`）。数对不上时，先看两边是不是同一个库——这一轮已经出现过三次「数字对不上」，全是串库。
-
-**改名已落地（2026-11-01）**：库名和容器名都已从旧名改成 `oams`，改名不动数据、不动成员 id（演示库 16 页 / 144 条会话 / 4 成员 / 373 条审计原样，开发库 8 页 / 35 条会话原样）。上表就是现在真机上的名字；如果看到 `workhub` 开头的容器名或 `/workhub` 结尾的连接串，那是改名前的旧记录（不在本仓），按上表为准。
-
-仓库目录 `company-os` 与本机备份目录里已有的历史 bundle 文件名**沿用原样**：那是真机上已经存在的路径和文件，现在改名就跟备份对不上（恢复、排查都要按原文件名找）。备份不在仓库里。
+- 如果你机器上不止一个库，**所有 e2e 结论必须注明用的是哪个库**（端口 + 库名，如 `<你的端口>/<你的库名>`）。数对不上时，先看是不是同一个库——串库的典型表现是「刚建的东西不见了」。
+- 项目根目录的 `.env` 是 `pytest` 与本地开发的默认库；跑 `pytest` 前确认环境里没有残留的 `OAMS_DATABASE_URL`，否则会打到别的库上去。
 
 ## 一次性准备
 
@@ -34,18 +24,19 @@
 # 用户名/口令按你本机的实际值填；口令不要写进文档、不要提交
 export OAMS_DB_USER=postgres
 export OAMS_DB_PASSWORD="<你的口令>"
-export OAMS_DATABASE_URL="postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:55460/oams"
+# 把 <你的端口> 与 <你的库名> 换成你自己定的：端口挑一个本机没被占用的，库名随你
+export OAMS_DATABASE_URL="postgresql://${OAMS_DB_USER}:${OAMS_DB_PASSWORD}@127.0.0.1:<你的端口>/<你的库名>"
 
-docker run -d --name oams-demo \
-  -e POSTGRES_PASSWORD="$OAMS_DB_PASSWORD" -e POSTGRES_DB=oams \
-  -p 127.0.0.1:55460:5432 postgres:16-alpine
+docker run -d --name <你的容器名> \
+  -e POSTGRES_PASSWORD="$OAMS_DB_PASSWORD" -e POSTGRES_DB=<你的库名> \
+  -p 127.0.0.1:<你的端口>:5432 postgres:16-alpine
 
 .venv/bin/python -m oams.cli db init
 .venv/bin/python -m oams.cli bootstrap-admin \
   --name "系统管理员" --employee-code ADMIN001 --org-code COMPANY --org-name "公司"
 ```
 
-上面那四行 `export` 只在当前终端有效：**新开终端要重跑一遍**（口令换成你自己的，或从 `.env` 里读出来再 export）。下文所有命令都默认这几个变量还在。
+上面那几行 `export` 只在当前终端有效：**新开终端要重跑一遍**（口令换成你自己的，或从 `.env` 里读出来再 export）。下文所有命令都默认这几个变量还在。
 
 把 bootstrap 打印的 `member_id` 记下来，下一步要用。
 
@@ -54,7 +45,7 @@ docker run -d --name oams-demo \
 ## 准备一个部门
 
 ```sh
-# 沿用「一次性准备」里 export 的 OAMS_DATABASE_URL；新开终端就先把那四行重跑一遍
+# 沿用「一次性准备」里 export 的 OAMS_DATABASE_URL；新开终端就先把那几行重跑一遍
 export OAMS_ADMIN_MEMBER_ID=<上一步的 member_id>
 .venv/bin/python scripts/load_department_data.py data/neutral-demo-departments.json --apply
 .venv/bin/python scripts/seed-live-interface.py data/neutral-demo-ops-weekly.json
@@ -95,14 +86,20 @@ OAMS_BIND_PORT=8001 .venv/bin/python -m oams.cli serve
 
 ## 设计开发阶段：免登录
 
-现在还在设计开发阶段，每天反复签登录链接只是挡自己。`scripts/start-local-trial.sh` 启动时默认打开免登录（等价于 `export OAMS_DEV_AUTOLOGIN=1`）：没有登录态时服务按 `ADMIN001` 认人，页面右下角常驻一枚「开发模式 · 免登录 · 姓名」角标，「退出登录」也会明确告诉你退不掉。
+现在还在设计开发阶段，每天反复签登录链接只是挡自己。启动时带上 `OAMS_DEV_AUTOLOGIN=1` 就打开免登录：
+
+```sh
+OAMS_DEV_AUTOLOGIN=1 .venv/bin/python -m oams.cli serve
+```
+
+没有登录态时服务按 `ADMIN001` 认人，页面右下角常驻一枚「开发模式 · 免登录 · 姓名」角标，「退出登录」也会明确告诉你退不掉。
 
 它只决定「我是谁」，不决定「我能干什么」：权限、部门范围、表单令牌、审计一条都不少，所以看到的页面和登录后完全一致。
 
 恢复真实登录：
 
 ```sh
-OAMS_DEV_AUTOLOGIN=0 ./scripts/start-local-trial.sh
+OAMS_DEV_AUTOLOGIN=0 .venv/bin/python -m oams.cli serve
 ```
 
 想让免登录认别人就写工号，例如 `OAMS_DEV_AUTOLOGIN=DESIGN001`。工号不存在或已离职时会停在登录页并给出提示，不会静默当成管理员。
@@ -171,8 +168,8 @@ http://127.0.0.1:8000/setup
 ## 停掉服务
 
 - 停止网站：在运行 uvicorn 的终端按 Ctrl+C。
-- 停止数据库：`docker stop oams-demo`，下次 `docker start oams-demo` 即可，数据保留。
-- 完全重来：`docker rm -f oams-demo`，然后从"一次性准备"重新开始。
+- 停止数据库：`docker stop <你的容器名>`，下次 `docker start <你的容器名>` 即可，数据保留。
+- 完全重来：`docker rm -f <你的容器名>`，然后从"一次性准备"重新开始。
 
 ## 注意
 
