@@ -635,7 +635,15 @@ def _lookup_fields(descriptor, key_field):
 
 
 def _lookup_row(conn, interface_id, mode, descriptor, key_field, query):
-    """The newest entry of this very version whose key field equals the query."""
+    """The newest entry of this page whose key field equals the query.
+
+    整页口径（`api.PAGE_ENTRY_SCOPE_SQL`，与列表、数字、状态统计同一个范围）：记在更早
+    那一版的条目仍然是这一页的条目。否则会出现自相矛盾的画面——表格里列着这一行，
+    上方的查件框却说「本页没有这个单号」，读的人只会判断查询坏了，而不是版本不同。
+
+    仍然只查本页本部门（页面身份是 (org_unit_id, slug)，由那个常量解析），不跨页不跨
+    部门；字段映射仍按**当前这一版**的 descriptor 取，老条目新加的字段没值就空着。
+    """
     fields = _lookup_fields(descriptor, key_field)
     if not fields:
         return None, 0
@@ -650,7 +658,8 @@ def _lookup_row(conn, interface_id, mode, descriptor, key_field, query):
     row = conn.execute(
         f"""SELECT e.*, count(*) OVER () AS same_number
               FROM oams.interface_entries e
-             WHERE e.interface_id = %s AND e.status_entry = 'active' AND e.entry_mode = %s
+             WHERE {api.PAGE_ENTRY_SCOPE_SQL}
+               AND e.status_entry = 'active' AND e.entry_mode = %s
                AND {condition}
              ORDER BY e.reported_at DESC, e.entry_id DESC
              LIMIT 1""", params).fetchone()
@@ -676,7 +685,7 @@ def _entry_status_word(descriptor, row):
     return STATUS_LABELS.get(raw, raw)
 
 
-def _lookup_hit(descriptor, row, key_field, query):
+def _lookup_hit(descriptor, row, key_field, query, current_interface_id=None):
     """Shape one entry for lookup_result.html: numbers, words and dates, not keys."""
     key_field_value = ""
     for field in _lookup_fields(descriptor, key_field):
@@ -702,9 +711,16 @@ def _lookup_hit(descriptor, row, key_field, query):
             if place:
                 break
     # 「借 note 当取件点」是形态稿 §2 的已知限制，不是这里漏了字段。
+    #
+    # 命中可能落在更早的那一版上（整页口径）：字段值按当前这一版映射，老条目里没有的
+    # 字段就是空的。这件事要在卡片上说出来——不说，读到空字段的人会以为数据丢了。
+    older = False
+    if current_interface_id is not None and row.get("interface_id") is not None:
+        older = str(row["interface_id"]) != str(current_interface_id)
     return {"number": key_field_value or query,
             "status": _entry_status_word(descriptor, row),
-            "date_value": date_value, "date_label": date_label, "place": place}
+            "date_value": date_value, "date_label": date_label, "place": place,
+            "older": older}
 
 
 def _lookup_result_html(query, hit, more):
@@ -732,7 +748,8 @@ def _lookup_fragment(conn, interface_id, mode, descriptor, query):
     if not text:
         return LOOKUP_EMPTY_PROMPT
     row, more = _lookup_row(conn, interface_id, mode, descriptor, key_field, text)
-    hit = _lookup_hit(descriptor, row, key_field, text) if row is not None else None
+    hit = (_lookup_hit(descriptor, row, key_field, text, current_interface_id=interface_id)
+           if row is not None else None)
     return _lookup_result_html(text, hit, more)
 
 
