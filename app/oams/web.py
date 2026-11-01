@@ -780,11 +780,18 @@ def _page_version(conn, org_unit_id, interface_id):
 
 
 def _archived_reader_response(request: Request, conn, org_unit_id, row):
-    """Send a reader of an archived version to the page's current one."""
+    """Send a reader of an archived version to the page's current one.
+
+    The redirect carries ``?archived=1`` so the workbench can say why the page is
+    not the one the link pointed at. Without it an old bookmark would silently show
+    a different version than the reader asked for -- the numbers would be right and
+    the surprise still theirs.
+    """
     current = _current_version_id(conn, org_unit_id, row["slug"])
     if current is None:
         return _denied(request, "这一版已归档，这个页面目前没有在用的版本。")
-    response = RedirectResponse(url=f"/departments/{org_unit_id}/{current}", status_code=303)
+    response = RedirectResponse(url=f"/departments/{org_unit_id}/{current}?archived=1",
+                               status_code=303)
     return response
 
 
@@ -840,7 +847,8 @@ def page_by_slug(request: Request, org_code: str, slug: str):
 
 @router.get("/departments/{org_unit_id}/{interface_id}", response_class=HTMLResponse)
 def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
-                    saved: str | None = None, error: str | None = None):
+                    saved: str | None = None, error: str | None = None,
+                    archived: str | None = None):
     try:
         principal = _require(request, "workforce.reports", "read")
         _require(request, "workforce.reports", "submit")
@@ -849,17 +857,23 @@ def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
     except _NotPermitted:
         return _denied(request, "填写部门页面需要 workforce.reports/read 与 submit 权限。")
     return _workbench_page(request, principal, org_unit_id, interface_id,
-                           saved=saved, error=error)
+                           saved=saved, error=error, archived=archived)
 
 
 def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UUID,
                     interface_id: UUID, *, saved: str | None = None, error: str | None = None,
+                    archived: str | None = None,
                     values: dict[str, Any] | None = None, status_code: int = 200):
     """Draw the department workbench for one page.
 
     ``values`` overrides what the fields show. A submission the server refused comes
     back through here with what the person typed -- re-rendering the last *saved*
     entry instead would quietly throw their words away.
+
+    ``archived`` is the query flag set by :func:`_archived_reader_response` when the
+    version in the link was archived; the template turns it into one line saying the
+    reader was moved to the current version. It only carries a notice -- the page
+    itself is the current version either way.
     """
     with connection() as conn:
         unit = _resolve_department(conn, principal, org_unit_id)
@@ -929,6 +943,9 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         "review_code_label": (review_rules.rejection_label(page.get("review_code"))
                               if page.get("review_code") else None),
         "member": _member(request), "saved": saved, "error": error,
+        # Set only when a link pointed at an archived version and we sent the reader
+        # to the current one; the template shows one line explaining the swap.
+        "archived_notice": bool(archived),
         "status_labels": STATUS_LABELS,
         # Rollup: the department's own numbers, why they are what they are, and the
         # link form that moves an entry from "unlinked" into "rolled".
