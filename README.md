@@ -62,7 +62,8 @@ oams serve                    # 默认 http://127.0.0.1:8000；端口被占就�
 export OAMS_DEV_AUTOLOGIN=1   # 本机试用：免登录，右下角出现身份切换角标；部署到共享环境前必须去掉
 
 oams issue-token --member-id <bootstrap 打印的 member_id>   # 真实会话：签一张令牌
-# 然后打开 /login?token=<令牌> 进去（或在登录页地址后面加 ?token=<令牌>）
+# 命令会直接打出能点开的登录地址（终端一行提示 + JSON 里的 login_url），贴进浏览器就进
+# 服务不在 8000 上时加 --base-url http://127.0.0.1:<你的端口>，或先 export OAMS_BASE_URL
 ```
 
 命令是 `oams`。完整步骤与常见报错见[在你电脑上跑起来（本地试用）](docs/runbooks/local-trial.md)。
