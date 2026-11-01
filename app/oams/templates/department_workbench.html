@@ -5,11 +5,9 @@
 {# The department's own pages, as tabs. The department list lives in the shell. #}
 <nav class="page-tabs" aria-label="部门内页面">
   {% for p in pages %}
-    {# 上线页走不随版本变化的地址；还没上线的页没有那条地址（`/pages/` 只认在用的版本），
-       仍按版本行打开——读旧版本的那条路由会自己跳到当前版本。 #}
-    {% set tab_href = '/pages/' ~ unit.org_code ~ '/' ~ p.slug if p.status == 'active'
-                      else '/departments/' ~ unit.org_unit_id ~ '/' ~ p.interface_id %}
-    <a href="{{ tab_href }}"
+    {# 一律走不随版本变化的地址：`/pages/` 会挑「此刻值得打开的那一版」（在用的优先，其次版本号大的），
+       待审页、待提交页也能从自己部门进来。旧的书签式 /departments/{id}/{version} 仍会跳到当前版本。 #}
+    <a href="/pages/{{ unit.org_code }}/{{ p.slug }}"
        class="page-tab{% if current and p.interface_id == current.interface_id %} on{% endif %}"
        {% if current and p.interface_id == current.interface_id %}aria-current="page"{% endif %}>
       {{ p.name }}
