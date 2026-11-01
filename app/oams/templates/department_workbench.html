@@ -19,6 +19,9 @@
 </nav>
 {% endif %}
 
+    {# 旧书签指向已归档版本时，后端把我们送到当前版本并带 `?archived=1`：一行说明即可，
+       它既不是错误也不是成功——所以不借 .flash 的绿底、也不给错误色。只在为真时进 DOM。 #}
+    {% if archived_notice %}<div class="flash note" role="status">你打开的是这一页的归档版本，已带你看当前版本；页面上的数字都按当前版本算。</div>{% endif %}
     {% if page and page.status != 'active' %}
       <div class="flash">当前页面<b>{{ page_status_label }}</b>。这里填的内容只存在测试区，不会进入公司汇总。</div>
     {% endif %}
