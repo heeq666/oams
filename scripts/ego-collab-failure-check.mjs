@@ -10,13 +10,37 @@
 // ::test_resending_with_the_same_key_lands_the_message_once，真插两次同一 id）。
 // 这里只把行数当信息打出来，不作断言。
 //
-// 用法：ego-browser nodejs < scripts/ego-collab-failure-check.mjs
+// 用法：`ego-browser nodejs < scripts/ego-collab-failure-check.mjs`（在仓库根跑，或设 OAMS_REPO）。
+// 仓库根怎么找：ego 的 node 运行器（本机 0.6.2.5 实测）把 cwd 设成 `/`、不继承 shell 环境变量、
+// 也不传 argv，所以依次试 OAMS_REPO → `/tmp/oams-ego-root.txt` 里那一行 → 从 cwd 往上逐级找。
+// 第一次跑之前，在仓库根执行一次 `echo "$PWD" > /tmp/oams-ego-root.txt`。
 // 退出码：0 通过 / 1 断言不成立 / 2 环境起不来（浏览器、服务、静态资源、数据库）
 import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
-const ROOT = "~/work/oams";
+// 认出仓库的判据：有 app/oams/api.py，也有 .venv 里的 python。
+async function resolveRoot() {
+  const isRepo = (dir) => !!dir && existsSync(dir + "/app/oams/api.py") && existsSync(dir + "/.venv/bin/python");
+  const candidates = [];
+  if (process.env.OAMS_REPO) candidates.push(process.env.OAMS_REPO);
+  // 这个 await 必须排在最前面，且必须是文件读（见下面「顺序有讲究」那段）。
+  try {
+    candidates.push((await readFile("/tmp/oams-ego-root.txt", "utf8")).trim());
+  } catch {}
+  for (let dir = process.cwd(); dir && dir !== "/"; dir = dirname(dir)) candidates.push(dir);
+  for (const dir of candidates) if (isRepo(dir)) return dir;
+  console.error(
+    "找不到仓库根（试过：" + (candidates.filter(Boolean).join("、")
+      || "cwd=" + process.cwd() + "，且没有 /tmp/oams-ego-root.txt") + "）。"
+    + "在仓库根执行一次 `echo \"$PWD\" > /tmp/oams-ego-root.txt`，或设 OAMS_REPO=<仓库根>。",
+  );
+  process.exit(2);
+}
+
+const ROOT = await resolveRoot();
 const PYTHON = ROOT + "/.venv/bin/python";
 const SPACE_NAME = "oams 断网重发验收";
 
@@ -172,6 +196,24 @@ try {
   });
   if (!firstRow) {
     console.error("会话列表里没有可点的行（这个库还没有种子数据？）");
+    process.exit(2);
+  }
+  // 面板是从下方滑进来的（CSS 过渡）。DOM 一到就点，容易点在一个还没进视口的盒子上，
+  // ego 报 "element is not visible in the viewport"（2026-11-02 在本机复现，HEAD 上就有）。
+  // 等第一行真进了视口再往下走，不靠固定 sleep。
+  try {
+    await page.waitForFunction(
+      () => {
+        const row = document.querySelector("#collab-thread-list a.collab-row");
+        if (!row) return false;
+        const r = row.getBoundingClientRect();
+        return r.height > 0 && r.top >= 0 && r.bottom <= innerHeight;
+      },
+      null,
+      { timeout: 5000 },
+    );
+  } catch {
+    console.error("协作室面板没滑进视口（会话行的盒子一直在视口外）");
     process.exit(2);
   }
   await page.click('#collab-thread-list a.collab-row[hx-get="' + firstRow + '"]', { label: "打开第一个会话" });
