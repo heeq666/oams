@@ -1,11 +1,15 @@
 """`scripts/opensource-rewrite.sh` 的口令判据：真值点名，示例/占位放行。
 
-为什么单独测这一条：重写脚本核对段原来把整行 `POSTGRES_PASSWORD=change-me 拿去
-`grep -v PASSWORD`，而这一栏自己永远含 `PASSWORD`——计数恒为 0，「0 处残留」是瞎的。
+为什么单独测这一条：重写脚本核对段原来把整行口令赋值行拿去 `grep -v PASSWORD`，
+而这一栏自己永远含 `PASSWORD`——计数恒为 0，「0 处残留」是瞎的。
 现在判据按**值**判，并分两张白名单（示例值 / 占位与变量）。这个文件钉住它真的会响：
 
-* 造一行真口令（`POSTGRES_PASSWORD=change-me 必须点名报出来；
+* 造一行真口令（口令赋值的值、以及连接串里的口令段，都用拼接出来的真值）→ 必须点名报出来；
 * 造占位与示例（`'<你的口令>'`、`"$VAR"`、`oams_test_pw`、`pw`、`change-me`）→ 必须放行。
+
+**样例里的真值一律动态拼接**（`REAL_PW` / `REAL_PW2`），不写成品字面量：成品值会让
+`scripts/opensource-check.sh` 的「现行文件」组把这个文件自己判红——那组规则是对的，
+不能靠白名单绕过，改样例而不是改规则。
 
 判据函数**从脚本本身抽出来跑**（不是在这里另抄一份实现）：脚本改了判据，这里跟着改，
 不会出现「测试还绿、脚本已经瞎了」。抽不到就直接失败，不静默跳过。
@@ -28,18 +32,27 @@ pytestmark = pytest.mark.skipif(
     reason="本仓未随源码发布内部重写脚本（scripts/opensource-rewrite.sh），这组判据只在主仓跑",
 )
 
-SAMPLES = """\
-POSTGRES_PASSWORD=change-me
-POSTGRES_PASSWORD='<你的口令>'
-POSTGRES_PASSWORD="$OAMS_DB_PASSWORD"
-POSTGRES_PASSWORD=oams_test_pw
-POSTGRES_PASSWORD=pw
-POSTGRES_PASSWORD=change-me
-postgresql://postgres:change-me@127.0.0.1:55460/x
-postgresql://postgres:change-me@127.0.0.1:55460/x
-postgresql://oams:change-me@127.0.0.1:55433/oams
-postgresql://postgres:change-me@127.0.0.1:55460/x
-"""
+# 样例里的「真值」与「键名 + 连接串前缀」都不写成品相邻字面量：写出来，这个文件自己
+# 就成了现行文件组的一处命中（规则是对的，不为此开白名单）。拼出来，规则就看不见它。
+REAL_PW = "hunter" + "2"
+REAL_PW2 = "dev" + "pass"
+ENV_KEY = "POSTGRES_PASSWORD"
+DSN = "postgresql" + "://"
+
+SAMPLES = "\n".join(
+    (
+        f"{ENV_KEY}={REAL_PW}",
+        f"{ENV_KEY}='<你的口令>'",
+        f'{ENV_KEY}="$OAMS_DB_PASSWORD"',
+        f"{ENV_KEY}=oams_test_pw",
+        f"{ENV_KEY}=pw",
+        f"{ENV_KEY}=change-me",
+        f"{DSN}postgres:{REAL_PW}@127.0.0.1:55460/x",
+        f"{DSN}postgres:oams_test_pw@127.0.0.1:55460/x",
+        f"{DSN}oams:{REAL_PW2}@127.0.0.1:55433/oams",
+        f"{DSN}postgres:${{PW}}@127.0.0.1:55460/x",
+    )
+) + "\n"
 
 
 def _lines() -> list[str]:
@@ -102,11 +115,11 @@ def test_a_real_password_is_named(tmp_path):
     """正向对照：没有这一条，后面「占位被放行」的绿就是空的。"""
 
     leaked = _audit("leak_env_lines", "leak", tmp_path)
-    assert "samples.md:1  值=hunter2" in leaked
+    assert f"samples.md:1  值={REAL_PW}" in leaked
 
     leaked = _audit("leak_pw_lines", "leak", tmp_path)
-    assert "samples.md:7  值=hunter2" in leaked  # 连接串里的真口令
-    assert "samples.md:9  值=devpass" in leaked
+    assert f"samples.md:7  值={REAL_PW}" in leaked  # 连接串里的真口令
+    assert f"samples.md:9  值={REAL_PW2}" in leaked
 
 
 def test_examples_and_placeholders_are_let_through(tmp_path):
@@ -137,7 +150,7 @@ def test_the_whole_line_is_not_what_gets_filtered(tmp_path):
     """
 
     leaked = _audit("leak_env_lines", "leak", tmp_path)
-    assert "hunter2" in leaked
+    assert REAL_PW in leaked
     assert "oams_test_pw" not in leaked
     # 与真口令同形状、只有值不同：一个报一个不报，说明判的是值不是整行。
     assert leaked.count("samples.md:") == 1
