@@ -366,6 +366,87 @@ def test_metric_card_shows_the_aggregate_value():
     assert "59" in html              # 数字来自聚合，不来自描述符
 
 
+def test_metric_card_shows_the_declared_label_and_unit():
+    """人话名与单位由 emit 绑定声明，页面照着印，数字仍是裸的。
+
+    三个元素各自独立：`wh-metric-label` 是人话名、`wh-metric-value` 只是数字、
+    `wh-metric-unit` 单独一格。把它们拼成「本周完成 1 项」那是排版的事，
+    代码里不能提前拼——否则数字那一格再也套不上千分位/小数位规则。
+    """
+    metric_key = "dept.DESIGN.weekly_done"
+    html = render_interface(
+        page({"type": "metric_card", "params": {"metric_key": metric_key}},
+             metrics=[{"metric_key": metric_key, "mode": "emit", "agg": "count",
+                       "from_field": "f_status", "where_status": "done",
+                       "label": "本周完成", "unit": "项"}]),
+        {}, {metric_key: 1},
+    )
+    assert '<span class="wh-metric-label">本周完成</span>' in html
+    assert '<span class="wh-metric-unit">项</span>' in html
+    values = re.findall(r'<span class="wh-metric-value">(.*?)</span>', html)
+    assert values == ["1"]              # 单位不在数字里，免得被格式化规则吞掉
+    # 声明了人话名，标签那一格就不该再露 slug（`data-metric` 属性里留着键是对的，
+    # 那是给机器看的身份，不是显示文案）。
+    assert ">weekly_done<" not in html
+
+
+def test_metric_card_without_a_label_falls_back_to_the_key_tail_without_a_unit():
+    """不写两个字段也能用：名字回落键末段，单位那一格整个不渲染。
+
+    「没有单位」和「单位是空串」在页面上必须是同一个样子——不能留一个空 span，
+    否则布局会凭空多一格。
+    """
+    html = render_interface(one("metric_card"), {}, AGGREGATES)
+    assert '<span class="wh-metric-label">sample_done</span>' in html
+    assert "wh-metric-unit" not in html
+
+
+def test_metric_grid_shows_the_declared_label_and_unit_per_cell():
+    metric_a = "dept.DESIGN.weekly_done"
+    metric_b = "dept.DESIGN.parcels"
+    html = render_interface(
+        page({"type": "metric_grid", "params": {"metric_keys": [metric_a, metric_b]}},
+             metrics=[
+                 {"metric_key": metric_a, "mode": "emit", "agg": "count",
+                  "from_field": "f_status", "label": "本周完成", "unit": "项"},
+                 {"metric_key": metric_b, "mode": "emit", "agg": "count",
+                  "from_field": "f_status", "label": "待取件", "unit": "件"},
+             ]),
+        {}, {metric_a: 1, metric_b: 7},
+    )
+    assert '<span class="wh-metric-label">本周完成</span>' in html
+    assert '<span class="wh-metric-label">待取件</span>' in html
+    assert '<span class="wh-metric-unit">项</span>' in html
+    assert '<span class="wh-metric-unit">件</span>' in html
+
+
+def test_money_and_percent_units_ride_inside_the_number_not_in_a_span():
+    """元与 % 自带字形（¥ / %），不再另起一个单位格，也不重复印。
+
+    `format_number` 把货币写成 `¥1,280.00`（≥1 万才走「万元」），`metric_unit`
+    对这两种单位返回空串——否则页面上会出现「¥1,280.00 元」这种同一件事说两遍。
+    """
+    money = "dept.DESIGN.spend"
+    html = render_interface(
+        page({"type": "metric_card", "params": {"metric_key": money}},
+             metrics=[{"metric_key": money, "mode": "emit", "agg": "sum",
+                       "from_field": "f_metric", "label": "本部门支出", "unit": "元"}]),
+        {}, {money: 1280.0},
+    )
+    assert '<span class="wh-metric-value">\u00a51,280.00</span>' in html
+    assert "wh-metric-unit" not in html
+
+    percent = "dept.DESIGN.done_rate"
+    html = render_interface(
+        page({"type": "metric_card", "params": {"metric_key": percent}},
+             metrics=[{"metric_key": percent, "mode": "emit", "agg": "avg",
+                       "from_field": "f_metric", "label": "完成率", "unit": "%"}]),
+        {}, {percent: 62.5},
+    )
+    assert '<span class="wh-metric-value">62.50%</span>' in html
+    assert "wh-metric-unit" not in html
+
+
 def test_metric_card_without_aggregates_does_not_invent_a_number():
     html = render_interface(one("metric_card"), {}, {})
     values = re.findall(r'<span class="wh-metric-value">(.*?)</span>', html)

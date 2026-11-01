@@ -336,6 +336,10 @@ def test_list_metric_catalog_reads_the_metric_registry(registry):
     assert can_bind["platform"]["count"] == 0
     assert can_bind["department"]["aggs"] == ["count", "sum", "avg", "count_distinct"]
     assert can_bind["department"]["key_pattern"] == "dept.<ORG_UNIT_CODE>.<slug>"
+    # `filters` 只留 origin：group 参数已经删了，这里再列一个空分组会让调用方
+    # 以为「有这个过滤、只是没有可选值」，然后照着传参被拒（契约 §2 收口）。
+    assert "group" not in can_bind["filters"]
+    assert can_bind["filters"]["origin"] == ["interface"]
 
 
 def test_list_metric_catalog_only_takes_origin_and_says_so(registry):
