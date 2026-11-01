@@ -21,6 +21,7 @@ docker run -d --name oams-pg \
   -p 127.0.0.1:<你的端口>:5432 postgres:16-alpine
 # 不设 POSTGRES_USER 时账号是 postgres —— 那下面连接串里的 <账号> 就写 postgres
 # 机器上已经装好 PostgreSQL 的，只建库也行：createdb '<库名>'
+# 等它起来（约 2–3 秒）再往下跑；立刻连会报 connection refused
 ```
 
 装依赖两条路，按机器上的 Python 挑一条。
@@ -40,9 +41,16 @@ uv pip install -e .          # uv 建的 venv 没有 pip，装依赖就用 uv pi
 ```
 
 ```sh
-# 2. 配库地址、建表、建管理员
-cp .env.example .env          # 再把库地址填进 .env（口令别提交进仓库）
+# 2. 配库地址 —— 两种写法二选一
+#   A) 写进 .env（之后每条命令都读它）
+cp .env.example .env
+#      再把 .env 里这一行改成你自己的库：
+#      OAMS_DATABASE_URL=postgresql://<账号>:<口令>@127.0.0.1:<你的端口>/<库名>
+#   B) 不碰 .env，只在当前终端临时给（换个终端要重给一遍）
 export OAMS_DATABASE_URL="postgresql://<账号>:<口令>@127.0.0.1:<你的端口>/<库名>"
+# 口令别提交进仓库：.env 已在 .gitignore 里
+
+# 3. 建表、建管理员、起服务
 oams db init                  # 建表：把库结构建出来
 oams bootstrap-admin --name "系统管理员" --employee-code "ADMIN001" --org-code "COMPANY" --org-name "公司"
 oams serve                    # 默认 http://127.0.0.1:8000；端口被占就设 OAMS_BIND_PORT=<你的端口>
