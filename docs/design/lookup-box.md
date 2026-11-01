@@ -28,7 +28,7 @@
 | 单号 | `order_no` | 原样字符串，13px |
 | 状态 | `status` | 落四态中文（计划中 / 进行中 / 阻塞 / 已完成），不印 `in_progress` 这种内部词 |
 | 到件日 | `completed_at`（已到件）或 `due_at`（还没到，标签写「预计到件」） | 只到日 `YYYY-MM-DD`，不带时分 |
-| 取件点 | **暂借 `note`** | 词表里没有「地点」这类字段；要独立键得先改冻结词表（见 §5 第 8 条） |
+| 取件点 | **暂借 `note`** | 词表里没有「地点」这类字段；要独立键得先改冻结词表（**已知限制，见 §8**） |
 
 中性示例（写进文档、截图、测试夹具都用这一组，**不写客户名/真人名**）：单号 `AW26-001`、状态「已完成」、到件日 `2026-11-01`、取件点「一楼前台」。
 
@@ -39,9 +39,9 @@
 - 注册表那行写 **`aggregatable=False`**（跟 `evidence_gallery` 同一种含义：本部门可见、不进公司汇总），不声明 `metric_key`，不 `produces` 任何标准字段。
 - **跟 `metric_card` / `metric_grid` / `status_chart` 互不影响**：那三件读的是 `dept.<部门代码>.<指标键>` 聚合与字段计数；这个盒子查出的一条不增加任何数字，指标块里的数字也不因为盒子里没查而变 0。一句话：**盒子是查询工具，不是数据源**。
 - 两处代码后果，写下来免得后面当 bug 报（都在 `app/oams/render.py`，属后端写区）：
-  1. **填报/编辑视角**：`private_note`（`:689-697`）会给 `aggregatable is False` 的件多印一行「本部门可见，不参与公司汇总」——对查询件这句话读着别扭。**建议**：这一行只给录入件，查询件跳过（列入 §5 契约面）。
+  1. **填报/编辑视角**：`private_note`（`:689-697`）会给 `aggregatable is False` 的件多印一行「本部门可见，不参与公司汇总」——对查询件这句话读着别扭。**拍板（2026-11-01）：这一行只给录入件，查询件跳过**（列入 §5 第 4 条）。
   2. **只读视角**：`_hidden_in_readonly`（`:807-815`）会把 `aggregatable is False` 的叶子**整块剔除**，公司/上级看到的页面里没有这个盒子。**接受**——查询是填的人自己用的工具；审核看的是这页的定义，走 preview 视角，控件仍在场、`disabled`。
-- **别为了「只读也想看」把它改成 `aggregatable=True`**：那会把它算进汇总口径，正好是本条要防的事。真要只读可见，就在 `_hidden_in_readonly` 里按类型放行（§5 第 3 条，没人要就不做）。
+- **别为了「只读也想看」把它改成 `aggregatable=True`**：那会把它算进汇总口径，正好是本条要防的事。**也不要在 `_hidden_in_readonly` 里给它开按类型放行的口子**——2026-11-01 拍板：整块剔除就是想要的效果（§5 第 4 条）。
 
 ## 4. 数据源：只读本页
 
@@ -55,7 +55,7 @@
 1. `docs/architecture/p0-interface-contract.md` §1 —— **先加一行**。`app/oams/modules.py` 的注册表 docstring 写着「adding a module means adding a row to the contract first」，注册表跟着从 20 个 key 变 21。
 2. `app/oams/modules.py` —— `_register(_spec("lookup_box", "查件框", "display", …, params={"key_field": _param("str", default="order_no")}, consumes=("order_no","status","completed_at","due_at","note"), produces=(), aggregatable=False))`。
 3. `app/oams/descriptor.py` —— 三条校验：① `key_field` 必须在 `STANDARD_FIELD_VOCAB` 里；② 它读的这几个字段必须**已被本页某个录入件映射**（否则永远查不到东西，给 `DATA_RULE_VIOLATION`，别让作者上线后才发现）；③ 叶子规则：`display` 层不许 `children`（现有容器规则按 layer 判，顺带就挡）。
-4. `app/oams/render.py` —— 一个 `lookup_box(module)` 渲染函数 + 分派表一项；`private_note` 跳过查询件（§3）；`_hidden_in_readonly` 按类型放行（可选，见 §3）。
+4. `app/oams/render.py` —— 一个 `lookup_box(module)` 渲染函数 + 分派表一项；**`private_note` 跳过查询件**（§3，2026-11-01 拍板：那句「本部门可见，不参与公司汇总」是给数据来源用的，查询框不是数据来源，多印一行读者会以为它在报数）；`_hidden_in_readonly` 保持原样——只读视角整块剔除已拍板接受，别按类型放行。
 5. `app/oams/templates/modules/lookup_box.html`。
 6. `app/oams/static/oams-modules.css` —— 新增一节 `.wh-m.wh-lookup`，**双类名**（`.wh-m.wh-input` 那次单类名连外壳一起命中的教训，`design-system-v1.md` §8.2）。
 7. `app/oams/web.py` —— 一个 partial 路由：`GET /departments/{org_unit_id}/{interface_id}/lookup?q=<单号>`，命中回小卡、没有回一行空态；只有带 `HX-Request` 才回片段。
@@ -73,3 +73,9 @@
 ## 7. 一句话取舍（留给后面看的人）
 
 快递页这轮先走「台账 + 页内查找」的 A 案（台账是录入件，能进汇总），这个盒子是**下一件功能**：它让演示里那一页**能真查**，而不是只有一排条目。等它做出来，`ga-parcel-lookup` 从「只有台账」变成「台账 + 输入单号看结果」，正好对上老大举的那个例子。
+
+## 8. 已知限制（写下来，别当 bug 报）
+
+- **「取件点」目前用 `note` 承载**：语义上它应该是独立的「地点」字段，现在是借字段。等标准字段词表（`app/oams/modules.py:38-61`，冻结的）变更时一并改，别在业务层自己造键。收尾清单里挂了一条（`module-refinement-checklist.md` §6）。
+- **只读视角看不到这个盒子**：`aggregatable=False` 的必然结果，已拍板接受（§3）；公司/上级看到的页面里它就整块不存在。
+- **同一单号多条取最新一条**：只补一行说明，不做「选哪条」的交互——那是另一个模块的事。
