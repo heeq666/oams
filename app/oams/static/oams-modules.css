@@ -917,3 +917,40 @@
   .wh-container { background: none; }
   .wh-tag { display: none; }
 }
+
+/* 窄档（<=1100px）带控件的明细表：每条记录拆成一块，字段名在上、控件整宽在下。
+   为什么不是「让表格横滚」：这张表出现在填报表单里，一边横滚一边填会丢行。
+   为什么必须换排布而不是缩控件：768 下 5 列时每个单元格只有 95–102px；1024 下
+   150px。看全一个常见值至少要 132px（8 个汉字 × 13px 字号 + 左右内距 24 + 边 2），
+   而这一页最长的值「差旅报销 2026-11-01」要 181px——5 列就要 905px，比 1024 的
+   801 还宽。所以 1024 也躲不过裁字，一并换排布；1440 不受影响。
+   只读表不套 .wh-table-controls（它靠 td 折行就够了）。 */
+@media (max-width: 1100px) {
+  .wh-table-controls .wh-table,
+  .wh-table-controls .wh-table tbody,
+  .wh-table-controls .wh-table td { display: block; width: auto; }
+  /* 列名不再单独占一行：每个格子的 ::before 用 data-label 回显，信息没少。 */
+  .wh-table-controls .wh-table thead { display: none; }
+  .wh-table-controls .wh-table tr {
+    display: flex;
+    flex-direction: column;
+    gap: 12px; /* 字段与字段：元素档 12 */
+    padding: 16px 0; /* 记录与记录：块档 16 */
+    border-bottom: 1px solid var(--oams-line);
+  }
+  .wh-table-controls .wh-table tr:first-child { padding-top: 0; }
+  .wh-table-controls .wh-table tr:last-child { border-bottom: 0; padding-bottom: 0; }
+  .wh-table-controls .wh-table td {
+    padding: 0;
+    border-bottom: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px; /* 标签 <-> 控件：行内档 8 */
+  }
+  .wh-table-controls .wh-table td::before {
+    content: attr(data-label);
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--oams-muted);
+  }
+}
