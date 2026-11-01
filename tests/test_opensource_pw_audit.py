@@ -9,14 +9,24 @@
 
 判据函数**从脚本本身抽出来跑**（不是在这里另抄一份实现）：脚本改了判据，这里跟着改，
 不会出现「测试还绿、脚本已经瞎了」。抽不到就直接失败，不静默跳过。
+
+脚本本身**不进公开仓**（在它的移出清单里），所以公开仓 clone 下来这组必须整组 skip，
+而不是红：被测文件不在，就没有可验的东西——那和「验过且干净」是两回事，理由写进 -rs。
 """
 from __future__ import annotations
 
 import pathlib
 import subprocess
 
+import pytest
+
 REPO = pathlib.Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "scripts" / "opensource-rewrite.sh"
+REWRITE_SCRIPT = REPO / "scripts" / "opensource-rewrite.sh"
+
+pytestmark = pytest.mark.skipif(
+    not REWRITE_SCRIPT.exists(),
+    reason="本仓未随源码发布内部重写脚本（scripts/opensource-rewrite.sh），这组判据只在主仓跑",
+)
 
 SAMPLES = """\
 POSTGRES_PASSWORD=change-me
@@ -33,7 +43,7 @@ postgresql://postgres:change-me@127.0.0.1:55460/x
 
 
 def _lines() -> list[str]:
-    return SCRIPT.read_text(encoding="utf-8").splitlines()
+    return REWRITE_SCRIPT.read_text(encoding="utf-8").splitlines()
 
 
 def _function(name: str) -> str:
