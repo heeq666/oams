@@ -4,7 +4,9 @@
 {% set row_count = as_int(p.get('rows'), 1, low=1, high=5) %}
 <section class="wh-m wh-input wh-table-module{% if inline_widgets() %} wh-table-controls{% endif %}" data-type="table">
   {% if cols %}
-  {#- data-label 只给窄档换排布用（<=900px 每条记录拆成一块，字段名靠 ::before 回显）；
+  {#- data-label 只给窄档换排布用（<=1100px 每条记录拆成一块，字段名靠 ::before 回显）；
+      断点与 static/oams-modules.css 末尾那段 @media (max-width: 1100px) 一致；
+      为什么是 1100 不是 900，见 docs/design/design-system-v1.md §6.1。
       宽档不读它，视觉不变。 -#}
   <table class="wh-table">
     <thead>

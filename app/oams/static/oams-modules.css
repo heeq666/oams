@@ -946,6 +946,14 @@
     display: flex;
     flex-direction: column;
     gap: 8px; /* 标签 <-> 控件：行内档 8 */
+    /* 外壳表那条 `td { max-width: 320px; white-space: nowrap; overflow: hidden;
+       text-overflow: ellipsis }`（base.html）在窄档照样命中：320 是宽表每列的容差，
+       不是这一段折行排布的宽度。不拿掉，值一长（备注、带前缀的凭证号）就又被
+       320 裁掉——等于把刚修掉的裁字换个门槛重来。这里去掉上限、允许整块换行。 */
+    max-width: none;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
   }
   .wh-table-controls .wh-table td::before {
     content: attr(data-label);
