@@ -575,6 +575,139 @@ def _entry_mode_for(status):
     return "live" if status == "active" else "draft"
 
 
+# --------------------------------------------------------------------------- #
+# 查件框（lookup_box）：只查正在看的这一版自己的条目
+#
+# 形态见 docs/design/lookup-box.md，路由规则见契约 §1 与那一节的清单第 7 条。
+# 三条边界写在这里，免得后面有人顺手放宽：
+#   * 只查 `interface_id = 这一版`，不按 slug 跨版本、不 join 别页、不读汇总表；
+#   * 查哪个字段由这一版的 descriptor 决定（`lookup_box.params.key_field`），
+#     请求里带什么都忽略——否则换个查询串就能翻别人的字段；
+#   * 空输入一条 SQL 都不发：没有单号就没有查询，回那句空态就够。
+# --------------------------------------------------------------------------- #
+
+# 有自己列的字段：值直接落在 interface_entries 的列上，其余（金额、单号、日期…）
+# 落在 extra 里，键就是 descriptor 字段的 key。查件框要在两种存储上都查得到。
+_ENTRY_COLUMNS = ("title", "status", "blocked_reason", "progress_value", "note", "evidence")
+
+LOOKUP_EMPTY_PROMPT = '<p class="wh-empty">输入单号后在这里看结果。</p>'
+LOOKUP_ARCHIVED_PROMPT = ('<p class="wh-empty">这一版已归档，查不到它的条目了；'
+                          '刷新页面会回到这个页面现在的版本。</p>')
+
+
+def _find_lookup_box(modules):
+    """The first lookup_box in this descriptor's module tree, or None."""
+    for module in modules or []:
+        if not isinstance(module, dict):
+            continue
+        if module.get("type") == "lookup_box":
+            return module
+        found = _find_lookup_box(module.get("children"))
+        if found is not None:
+            return found
+    return None
+
+
+def _entry_field_value(entry, field):
+    """Standard field value of a saved entry, from its column or from extra."""
+    map_to = field.get("map_to")
+    if map_to in _ENTRY_COLUMNS:
+        return entry[map_to]
+    return (entry.get("extra") or {}).get(field.get("key"))
+
+
+def _lookup_fields(descriptor, key_field):
+    """Descriptor fields that carry the standard field the box looks up."""
+    return [field for field in descriptor.get("fields") or []
+            if isinstance(field, dict) and field.get("key") and field.get("map_to") == key_field]
+
+
+def _lookup_row(conn, interface_id, mode, descriptor, key_field, query):
+    """The newest entry of this very version whose key field equals the query."""
+    fields = _lookup_fields(descriptor, key_field)
+    if not fields:
+        return None, 0
+    params: list[Any] = [interface_id, mode]
+    if key_field in _ENTRY_COLUMNS:
+        condition = f"e.{key_field} = %s"
+        params.append(query)
+    else:
+        condition = "(" + " OR ".join("e.extra ->> %s = %s" for _ in fields) + ")"
+        for field in fields:
+            params.extend([field["key"], query])
+    row = conn.execute(
+        f"""SELECT e.*, count(*) OVER () AS same_number
+              FROM oams.interface_entries e
+             WHERE e.interface_id = %s AND e.status_entry = 'active' AND e.entry_mode = %s
+               AND {condition}
+             ORDER BY e.reported_at DESC, e.entry_id DESC
+             LIMIT 1""", params).fetchone()
+    if row is None:
+        return None, 0
+    return row, int(row.get("same_number") or 1) - 1
+
+
+def _lookup_hit(descriptor, row, key_field, query):
+    """Shape one entry for lookup_result.html: numbers, words and dates, not keys."""
+    key_field_value = ""
+    for field in _lookup_fields(descriptor, key_field):
+        key_field_value = _entry_field_value(row, field) or ""
+        if key_field_value:
+            break
+    date_value, date_label = "", ""
+    # 已到件看 completed_at，还没到就看预计到件日 due_at——两列不并存，标签跟着换。
+    for standard, label in (("completed_at", "完成日期"), ("due_at", "预计到件")):
+        for field in descriptor.get("fields") or []:
+            if not isinstance(field, dict) or field.get("map_to") != standard:
+                continue
+            value = _entry_field_value(row, field)
+            if value:
+                date_value, date_label = value, label
+                break
+        if date_value:
+            break
+    place = ""
+    for field in descriptor.get("fields") or []:
+        if isinstance(field, dict) and field.get("map_to") == "note":
+            place = _entry_field_value(row, field) or ""
+            if place:
+                break
+    # 「借 note 当取件点」是形态稿 §2 的已知限制，不是这里漏了字段。
+    raw_status = row.get("status") or ""
+    return {"number": key_field_value or query,
+            "status": STATUS_LABELS.get(raw_status, raw_status),
+            "date_value": date_value, "date_label": date_label, "place": place}
+
+
+def _lookup_result_html(query, hit, more):
+    """The one fragment both the partial response and the full page show."""
+    return TEMPLATES.get_template("lookup_result.html").render(
+        query=query, hit=hit, more=more)
+
+
+def _lookup_fragment(conn, interface_id, mode, descriptor, query):
+    """The result block for one query: hit card, miss line, or the empty prompt.
+
+    Returns an empty string when this page has no lookup box at all -- the caller
+    turns that into a 404, because a query against a page that cannot query is a
+    wrong address, not an empty answer.
+    """
+    box = _find_lookup_box(descriptor.get("modules"))
+    if box is None:
+        return ""
+    params = box.get("params") or {}
+    key_field = params.get("key_field") if isinstance(params, dict) else None
+    key_field = key_field.strip() if isinstance(key_field, str) and key_field.strip() else "order_no"
+    if not _lookup_fields(descriptor, key_field):
+        return ""
+    text = (query or "").strip()
+    if not text:
+        return LOOKUP_EMPTY_PROMPT
+    row, more = _lookup_row(conn, interface_id, mode, descriptor, key_field, text)
+    hit = _lookup_hit(descriptor, row, key_field, text) if row is not None else None
+    return _lookup_result_html(text, hit, more)
+
+
 @router.get("/departments", response_class=HTMLResponse)
 def departments_root(request: Request):
     try:
@@ -848,7 +981,7 @@ def page_by_slug(request: Request, org_code: str, slug: str):
 @router.get("/departments/{org_unit_id}/{interface_id}", response_class=HTMLResponse)
 def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
                     saved: str | None = None, error: str | None = None,
-                    archived: str | None = None):
+                    archived: str | None = None, lookup: str | None = None):
     try:
         principal = _require(request, "workforce.reports", "read")
         _require(request, "workforce.reports", "submit")
@@ -857,13 +990,58 @@ def department_page(request: Request, org_unit_id: UUID, interface_id: UUID,
     except _NotPermitted:
         return _denied(request, "填写部门页面需要 workforce.reports/read 与 submit 权限。")
     return _workbench_page(request, principal, org_unit_id, interface_id,
-                           saved=saved, error=error, archived=archived)
+                           saved=saved, error=error, archived=archived,
+                           lookup_query=lookup)
+
+
+@router.get("/departments/{org_unit_id}/{interface_id}/lookup", response_class=HTMLResponse)
+def department_lookup(request: Request, org_unit_id: UUID, interface_id: UUID,
+                      q: str | None = None, lookup: str | None = None):
+    """查件框的局部请求入口：只查正在看的这一版，只回结果那一块。
+
+    两条地址差异是故意的：带 ``HX-Request`` 的 htmx 请求回片段（结果区自己换），
+    直接点开这个地址的人回整页（带上 ``?lookup=``），因为裸片段没有外壳、没有
+    页签、也没有「这页是哪一页」。``q`` 是契约里写的参数名，``lookup`` 是模板
+    输入框的 name，两个都收，免得两边对一个字母。
+    """
+    try:
+        principal = _require(request, "workforce.reports", "read")
+        _require(request, "workforce.reports", "submit")
+    except _NotSignedIn:
+        return RedirectResponse(url="/login?next=/departments", status_code=302)
+    except _NotPermitted:
+        return _denied(request, "填写部门页面需要 workforce.reports/read 与 submit 权限。")
+    text = (q if q is not None else lookup) or ""
+    if not request.headers.get("HX-Request"):
+        target = f"/departments/{org_unit_id}/{interface_id}"
+        if text.strip():
+            target += "?lookup=" + urllib.parse.quote(text.strip())
+        return RedirectResponse(url=target, status_code=303)
+    with connection() as conn:
+        if _resolve_department(conn, principal, org_unit_id) is None:
+            return HTMLResponse('<p class="wh-empty">你不在这个部门的范围内。</p>',
+                                status_code=403, headers={"Cache-Control": "no-store"})
+        page = _page_version(conn, org_unit_id, interface_id)
+        if page is None:
+            return HTMLResponse('<p class="wh-empty">这个页面不存在或不属于该部门。</p>',
+                                status_code=404, headers={"Cache-Control": "no-store"})
+        if page["status"] == "archived":
+            # 片段里不能塞一个 303：XHR 会自己跟过去，把整页 HTML 换进结果区。
+            return HTMLResponse(LOOKUP_ARCHIVED_PROMPT, status_code=200,
+                                headers={"Cache-Control": "no-store"})
+        body = _lookup_fragment(conn, interface_id, _entry_mode_for(page["status"]),
+                                page["descriptor"], text)
+    if not body:
+        return HTMLResponse('<p class="wh-empty">这一页没有查件框。</p>', status_code=404,
+                            headers={"Cache-Control": "no-store"})
+    return HTMLResponse(body, status_code=200, headers={"Cache-Control": "no-store"})
 
 
 def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UUID,
                     interface_id: UUID, *, saved: str | None = None, error: str | None = None,
                     archived: str | None = None,
-                    values: dict[str, Any] | None = None, status_code: int = 200):
+                    values: dict[str, Any] | None = None, status_code: int = 200,
+                    lookup_query: str | None = None):
     """Draw the department workbench for one page.
 
     ``values`` overrides what the fields show. A submission the server refused comes
@@ -889,6 +1067,18 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
             return _archived_reader_response(request, conn, org_unit_id, page)
         mode = _entry_mode_for(page["status"])
         descriptor = page["descriptor"]
+        if lookup_query is not None and request.headers.get("HX-Request"):
+            # 查件框的 htmx 请求打在页面地址上（模板里 hx-get="?"），所以整页路由
+            # 也要能回那一块：一条查询只有一份实现，别在两条路由里各写一遍。
+            body = _lookup_fragment(conn, interface_id, mode, descriptor, lookup_query)
+            if not body:
+                return HTMLResponse('<p class="wh-empty">这一页没有查件框。</p>', status_code=404,
+                                    headers={"Cache-Control": "no-store"})
+            return HTMLResponse(body, status_code=200, headers={"Cache-Control": "no-store"})
+        # 直接点开 /lookup?q=… 的人回到整页，且页面上那一块已经是他要的结果：
+        # 两条路径同一份片段、同一句话，别让「整页」和「片段」各说一套。
+        lookup_html = (_lookup_fragment(conn, interface_id, mode, descriptor, lookup_query)
+                       if lookup_query is not None else "")
         # The rollup view of the same page: every entry with the state that says
         # whether it feeds the company, from api.ROLLUP_STATE_SQL -- the one place
         # the three conditions are written, so the badge cannot disagree with the
@@ -929,7 +1119,8 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         # without handing them to the renderer every display module shows "—",
         # because a metric_card cannot compute anything by itself.
         rendered = render_interface(descriptor, values=values,
-                                    aggregates=rollup.get("aggregates") or {})
+                                    aggregates=rollup.get("aggregates") or {},
+                                    lookup=lookup_html)
     except RenderError as exc:
         return _render_failed(request, page=page, exc=exc, org_name=unit["name"],
                               back_href=f"/departments/{org_unit_id}", back_label="返回部门")
