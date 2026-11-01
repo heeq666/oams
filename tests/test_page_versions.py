@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 
 import pytest
 
-from test_review_preview import _a_live_page, _fill_entry
+from test_review_preview import METRIC_DESCRIPTOR, _a_live_page, _fill_entry
 from test_review_stages import DESIGN_AUTHOR, DESIGN_REVIEWER, _approve, room
 
 pytestmark = pytest.mark.db
@@ -56,7 +57,7 @@ def _republish(room, *, descriptor=None, fill=None) -> tuple:
     返回 (v1, v2, slug, entry_id)。条目必须在 v1 还是当前版本时填——归档之后再写
     是另一条用例要钉的拒绝路径，不能拿它当造态手段。
     """
-    first = _a_live_page(room)
+    first = _a_live_page(room, descriptor=descriptor)
     slug = _slug_of(room, first)
     entry_id = None
     if fill is not None:
@@ -103,6 +104,12 @@ def test_an_unknown_slug_is_sent_away_rather_than_drawn(room):
 
 
 def test_reading_an_archived_version_lands_on_the_current_one(room):
+    """旧链接不是死胡同，但也不许「静默换个版本给你看」——跳转带 `?archived=1` 说明原因。
+
+    注意：现在只到「带标记跳走」这一步。`archived_notice` 已经传进模板、
+    模板还没渲染那句提示（web.py:948 有值、模板无引用），所以这里不断言提示句；
+    模板接上后要在这里补一条断言，否则这个功能在页面上是看不见的。
+    """
     first, second, _, _ = _republish(room)
     room["as_"](DESIGN_AUTHOR)
 
@@ -110,7 +117,11 @@ def test_reading_an_archived_version_lands_on_the_current_one(room):
                                  follow_redirects=False)
 
     assert opened.status_code == 303, opened.text
-    assert opened.headers["location"] == f"/departments/{room['design']}/{second}"
+    assert opened.headers["location"] == f"/departments/{room['design']}/{second}?archived=1"
+    # 跟过去是当前版本、照常能看。
+    landed = room["client"]().get(opened.headers["location"])
+    assert landed.status_code == 200, landed.text[:300]
+    assert f"/departments/{room['design']}/{second}" in landed.text
 
 
 # ---------------------------------------------------------------- 归档闸
@@ -209,3 +220,35 @@ def test_the_current_version_still_takes_a_write(room):
     assert saved.status_code == 303, saved.text
     assert saved.headers["location"] == f"/departments/{room['design']}/{second}?saved=1"
     assert _entry_total(room) == before + 1
+
+
+# ---------------------------------------------------------------- 旧版本的条目在页面上
+
+
+def test_the_old_versions_entry_still_shows_up_on_the_workbench(room):
+    """契约 6.4 的界面侧：旧版本上记的那条，在当前版本的工作台列表里，也算进页面汇总。
+
+    聚合对了不等于人看得见——工作台是新版本在渲染、列表却要列出旧版本的条目，
+    汇总也要把两版加在一起。这条钉住「列表 + 汇总」两处都按页面算，不是按版本行算。
+    """
+    first, second, _, _ = _republish(
+        room, descriptor=METRIC_DESCRIPTOR,
+        fill={"title": "AW26-781 旧版那一条", "state_word": "进行中",
+              "done_count": "5", "evidence": "SY-2781"})
+    room["as_"](DESIGN_AUTHOR)
+    # 当前版本再记一条：汇总必须是两版之和，只算当前版本会得到 7，只算旧版本会得到 5。
+    _fill_entry(room, second, {"title": "AW26-782 新版这一条", "state_word": "进行中",
+                               "done_count": "7", "evidence": "SY-2782"})
+
+    shown = room["client"]().get(f"/departments/{room['design']}/{second}")
+    assert shown.status_code == 200, shown.text[:300]
+    html = shown.text
+
+    listing = html.split('<ul class="items">', 1)[1].split("</ul>", 1)[0]
+    assert "AW26-781 旧版那一条" in listing, "旧版本的条目没出现在当前版本的工作台列表里"
+    assert "AW26-782 新版这一条" in listing
+
+    # 页面汇总读页面级聚合（dept.DESIGN.done_count，sum）：5 + 7 = 12。
+    assert re.search(r'<span class="wh-metric-value">12</span>', html), "汇总只算了当前版本"
+    # 部门汇总那一栏同样要把它算进去：两条都计入本部门。
+    assert "本部门计入 2 条" in html

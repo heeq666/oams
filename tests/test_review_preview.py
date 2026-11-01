@@ -100,14 +100,14 @@ def _counts(room) -> dict[str, int]:
             for table in ("interfaces", "interface_entries", "workforce_audit_events")}
 
 
-def _a_live_page(room) -> uuid.UUID:
+def _a_live_page(room, *, descriptor=None) -> uuid.UUID:
     """走完整真实链路造一版上线页：建 → 提交审核 → 部门初审通过。
 
     不拿种子里那条 `design-sampling` 当「活页面」：种子库是 session 级的，前序用例
     会把它归档、换作者，于是这条用例单跑绿、全量红——最难查的那一类红。自己造一版，
     每一步都走产品的真入口，`updated_by` 就是作者本人。
     """
-    waiting = room["page"](room["design"])          # 建 → 提交，作者是 DESIGN_AUTHOR
+    waiting = room["page"](room["design"], descriptor=descriptor)  # 建 → 提交，作者是 DESIGN_AUTHOR
     room["as_"](DESIGN_REVIEWER)
     passed = _approve(room, waiting, note="初审过，这一版上线")
     assert passed.status_code == 303, passed.text
