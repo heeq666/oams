@@ -2227,8 +2227,14 @@ def _require_org_access(principal: dict, org_unit_id: Any) -> None:
 
 @router.get("/setup", response_class=HTMLResponse)
 def setup(request: Request, saved: str | None = None, error: str | None = None,
-          member_id: str | None = None, login: str | None = None, expires: str | None = None):
-    """Guided pilot setup: department, position, member, assignment, grants, login link."""
+          member_id: str | None = None, login: str | None = None, expires: str | None = None,
+          lead: str | None = None):
+    """Guided pilot setup: department, position, member, assignment, grants, login link.
+
+    `lead=1` is the receipt for `as_department_lead`: it is set only when the
+    position the new member was seated on holds first-level page review, so the
+    page never claims a grant the table does not have.
+    """
     try:
         principal = _require(request, "workforce.grants", "manage")
         _require(request, "workforce.members", "manage")
@@ -2252,7 +2258,8 @@ def setup(request: Request, saved: str | None = None, error: str | None = None,
     return TEMPLATES.TemplateResponse(request, "setup.html", {
         "org_units": org_units, "positions": positions, "members": members,
         "saved": saved, "error": error, "created_member_id": member_id,
-        "login_token": login, "login_expires": expires, "member": _member(request),
+        "login_token": login, "login_expires": expires, "lead_granted": lead == "1",
+        "member": _member(request),
         "csrf_org": _form_token(request, "oams:org-form:v1"),
         "csrf_position": _form_token(request, "oams:position-form:v1"),
         "csrf_member": _form_token(request, "oams:member-form:v1"),
@@ -2310,10 +2317,59 @@ def setup_create_position(request: Request, csrf: str = Form(...), position_code
     return RedirectResponse(url="/setup?saved=position", status_code=303)
 
 
+#: The one extra right `as_department_lead` adds: signing off this department's pages.
+PILOT_LEAD_GRANT = ("workforce.interfaces", "review")
+
+
+def _grant_pilot_department_lead(conn, position_id: Any, actor_member_id: Any, now: str) -> bool:
+    """Give the position first-level page review **inside its own department**.
+
+    A fresh install has nobody who may sign a department's first review: the only
+    `workforce.interfaces/review` grant sits on COMPANY/SYSADMIN, and that member
+    is also the author of the page they just created, so the page can never go
+    live (see docs/reports/20261103-onboarding-dryrun.md). The guided setup page
+    therefore offers to make the member it creates that department's reviewer.
+
+    **The row says `scope_type='all'` on purpose, and that is not a mistake to be
+    "fixed" later by narrowing it.** `security.effective_grants` only honours
+    `scope_type='all'` (see its SCOPE GAP comment), so an `org_unit` row here
+    would grant nothing at all. The department boundary lives one layer up, in
+    route code: `_review_refusal` lets a department reviewer sign only pages whose
+    `org_unit_id` is among their own positions' departments, and refuses pages
+    they authored themselves. So the grant record is wide and the behaviour is
+    narrow -- do not read `all` here as "can sign the whole company".
+
+    Returns whether the position holds that right afterwards -- true both when
+    this call wrote the row and when an earlier call already had. The receipt the
+    setup page shows is a statement about the grant table, not about who wrote it,
+    so re-submitting the form for the same position shows the same receipt and
+    writes nothing twice.
+    """
+    resource, action = PILOT_LEAD_GRANT
+    existing = conn.execute(
+        """SELECT 1 FROM oams.permission_grants
+            WHERE subject_type = 'position' AND position_id = %s
+              AND resource = %s AND action = %s
+              AND scope_type = 'all' AND effect = 'allow' AND revoked_at IS NULL""",
+        (position_id, resource, action)).fetchone()
+    if existing is not None:
+        return True
+    api.insert_grant(conn, GrantCreate(
+        subject_type="position", position_id=position_id, resource=resource, action=action,
+        scope_type="all", valid_from=now,
+        reason="pilot department lead from guided setup page"), actor_member_id)
+    return True
+
+
 @router.post("/setup/pilot")
 def setup_pilot_member(request: Request, csrf: str = Form(...), display_name: str = Form(...),
-                       employee_code: str = Form(default=""), position_id: UUID = Form(...)):
-    """Create an active member, seat them on one position, grant reporting, hand back a login link."""
+                       employee_code: str = Form(default=""), position_id: UUID = Form(...),
+                       as_department_lead: bool = Form(default=False)):
+    """Create an active member, seat them on one position, grant reporting, hand back a login link.
+
+    `as_department_lead` is optional and off by default; when set, the position
+    also gets first-level page review within its own department only.
+    """
     try:
         principal = _require(request, "workforce.members", "manage")
         _require(request, "workforce.assignments", "manage")
@@ -2329,6 +2385,7 @@ def setup_pilot_member(request: Request, csrf: str = Form(...), display_name: st
         member_payload = MemberCreate(employee_code=employee_code.strip() or None, display_name=display_name.strip())
     except ValidationError:
         return RedirectResponse(url="/setup?error=pilot", status_code=303)
+    lead_granted = False
     try:
         with connection() as conn:
             created = api.insert_member(conn, member_payload, principal["member_id"])
@@ -2341,6 +2398,8 @@ def setup_pilot_member(request: Request, csrf: str = Form(...), display_name: st
             api.insert_assignment(conn, AssignmentCreate(
                 member_id=member_id, position_id=position_id, assignment_type="primary", starts_at=now,
                 reason="pilot setup from guided setup page"), principal["member_id"])
+            if as_department_lead:
+                lead_granted = _grant_pilot_department_lead(conn, position_id, principal["member_id"], now)
         token, expires_at = issue_session(str(member_id), "pilot-setup")
     except HTTPException as exc:
         if exc.status_code == 409:
@@ -2348,7 +2407,8 @@ def setup_pilot_member(request: Request, csrf: str = Form(...), display_name: st
         raise
     return RedirectResponse(url="/setup?saved=pilot&member_id=" + str(member_id)
                             + "&login=" + urllib.parse.quote(token)
-                            + "&expires=" + urllib.parse.quote(expires_at.isoformat()), status_code=303)
+                            + "&expires=" + urllib.parse.quote(expires_at.isoformat())
+                            + ("&lead=1" if lead_granted else ""), status_code=303)
 
 
 @router.get("/admin/work-items", response_class=HTMLResponse)
