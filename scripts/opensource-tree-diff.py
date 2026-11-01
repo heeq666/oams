@@ -4,10 +4,15 @@
 用法：
     python3 scripts/opensource-tree-diff.py <重写仓路径> [主仓路径]
 
-- 主仓默认取本脚本所在仓库；重写仓是 scripts/opensource-rewrite.sh 的产物。
+- 主仓默认取本脚本所在仓库；重写仓是 scripts/opensource-rewrite.sh 的产物——
+  也就是说**这个工具要有一次重写产物才有意义**，它比的是「产物 vs 主仓」。
 - 移出清单从 scripts/opensource-rewrite.sh 的 PATHS+=( ... ) 里读，不在这里另抄一份，
   免得两处漂移（脚本改了、比对还在按老清单放行）。
 - 脱敏规则从 scripts/opensource-redact.txt 与本机私有规则读（与重写脚本同一份来源）。
+
+前提（公开仓里最容易踩的一条）：`opensource-rewrite.sh`、`opensource-redact.txt`
+属内部工具，**不随公开仓发布**。所以在公开仓里直接跑本脚本会读不到移出清单——这时
+它给一行中文说明、退出码 2，不抛堆栈。在主仓里跑才正常。
 
 三类差异：
   1. 移出（预期）：主仓有、重写仓没有，且路径命中移出清单。
@@ -22,6 +27,24 @@ import sys
 
 PATH_BLOCK = re.compile(r"PATHS\+=\s*\((.*?)\)", re.S)
 QUOTED = re.compile(r'"([^"]+)"')
+REWRITE_SH = "scripts/opensource-rewrite.sh"
+
+
+def is_git_repo(repo):
+    out = subprocess.run(
+        ["git", "-C", repo, "rev-parse", "--show-toplevel"], capture_output=True
+    )
+    return out.returncode == 0
+
+
+def rewrite_script_text(repo):
+    """读重写脚本；读不到返回 None（那不是崩溃，是前提没满足，见模块 docstring）。"""
+    out = subprocess.run(
+        ["git", "-C", repo, "show", f"HEAD:{REWRITE_SH}"], capture_output=True
+    )
+    if out.returncode != 0:
+        return None
+    return out.stdout.decode("utf-8", "replace")
 
 
 def git(repo, *args, binary=False):
@@ -111,15 +134,26 @@ def main():
     here = __file__.rsplit("/scripts/", 1)[0]
     main_repo = (sys.argv[2] if len(sys.argv) > 2 else here).rstrip("/")
 
-    rewrite_sh = subprocess.run(
-        ["git", "-C", main_repo, "show", "HEAD:scripts/opensource-rewrite.sh"],
-        capture_output=True,
-    )
-    if rewrite_sh.returncode != 0:
-        print("读不到 scripts/opensource-rewrite.sh（主仓路径不对？）", file=sys.stderr)
+    if not is_git_repo(main_repo):
+        print(f"--主仓路径不是 git 仓库：{main_repo}", file=sys.stderr)
+        print(
+            "用法：python3 scripts/opensource-tree-diff.py <重写仓路径> [主仓路径]",
+            file=sys.stderr,
+        )
+        return 2
+    rewrite_text = rewrite_script_text(main_repo)
+    if rewrite_text is None:
+        print(
+            f"读不到 {REWRITE_SH}（本仓未随源码发布内部重写脚本），无法算移出清单。",
+            file=sys.stderr,
+        )
+        print(
+            "主仓里跑：python3 scripts/opensource-tree-diff.py <重写仓路径>",
+            file=sys.stderr,
+        )
         return 2
     prefixes = []
-    for block in PATH_BLOCK.findall(rewrite_sh.stdout.decode("utf-8", "replace")):
+    for block in PATH_BLOCK.findall(rewrite_text):
         prefixes.extend(QUOTED.findall(block))
 
     rules = read_rules(main_repo)
