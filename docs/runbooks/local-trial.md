@@ -153,11 +153,9 @@ http://127.0.0.1:8000/setup
 .venv/bin/python -m oams.cli issue-token --member-id <member_id>
 ```
 
-浏览器打开：
+命令会**直接打出登录地址**，把终端里那行「把这一行贴进浏览器就能登录：…」贴进浏览器就进去了（输出的 JSON 里也有 `login_url`），不用自己拼 `/login?token=`。服务不在 8000 上时加 `--base-url http://127.0.0.1:<你的端口>`；手上只有员工编号就用 `--employee-code DESIGN001` 代替 `--member-id`，两种写法签出的令牌等价。
 
-```
-http://127.0.0.1:8000/login?token=<access_token>&next=/interfaces
-```
+**想一步落到部门界面**：在打出来的地址末尾自己补 `&next=/interfaces`。这一步是**可选**的，不加就先进首页再从顶部导航点过去。
 
 ## 四个页面
 
