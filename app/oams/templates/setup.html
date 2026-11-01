@@ -19,6 +19,9 @@
 {% if error == 'org-duplicate' %}<div class="flash error">这个部门代码已经存在。</div>
 {% elif error == 'position-duplicate' %}<div class="flash error">这个岗位代码已经存在。</div>
 {% elif error == 'pilot-duplicate' %}<div class="flash error">这个员工编号已经存在，换一个再试。</div>
+{#- 一个岗位同时只能坐一个人（schema 里的排他约束）。这跟「编号重复」是两种冲突，
+   文案必须分开说：读者按「编号重复」去改编号，改十次也建不进去。 -#}
+{% elif error == 'pilot-position-taken' %}<div class="flash error">这个岗位已经有人了，一个岗位同时只能坐一个人；给他建一个新岗位，或换一个岗位再试。</div>
 {% elif error %}<div class="flash error">填写内容不完整或格式不对，请检查名称、代码和所属部门。</div>
 {% endif %}
 
