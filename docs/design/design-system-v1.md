@@ -254,11 +254,11 @@ GROUP · 浮层（在 B2）： Tooltip、 Menu（面板 200 宽、圆角 18 —�
 - **「加载更早」是替换那一行，不是重画整个消息区**：加载行自带 `id="collab-before"`、`hx-target="this"`、`hx-swap="outerHTML"`，历史消息 prepend 在它下面；`htmx:beforeSwap` 记下 `{scrollTop, scrollHeight}`，`afterSwap` 按高度差把 `scrollTop` 补回去，视线原来那条不被顶走。滚到顶自动触发（`scroll` 不冒泡，监听要挂 `capture`），全部拉完后加载行换成「已经是最早的消息了」并不可再点。
 - **开合状态挂在 `<body>` 上，不能挂在 htmx 的 swap 目标上**：`#collab-host` 是 htmx 的替换目标，htmx 会改它的 `className`（`htmx-settling`），挂在上面的 `is-open` 会被抹掉，面板升不起来 / 升起来关不掉。规则：`body.collab-open` 控制升起，脚本里用`wantOpen` 一个变量做唯一真相（`reveal()` 读它、`close()` 清它），按钮与 Esc 都只改它。
 
-### 6.1 窄档表格（≤1100px）：可编辑态拆块、只读态折行（2026-11-01 定）
+### 6.1 窄档表格（≤1100px）：带控件的表拆块、只读表折行（2026-11-01 定）
 
-**先分两态，别一起改。** 带控件的明细表（`modules/table.html` 里 `{% if inline_widgets() %}` 才会加上 `.wh-table-controls`，填报表单页与它的工作台孪生页共用同一份模板）与只读明细表是两件事：只读表靠 `td` 折行本来就装得下（同一批 5 列数据实测行高 31→49、无截断），**只读表一个字都没改**。
+**先分三态，别一起改。** 拆块只挂在 `.wh-table-controls` 这一层，而它由 `modules/table.html` 的 `{% if inline_widgets() %}` 决定——`inline_widgets()` 判的是 `_state().mode in INLINE_MODES`，`INLINE_MODES = ("edit", "preview")`（`app/oams/render.py:52`）。所以：**`edit` 套、`preview` 也套、`readonly` 不套**。换句话说，「只读表不套」这句得说准：这里说的「只读表」是 **readonly 态**（`render_read_only()`，`render.py:987`）——它靠 `td` 折行本来就装得下（同一批 5 列数据实测行高 31→49、无截断），**readonly 一个字都没改**；而 **`preview` 态会套**（`render_preview()` 也走 `inline_widgets()`，审核侧的模块预览片同一条路），所以在 ≤1100 下审核预览片也是拆块排布——**那不是回归**，窄栏里拆块本来就比五列挤着好读。
 
-- **可编辑态 ≤1100px：每条记录拆一块。** 一行记录变成「标签在上、控件在下」的一列：`tr` 改 `display:flex; flex-direction:column`；记录与记录之间 `16px` + 1px `--oams-line` 分隔线，字段与字段之间 `12px`，标签↔控件 `8px`；控件撑满整行宽（实测 768 下 543、1024 下 767，此前一律被压成 320）。表头 `display:none`，列名用 `td::before { content: attr(data-label) }` 回显（12/16、`--oams-muted`）——**信息不丢，只是不再单独占一行**。不给记录加圆角：模块自身是 18 圆角 + 内距 16，里面再套一层会把角咬掉，也算不出令牌值。**为什么不是横滚**：坏的是填报表单，一边横滚一边填会丢行；横滚留给只读宽表。
+- **带控件的表（`edit` / `preview`）≤1100px：每条记录拆一块。** 一行记录变成「标签在上、控件在下」的一列：`tr` 改 `display:flex; flex-direction:column`；记录与记录之间 `16px` + 1px `--oams-line` 分隔线，字段与字段之间 `12px`，标签↔控件 `8px`；控件撑满整行宽（实测 768 下 543、1024 下 767，此前一律被压成 320）。表头 `display:none`，列名用 `td::before { content: attr(data-label) }` 回显（12/16、`--oams-muted`）——**信息不丢，只是不再单独占一行**。不给记录加圆角：模块自身是 18 圆角 + 内距 16，里面再套一层会把角咬掉，也算不出令牌值。**为什么不是横滚**：坏的是填报表单，一边横滚一边填会丢行；横滚留给只读宽表。
 - **必须拿掉外壳那条 320。** `base.html` 给页面数据表写的 `white-space:nowrap + overflow:hidden + text-overflow:ellipsis + max-width:320px`（§7 第 6 条）在窄档照样命中，它按「宽表每列 320」的容差算，会把拆块后本该整宽的一格仍限成 320——值一长就又被裁掉，等于换个门槛重来。窄档里这一段显式写 `max-width:none; white-space:normal; overflow:visible; text-overflow:clip`。
 - **断点为什么是 1100，不是 900。** 一盏格要放下一句常见中文值至少 **132px**：8 个汉字 × 13px ≈ 104 + 左右内距 24 + 边框 2 = 130，取 132 留 2px 亚像素余量。本页最长值「差旅报销 2026-11-01」实测要 **181px**，五列合计 905；而 1024 档容器只有 801。断点若放到 900，1024 仍会把科目最后 5px 裁掉——「窄档不许裁字」当场破。所以从 1100 起就拆，1024 也在内。
 
@@ -274,7 +274,7 @@ GROUP · 浮层（在 B2）： Tooltip、 Menu（面板 200 宽、圆角 18 —�
 
 **验收口径（改这类表照这六条量）**：① 三档 1440/1024/768 页面 `scrollWidth === clientWidth`；② 控件不裁字（`input` 判 `scrollWidth > clientWidth + 1`；`select` 按最长选项量字宽 + 左右内距 + 24 箭头区，与控件宽比）；③ 页面上不出现 `…` 或「请选…」当显示值；④ 1440 视觉与改前一致（财务报销表 1183 / 容器 1217）；⑤ 768 下真填一行真提交（303 + `?saved=1`、条目 +1，验完删掉新增条目）；⑥ 越界元素为 0（排除 `position:fixed` 与祖先是滚动容器的）。
 
-**落地位置**：`app/oams/templates/modules/table.html`（`td` 加 `data-label`，`section` 在 `inline_widgets()` 为真时加 `wh-table-controls`）+ `app/oams/static/oams-modules.css` 末尾的 `@media (max-width: 1100px)`。排查与取舍过程见 `docs/reports/20261102-narrow-table-audit.md`（2026-11-01 随目录拆分移入内部仓 `oams-records`，主仓不再有）。
+**落地位置**：`app/oams/templates/modules/table.html`（`td` 加 `data-label`，`section` 在 `inline_widgets()` 为真时加 `wh-table-controls`）+ `app/oams/static/oams-modules.css` 末尾的 `@media (max-width: 1100px)`。**`inline_widgets()` 覆盖的是 `INLINE_MODES = ("edit", "preview")` 两个模式**（`render.py:52`），不是只管填报表单页——所以改这一段 CSS 时，`edit`（填报页与工作台孪生页）和 `preview`（审核侧预览片、MCP 的 `preview_descriptor` → `mcp/tools.py:563`、`plugin_cli.py:137`）一起变，`readonly` 不动。排查与取舍过程见 `docs/reports/20261102-narrow-table-audit.md`（2026-11-01 随目录拆分移入内部仓 `oams-records`，主仓不再有）。
 
 > 分层判断：**骨架层** = 页面外壳（一页一套，全站复用）；**组件层** = 卡片 / 面板内部用的控件与数据件；**浮层** = 浮在整页之上的东西；**协作室** = 右下角圆按钮呼出的全局讨论层；**模块层** = 与 `MODULE_REGISTRY` 对齐、由容器 + 组件拼成的内容块。新组件先判断属于哪一层，再进对应分区。
 
