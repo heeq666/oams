@@ -363,8 +363,9 @@ class _NotPermitted(Exception):
 
 
 @router.get("/", response_class=HTMLResponse)
-def home():
-    return RedirectResponse(url="/board", status_code=302)
+def home(request: Request):
+    # 首页落地的是「这个人第一眼该看的屏」——进度中心优先，看板不是首页。
+    return RedirectResponse(url=_landing_url(request), status_code=302)
 
 
 @router.get("/login", response_class=HTMLResponse)
