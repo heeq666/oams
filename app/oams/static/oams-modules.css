@@ -823,12 +823,12 @@
   color: var(--oams-blocked);
 }
 
-/* Preview mode is a review artefact: the tag needs room, so give every block a
- * little top padding and a dashed outline that says "this is not live". */
+/* Preview mode is a review artefact: a dashed outline says "this is not live".
+ * 原来这里还有一条 padding-top: 18px，是给「预览」角标让位置的——角标 2026-10-30
+ * 就下线了（render_preview 的 docstring 写着），18 是档外值，随之删掉。 */
 .wh-interface-preview .wh-container,
 .wh-interface-preview .wh-input,
 .wh-interface-preview .wh-display {
-  padding-top: 18px;
   outline: 1px dashed var(--oams-line-strong);
   outline-offset: -1px;
 }

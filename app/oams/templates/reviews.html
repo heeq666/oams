@@ -36,7 +36,7 @@
         {% if p.visibility == 'public' %}· 公共模板{% endif %}
       </p>
     </div>
-    <a class="spacer" href="/interfaces/{{ p.interface_id }}">预览与试填 →</a>
+    <span class="spacer"></span>
   </div>
 
   <div class="grid-12">
@@ -106,6 +106,26 @@
     </form>
   </div>
   </div>
+
+  {# 预览板：渲的是这一页的定义（字段、密度、空态），值全部由渲染器自己给样本，
+     永远不读任何部门的填报——审核人可能不是本部门的人，这条是硬要求。
+     入口原来是「预览与试填 →」链到 /interfaces/{id}：那条路由要 reports/read+submit，
+     而且 SQL 写死 status='active'，待审页按定义打不开，所以换成 htmx 拉 partial。
+     首版没有可对比的在线版本，进来就自动渲一张，别让「按整页审核」没有东西可看。 #}
+  {% set preview_url = '/reviews/' ~ p.interface_id ~ '/preview' %}
+  <div class="preview-block">
+    <div class="preview-toggle">
+      <div class="caption">这一页实际长什么样</div>
+      <p class="meta">样本值，不含任何部门填报的数据</p>
+      <button type="button" class="btn" data-preview-url="{{ preview_url }}"
+              data-preview-target="preview-{{ p.interface_id }}"
+              aria-expanded="{{ 'true' if b.first_version else 'false' }}"
+              onclick="oamsTogglePreview(this)">{{ '收起预览' if b.first_version else '预览这一页' }}</button>
+    </div>
+    <p class="preview-note" role="status" aria-live="polite"></p>
+    <div id="preview-{{ p.interface_id }}" class="preview-panel" aria-live="polite"
+         {%- if b.first_version %} hx-get="{{ preview_url }}" hx-trigger="load" hx-swap="innerHTML"{% endif %}></div>
+  </div>
 </section>
 {% endfor %}
 {# 空态按身份说实话：手里没卡片不等于全公司没东西在等。
@@ -163,4 +183,58 @@
   {% endif %}
 </div>
 </div>
+
+{# 收起预览时连内容一起清掉：留着 DOM 就是留着一份旧版本的渲染，下次展开前审核人
+   会以为看的是当前版本。错误态三种（403 没权限 / 404 没这页 / 500 这一版渲不出来）
+   都由 htmx 的非 2xx 触发——htmx 默认不换 DOM，所以这里只补一行说明。 #}
+<script>
+  function oamsTogglePreview(btn) {
+    var panel = document.getElementById(btn.dataset.previewTarget);
+    if (!panel) return;
+    if (btn.getAttribute("aria-expanded") === "true") {
+      panel.innerHTML = "";
+      btn.setAttribute("aria-expanded", "false");
+      btn.textContent = "预览这一页";
+      return;
+    }
+    btn.setAttribute("aria-expanded", "true");
+    btn.textContent = "收起预览";
+    htmx.ajax("GET", btn.dataset.previewUrl, {target: panel, swap: "innerHTML"});
+  }
+  // htmx.ajax 触发事件时 detail.elt 不一定是预览块本身，所以先按请求路径找回按钮，
+  // 找不到再退回 DOM 祖先链——错误提示挂错卡比不挂更糟。
+  function oamsPreviewBlock(evt) {
+    var elt = evt.detail.elt;
+    if (elt && elt.closest) { var b = elt.closest(".preview-block"); if (b) return b; }
+    var path = (evt.detail.pathInfo && evt.detail.pathInfo.requestPath) || "";
+    var buttons = document.querySelectorAll(".preview-toggle button");
+    for (var i = 0; i < buttons.length; i++) {
+      if (path && path.indexOf(buttons[i].dataset.previewUrl) !== -1) {
+        return buttons[i].closest(".preview-block");
+      }
+    }
+    return null;
+  }
+  document.body.addEventListener("htmx:responseError", function (evt) {
+    var block = oamsPreviewBlock(evt);
+    if (!block) return;
+    var code = evt.detail.xhr.status;
+    var note = block.querySelector(".preview-note");
+    var btn = block.querySelector("button");
+    note.classList.add("is-error");
+    note.textContent = code === 403 ? "你没有这一页的预览权限。"
+      : code === 404 ? "找不到这一页。"
+      : code === 500 ? "这一版渲不出来（模块可能已下线），先按差异表审。"
+      : "预览加载失败（" + code + "）";
+    btn.setAttribute("aria-expanded", "false");
+    btn.textContent = "预览这一页";
+  });
+  document.body.addEventListener("htmx:afterSwap", function (evt) {
+    var block = oamsPreviewBlock(evt);
+    if (!block) return;
+    var note = block.querySelector(".preview-note");
+    note.classList.remove("is-error");
+    note.textContent = "";
+  });
+</script>
 {% endblock %}
