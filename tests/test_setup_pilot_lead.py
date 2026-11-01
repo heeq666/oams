@@ -184,3 +184,73 @@ def test_the_row_is_wide_and_the_behaviour_is_narrow(pilot_room):
     self_refused = _approve(pilot_room, own_page, note="想自己签")
     assert self_refused.status_code == 303, self_refused.text
     assert "自己提交的页面要由别人审" in urllib.parse.unquote(self_refused.headers["location"])
+
+
+# --------------------------------------------------------------------------- #
+# 409 的两面：岗位已占 / 编号重复（api.CONFLICT_HEADER 那两个稳定标记）
+# --------------------------------------------------------------------------- #
+
+
+def test_the_two_conflicts_are_told_apart_on_the_page(pilot_room):
+    """两句话不能互换：按「编号重复」去改编号，改十次也建不进去。
+
+    `?error=` 的标记由 web 按 `api.CONFLICT_HEADER` 分出来，用户看到的是模板
+    这两行——所以两行都要在，且谁也不能出现在对方那一支里。
+    """
+    pilot_room["as_"](PLATFORM)
+
+    taken = pilot_room["client"]().get("/setup?error=pilot-position-taken")
+    assert taken.status_code == 200
+    assert "这个岗位已经有人了" in taken.text
+    assert "这个员工编号已经存在" not in taken.text
+
+    duplicate = pilot_room["client"]().get("/setup?error=pilot-duplicate")
+    assert duplicate.status_code == 200
+    assert "这个员工编号已经存在" in duplicate.text
+    assert "这个岗位已经有人了" not in duplicate.text
+
+
+def test_a_taken_position_is_not_reported_as_a_duplicate_code(pilot_room):
+    position = _new_position(pilot_room, "PILOTTAKEN")
+    first, query = _create_pilot(pilot_room, position, employee_code="PILOT401")
+    assert "error" not in query, first
+
+    location, query = _create_pilot(pilot_room, position, employee_code="PILOT402")
+    assert query["error"] == ["pilot-position-taken"], location
+
+
+def test_a_duplicate_code_is_not_reported_as_a_taken_position(pilot_room):
+    position = _new_position(pilot_room, "PILOTDUP01")
+    other = _new_position(pilot_room, "PILOTDUP02")
+    first, query = _create_pilot(pilot_room, position, employee_code="PILOT501")
+    assert "error" not in query, first
+
+    location, query = _create_pilot(pilot_room, other, employee_code="PILOT501")
+    assert query["error"] == ["pilot-duplicate"], location
+
+
+def test_a_taken_position_carries_the_marker_that_says_so(pilot_room):
+    """判据是标在 `X-OAMS-Conflict` 上的那个码，不是 detail 的英文措辞。
+
+    `detail` 随时可以改一遍措辞，改完调用方就不该跟着改；这层契约要是塌了，
+    `/setup` 只能靠认字符串，第二个把人往同一岗位放的人又会看到假话。
+    """
+    import pytest as _pytest
+
+    from oams import api as oams_api
+    from oams.schemas import AssignmentCreate
+
+    position = _new_position(pilot_room, "PILOTMARK")
+    _create_pilot(pilot_room, position, employee_code="PILOT601")
+    member_id = pilot_room["conn"].execute(
+        "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
+        ("PILOT601",)).fetchone()["member_id"]
+
+    with _pytest.raises(oams_api.HTTPException) as caught:
+        oams_api.insert_assignment(pilot_room["conn"], AssignmentCreate(
+            member_id=member_id, position_id=position, assignment_type="primary",
+            starts_at=datetime.datetime.now(datetime.timezone.utc), reason="撞同一个岗位"),
+            pilot_room["people"][PLATFORM])
+
+    assert caught.value.status_code == 409
+    assert caught.value.headers[oams_api.CONFLICT_HEADER] == oams_api.CONFLICT_POSITION_OCCUPIED
