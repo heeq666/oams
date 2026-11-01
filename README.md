@@ -12,7 +12,7 @@ OAMS 是组织内 AI 应用的**宿主与应用商店**。应用由各部门自�
 
 ## 一条命令跑起来
 
-需要 Python 3.11+ 和一个 PostgreSQL 数据库。机器上的 `python3` 版本不够时（macOS 自带的是 3.9）：`brew install python@3.11`，或者用 uv：`uv venv --python 3.12 .venv`——注意 uv 建的虚拟环境**没有 pip**，下面装依赖那步要换成 `uv pip install -e .`（或先 `.venv/bin/python -m ensurepip --upgrade`）。
+需要 Python 3.11+ 和一个 PostgreSQL 数据库。机器上的 `python3` 版本不够时（macOS 自带的是 3.9）：`brew install python@3.11`，或者按下面第 1 步里的 uv 那条路来。
 
 ```sh
 # 0. 先有一个库 —— db init 只建表，不替你建库
@@ -21,11 +21,26 @@ docker run -d --name oams-pg \
   -p 127.0.0.1:<你的端口>:5432 postgres:16-alpine
 # 不设 POSTGRES_USER 时账号是 postgres —— 那下面连接串里的 <账号> 就写 postgres
 # 机器上已经装好 PostgreSQL 的，只建库也行：createdb '<库名>'
+```
 
-# 1. 装依赖、建表、建管理员
+装依赖两条路，按机器上的 Python 挑一条。
+
+```sh
+# 1a. 机器上有 3.11+ 的 python：venv + pip
 python -m venv .venv
 . .venv/bin/activate
 pip install -e .
+```
+
+```sh
+# 1b. 没有 3.11+，改用 uv 管 Python：uv venv + uv pip
+uv venv --python 3.12 .venv
+. .venv/bin/activate
+uv pip install -e .          # uv 建的 venv 没有 pip，装依赖就用 uv pip
+```
+
+```sh
+# 2. 配库地址、建表、建管理员
 cp .env.example .env          # 再把库地址填进 .env（口令别提交进仓库）
 export OAMS_DATABASE_URL="postgresql://<账号>:<口令>@127.0.0.1:<你的端口>/<库名>"
 oams db init                  # 建表：把库结构建出来
