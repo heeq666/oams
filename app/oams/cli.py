@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from uuid import UUID
@@ -107,6 +108,10 @@ def issue(args):
 
     `--member-id <UUID>` 与 `--employee-code <员工编号>` 二选一，签出来等价。两种写法都给
     就报错而不是挑一个：挑哪个都会让人以为另一个起了作用。
+
+    顺手给出一条能直接贴进浏览器的登录地址：签出来的令牌本身是给终端用的，拿到它的人
+    下一步永远是「拼成 /login?token=… 打开」，拼错前缀（端口、主机名）是最常见的下一步。
+    站点前缀依次取 `--base-url`、环境变量 `OAMS_BASE_URL`、本机默认 8000。
     """
     member_id = getattr(args, "member_id", None)
     employee_code = getattr(args, "employee_code", None)
@@ -131,7 +136,25 @@ def issue(args):
         token, expires_at = issue_session(member_uuid)
     except ValueError as exc:  # 成员不存在或已离职：给一句人话，不甩 traceback
         raise SystemExit(f"签不出令牌：{exc}（成员可能不存在或已不在职）。")
-    print(json.dumps({"access_token": token, "expires_at": expires_at.isoformat()}, indent=2))
+    login_url = _login_url(token, getattr(args, "base_url", None))
+    print(json.dumps({"access_token": token, "expires_at": expires_at.isoformat(),
+                      "login_url": login_url}, indent=2))
+    print("把这一行贴进浏览器就能登录：" + login_url, file=sys.stderr)
+
+
+#: 没有给站点前缀时的默认值：本机试用环境的地址（`serve` 默认绑 127.0.0.1:8000）。
+DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+
+
+def _login_url(token, base_url=None):
+    """拼出这次令牌的登录地址：`<站点前缀>/login?token=<令牌>`。
+
+    三处来源按优先级取：命令行 `--base-url` → 环境变量 `OAMS_BASE_URL` → 本机默认值。
+    末尾斜杠统一去掉，`http://host/` 与 `http://host` 拼出来是同一个地址；整串只有空白时
+    当作没给（环境变量里留个空行不该把默认值顶掉）。
+    """
+    base = (base_url or os.environ.get("OAMS_BASE_URL") or "").strip() or DEFAULT_BASE_URL
+    return base.rstrip("/") + "/login?token=" + token
 
 
 def serve():
@@ -173,6 +196,7 @@ def main():
     token = commands.add_parser("issue-token", help="issue a temporary session to an active member from a trusted operator shell")
     token.add_argument("--member-id", help="成员 UUID（bootstrap-admin 会打印）")
     token.add_argument("--employee-code", help="员工编号（例如 DESIGN001），与 --member-id 二选一")
+    token.add_argument("--base-url", help="登录地址的站点前缀，例如 http://127.0.0.1:8000（默认读环境变量 OAMS_BASE_URL，再退 http://127.0.0.1:8000）")
     token.set_defaults(func=issue)
     commands.add_parser("serve", help="run the API").set_defaults(func=lambda _: serve())
     plugin = commands.add_parser("plugin", help="validate and preview a department plugin offline")
