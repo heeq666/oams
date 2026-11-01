@@ -34,7 +34,10 @@
               {%- else %} disabled{% endif %}>查询</button>
     </div>
     <div class="wh-lookup-result" id="{{ uid }}-result" aria-live="polite">
-      <p class="wh-empty">输入单号后在这里看结果。</p>
+      {#- 结果区不写死空态：整页带 `?lookup=` 打开时后端已经把答案算好塞进渲染状态，
+          `lookup_result()` 读它；没有预填时它自己回那句「输入单号后在这里看结果。」，
+          所以有值与无值都走同一个出口，两页（工作台 / 填报表单页）通用。 -#}
+      {{ lookup_result() }}
     </div>
   </div>
 </section>
