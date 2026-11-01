@@ -7,6 +7,9 @@
 {% if saved == 'pilot' and login_token %}
 <div class="flash">
   <p><b>成员已建立，登录链接已生成。</b>有效期至 {{ login_expires }}。请立即复制并私发本人，离开本页后不再显示。</p>
+  {#- 授了什么要说清：只说「已创建」，读者不知道这人到底能不能审。
+      `lead_granted` 由后端在授权真的写进去之后才置真；没勾就一个字也不提。 -#}
+  {% if lead_granted %}<p>已授本部门页面初审权。</p>{% endif %}
   <p><a class="btn" href="/login?token={{ login_token }}&next=/reports">打开该成员的汇报页</a></p>
   <p class="sub">复制这个链接发给本人：<code>/login?token={{ login_token }}&amp;next=/reports</code></p>
 </div>
@@ -61,7 +64,7 @@
 
 <section class="card">
   <h2 style="margin-top:0">3. 建成员并分配岗位</h2>
-  <p class="sub">这一步会同时完成：建立在职成员、分配到所选岗位、授予该岗位的汇报权限，并生成一次性的登录链接。</p>
+  <p class="sub">这一步会同时完成：建立在职成员、分配到所选岗位、授予该岗位的汇报权限，并生成一次性的登录链接。勾上那项「部门负责人」，他还能审本部门提交的页面。</p>
   <form method="post" action="/setup/pilot" class="form-row">
     <input type="hidden" name="csrf" value="{{ csrf_pilot }}">
     <div class="field"><label for="member_name">姓名</label><input id="member_name" name="display_name" required maxlength="200"></div>
@@ -70,6 +73,10 @@
       <select id="member_position" name="position_id" required>
         {% for p in positions %}<option value="{{ p.position_id }}">{{ p.org_name }} · {{ p.title }}（{{ p.position_code }}）</option>{% endfor %}
       </select>
+    </div>
+    <div class="field lead-check">
+      <label for="member_lead"><input id="member_lead" type="checkbox" name="as_department_lead" value="1">他是这个部门的负责人，能审本部门的页面</label>
+      <p class="sub">勾上之后，他能在 <code>/reviews</code> 里签掉本部门提交的页面；别的部门的页面他签不了。</p>
     </div>
     <button type="submit">建立成员并生成登录链接</button>
   </form>
