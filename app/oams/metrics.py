@@ -28,6 +28,17 @@ AGG_MODES: tuple[str, ...] = ("count", "sum", "avg", "count_distinct")
 #: Allowed binding modes.
 BINDING_MODES: tuple[str, ...] = ("emit", "display")
 
+#: 一个 `metrics[]` 绑定能写的键，按 mode 分两套。写错的键必须**报错**，不许静默忽略：
+#: 以前只认 from_field/agg/where_status 三个，`where: 紧急` 这种手滑名字一概不看，
+#: 校验放过、上线后这条指标数的是全部条目，还和写对的那条长得一模一样（错的是名字，
+#: 赔的是数）。同一个道理在 `modules.py` 的节点白名单里已经是明写的规矩。
+BINDING_COMMON_KEYS: tuple[str, ...] = ("metric_key", "mode")
+BINDING_EMIT_KEYS: tuple[str, ...] = BINDING_COMMON_KEYS + (
+    "agg", "from_field", "where_status", "label", "unit")
+#: display 是引用方：只认键与模式，聚合/状态条件/名字单位都属声明方（各有专门报错）。
+BINDING_DISPLAY_REJECTED_KEYS: tuple[str, ...] = (
+    "agg", "from_field", "where_status", "label", "unit")
+
 #: Reject-reason codes (contract §3 / concept §4.4).
 METRIC_UNDEFINED = "METRIC_UNDEFINED"
 DATA_RULE_VIOLATION = "DATA_RULE_VIOLATION"
@@ -206,6 +217,17 @@ def validate_metric_binding(binding: dict, org_unit_code: str,
                 f"[{METRIC_UNDEFINED}] {where}.metric_key: {key!r} 既不是目录里的平台指标，"
                 f"也不是本页 emit 的指标（后者须以 {prefix!r} 开头并在本页声明）"
             )
+        unknown = sorted(
+            (key for key in binding
+             if key not in BINDING_COMMON_KEYS and key not in BINDING_DISPLAY_REJECTED_KEYS),
+            key=str)
+        for name in unknown:
+            problems.append(
+                f"[{DATA_RULE_VIOLATION}] {where}.{name}: 不认识的键 {name!r}。"
+                f"display 绑定只引用一条指标，支持的键只有 "
+                f"{'、'.join(BINDING_COMMON_KEYS)}——聚合、状态条件、名字与单位都属声明方"
+                f"（mode=emit 的那条），引用方照着显示即可"
+            )
         for forbidden in ("agg", "from_field", "where_status"):
             if forbidden in binding:
                 problems.append(
@@ -240,6 +262,15 @@ def validate_metric_binding(binding: dict, org_unit_code: str,
             f"cannot be redefined by a department"
         )
 
+    unknown = sorted((key for key in binding if key not in BINDING_EMIT_KEYS), key=str)
+    for name in unknown:
+        problems.append(
+            f"[{DATA_RULE_VIOLATION}] {where}.{name}: 不认识的键 {name!r}——指标绑定只写下面"
+            f"这几个，多写的一律当错。emit 支持：{'、'.join(BINDING_EMIT_KEYS)}。"
+            f"状态条件请写 where_status，它只收四个标准态："
+            f"{'、'.join(STANDARD_STATUSES)}（部门自己的词不是标准态，映射写在 status_map 里）"
+        )
+
     agg = binding.get("agg")
     if agg not in AGG_MODES:
         problems.append(f"[{METRIC_UNDEFINED}] {where}.agg: {agg!r} must be one of {AGG_MODES}")
@@ -257,8 +288,10 @@ def validate_metric_binding(binding: dict, org_unit_code: str,
         status = binding.get("where_status")
         if status not in STANDARD_STATUSES:
             problems.append(
-                f"[{METRIC_UNDEFINED}] {where}.where_status: {status!r} must be one of "
-                f"{STANDARD_STATUSES}"
+                f"[{METRIC_UNDEFINED}] {where}.where_status: {status!r} 不是标准态。"
+                f"这个键只收四个标准态："
+                f"{'、'.join(STANDARD_STATUSES)}；部门自己的词（如「紧急」「待取」）"
+                f"要先写进 status_map 映射到标准态，指标只认标准态"
             )
 
     # 可选的两个显示字段（契约 §2/§7）：都属声明方。不给也能用——名字回落键末段，
