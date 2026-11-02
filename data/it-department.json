@@ -1,0 +1,82 @@
+{
+  "org_units": [
+    {
+      "code": "COMPANY",
+      "name": "公司",
+      "unit_type": "company"
+    },
+    {
+      "code": "IT",
+      "name": "IT 部",
+      "unit_type": "department",
+      "parent_code": "COMPANY"
+    }
+  ],
+  "positions": [
+    {
+      "code": "IT_LEAD",
+      "title": "IT 负责人",
+      "org_unit_code": "IT"
+    }
+  ],
+  "members": [
+    {
+      "name": "陈工",
+      "employee_code": "IT001",
+      "position_code": "IT_LEAD",
+      "assignment_type": "primary"
+    }
+  ],
+  "grants": [
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.org_units",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.positions",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.members",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.work_items",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.work_items",
+      "action": "manage"
+    },
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.reports",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.reports",
+      "action": "submit"
+    },
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "review"
+    },
+    {
+      "subject_code": "IT_LEAD",
+      "resource": "workforce.interfaces",
+      "action": "manage"
+    }
+  ]
+}
