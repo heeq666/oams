@@ -22,6 +22,7 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 ## 做部门界面（descriptor）之前必读
 
 `skills/oams-department-interface/SKILL.md` + `docs/architecture/p0-interface-contract.md`。硬约束：容器只排版不做数据；字段必须映射标准字段（至少 `title` / `status` / `evidence`）；状态必须映射到 `planned / in_progress / blocked / done`；模块只能从 `app/oams/modules.py` 的 `MODULE_REGISTRY` 白名单（21 个 key）里选。
+验收 descriptor / 页面能不能上手时，**要按第三方开发者视角跑**：只给它 `skills/` 里的说明书和一个真 AI，让它从一句话需求写出一页。拿仓库里自己写的样例和自己造的数据当验收不算数——自己出题自己考，验不出外人卡在哪。
 
 ## 运行
 
@@ -65,6 +66,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 - **动过 Python 模块就重启服务再验页面**：模板每次从磁盘读（Jinja loader，`app/oams/render.py:753` 的 `_ENV`），Python 模块只在进程启动时 import 一次、再把函数对象绑进模板全局（`render.py:762` 的 `_ENV.globals.update(...)`）。所以改完 `render.py` 这类模块的函数签名再刷页面，跑着的旧进程还算旧签名，报 `TypeError: input_for_key() got an unexpected keyword argument 'prefill'`（2026-11-01 演示站 500 即此）。**不重启就验的是新旧混着的组合**，那种「验过了」不算数。
 - 不往生产库写、不连公网暴露 PostgreSQL；改动 `.env` 前先看 `.env.example`。
 - **停服务、杀进程一律按 PID**：不许写按命令行片段宽匹配的 `pkill -f "…--port 8000"` 这种收尾——匹配范围比你以为的宽，一次验端口就把演示站进程杀了。先用 `pgrep -f` 列出来核对，再 `kill <PID>`。
+- **8000 上的演示站只许用固定脚本起**：`scripts/start-local-trial.sh`（免登录 + 演示库两个开关都在里面）。裸跑 `oams serve` 会把这两个开关一起丢掉——页面变成要会话令牌，还会静默连到开发库、数据换了一套却不报错；8000 也不许随手重启（别人重启过一次，症状就是这个）。见页面异常先报，别自己点。
 - **谁的写区谁提交**：改完自己 `git add` 自己写区内的文件、自己 commit、把哈希报上来。别攒着等统一提交——攒着会让线上跑旧代码。
 - **提交前先看 `git diff --cached --name-only`**：暂存区只含本次改动、且全在自己写区内才提交；`git commit` 一律带路径（`git commit -m … -- <路径>`），不带 pathspec 的提交会把别人暂存的东西一起带走。归属错了就是**回滚粒度没了**——出问题时没法单独退掉一笔，只能整笔回退。
 - **共享分支上不许改写别人的提交**：不用 `--amend` / rebase 去补别人已经提交的东西，要补内容就另开一笔。就算事后还原成功也不行——哈希没变，但那段时间别人拉到的历史并不存在。
