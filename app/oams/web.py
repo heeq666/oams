@@ -469,6 +469,12 @@ def _interface_values(fields, entry):
             values[key] = word if word else entry["status"]
         elif map_to in ("title", "blocked_reason", "progress_value", "note", "evidence"):
             values[key] = entry[map_to]
+        else:
+            # 有标准含义、但表里没有对应列的字段（工单号、承诺完成日、照片链接…）写库时
+            # 一律落在 `extra[字段key]`（见 _read_entry_form 最后一段）。这里以前只认标准列，
+            # 于是这些字段在页面上永远是空的：填了「工单号 IT-2026-1102-01」，整页一次都不
+            # 出现，只有查件框能从 extra 查回来。值在哪儿取，写入与回填必须是同一套。
+            values[key] = (entry["extra"] or {}).get(key)
     return values
 
 
@@ -687,32 +693,34 @@ def _entry_status_word(descriptor, row):
 
 
 def _lookup_hit(descriptor, row, key_field, query, current_interface_id=None):
-    """Shape one entry for lookup_result.html: numbers, words and dates, not keys."""
+    """Shape one entry for lookup_result.html: the page's own labels and words.
+
+    卡片上每一行的标签都来自本页 descriptor 的 `label`，值走 `_entry_field_value`
+    （标准列取列、其余取 `extra[字段key]`）。以前这里写死的是快递代收那套词
+    ——「预计到件」「取件点」，`place` 还借 note 当取件点；换一个部门用查件框，
+    卡片就在用别人的话说自己的记录。空值不进卡片：老条目没有的字段就是没有。
+    """
     key_field_value = ""
     for field in _lookup_fields(descriptor, key_field):
         key_field_value = _entry_field_value(row, field) or ""
         if key_field_value:
             break
-    date_value, date_label = "", ""
-    # 已到件看 completed_at，还没到就看预计到件日 due_at——两列不并存，标签跟着换。
-    for standard, label in (("completed_at", "完成日期"), ("due_at", "预计到件")):
-        for field in descriptor.get("fields") or []:
-            if not isinstance(field, dict) or field.get("map_to") != standard:
-                continue
-            value = _entry_field_value(row, field)
-            if value:
-                date_value, date_label = value, label
-                break
-        if date_value:
-            break
-    place = ""
+    rows: list[dict[str, str]] = []
     for field in descriptor.get("fields") or []:
-        if isinstance(field, dict) and field.get("map_to") == "note":
-            place = _entry_field_value(row, field) or ""
-            if place:
-                break
-    # 「借 note 当取件点」是形态稿 §2 的已知限制，不是这里漏了字段。
-    #
+        if not isinstance(field, dict) or not field.get("key"):
+            continue
+        if field.get("map_to") == "status":
+            value = _entry_status_word(descriptor, row)
+        else:
+            value = _entry_field_value(row, field)
+        value = "" if value is None else str(value).strip()
+        if not value:
+            continue
+        row_value = {"label": str(field.get("label") or field["key"]), "value": value}
+        href = _safe_link(value) if field.get("map_to") == "evidence_url" else ""
+        if href:
+            row_value["href"] = href
+        rows.append(row_value)
     # 命中可能落在更早的那一版上（整页口径）：字段值按当前这一版映射，老条目里没有的
     # 字段就是空的。这件事要在卡片上说出来——不说，读到空字段的人会以为数据丢了。
     older = False
@@ -720,8 +728,16 @@ def _lookup_hit(descriptor, row, key_field, query, current_interface_id=None):
         older = str(row["interface_id"]) != str(current_interface_id)
     return {"number": key_field_value or query,
             "status": _entry_status_word(descriptor, row),
-            "date_value": date_value, "date_label": date_label, "place": place,
+            "rows": rows,
             "older": older}
+
+
+def _safe_link(value: str) -> str:
+    """只放行 http/https 链接：底稿里的地址是部门自己写的，`javascript:` 一律当文本。"""
+    parts = urllib.parse.urlsplit(value)
+    if parts.scheme.lower() not in ("http", "https"):
+        return ""
+    return value
 
 
 def _lookup_result_html(query, hit, more):
@@ -1164,7 +1180,7 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         # `rollup` above already holds the numbers this page declared (`dept.*`);
         # without handing them to the renderer every display module shows "—",
         # because a metric_card cannot compute anything by itself.
-        rendered = render_interface(descriptor, values=values,
+        rendered = render_interface(descriptor, values=values, include_unbound=True,
                                     aggregates=rollup.get("aggregates") or {},
                                     lookup=lookup_html)
     except RenderError as exc:
@@ -2103,7 +2119,7 @@ def _interface_fill_page(request: Request, row: dict[str, Any], *, latest: dict[
             conn, row["org_unit_id"], descriptor=descriptor,
             interface_id=row.get("interface_id"))
     try:
-        rendered = render_interface(descriptor, values=values,
+        rendered = render_interface(descriptor, values=values, include_unbound=True,
                                     aggregates=rollup.get("aggregates") or {},
                                     lookup=lookup_prefill)
     except RenderError as exc:

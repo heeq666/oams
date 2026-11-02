@@ -5,15 +5,12 @@
     web.py 做，模板只排版，免得同一套 status_map 在两个地方各解释一遍。 -#}
 {% if hit %}
 <div class="wh-lookup-hit" data-lookup-hit="1">
+  {#- 每一行的标签是本页 descriptor 的字段标签，值由 web.py 按同一套映射取好；
+      这里不认识任何一个部门的词（以前写死的「单号 / 预计到件 / 取件点」是快递页的）。 -#}
   <dl class="wh-lookup-fields">
-    <div class="wh-lookup-line"><dt>单号</dt><dd>{{ hit.number }}</dd></div>
-    <div class="wh-lookup-line"><dt>状态</dt><dd>{{ hit.status or '—' }}</dd></div>
-    {% if hit.date_value %}
-    <div class="wh-lookup-line"><dt>{{ hit.date_label or '完成日期' }}</dt><dd>{{ hit.date_value }}</dd></div>
-    {% endif %}
-    {% if hit.place %}
-    <div class="wh-lookup-line"><dt>取件点</dt><dd>{{ hit.place }}</dd></div>
-    {% endif %}
+    {% for row in hit.get('rows') or [{'label': '单号', 'value': hit.number}] %}
+    <div class="wh-lookup-line"><dt>{{ row.label }}</dt><dd>{% if row.get('href') %}<a class="wh-link" href="{{ row.href }}" target="_blank" rel="noopener noreferrer">{{ row.value }}</a>{% else %}{{ row.value or '—' }}{% endif %}</dd></div>
+    {% endfor %}
   </dl>
   {#- 整页口径（2026-11-01 起，web.py 的 PAGE_ENTRY_SCOPE_SQL）：命中的条目可能记在更早
      那一版上，而字段是按当前这一版的 descriptor 映射的——老条目里没有的字段就是空的。

@@ -944,8 +944,35 @@ def _sorted_modules(descriptor: dict) -> list[dict]:
     return sorted(modules, key=lambda m: (m.get("order", 0) or 0))
 
 
+def _unshown_fields_block(state: "_RenderState", mode: str) -> str:
+    """页面上没有任何模块画到的字段，补一处只读的值。
+
+    模块只画自己 ``source_fields`` / ``columns`` 点到的字段。于是「descriptor 声明了工单号、
+    值也存下来了（没有标准列的字段一律落在 ``extra[字段key]``），但整页一次都不出现」——
+    2026-11-02 IT 报修页实测 0 次，只有查件框能从 extra 查回来。这里不猜字段用途，只按
+    descriptor 里人写的 ``label`` 把有值的那些补成一行；空值不占位。
+    ``preview`` 视角不加：审核看的是这页的定义，不是某一版的真实数据。
+    """
+    if mode == "preview":
+        return ""
+    rows: list[str] = []
+    for key, field in state.fields_by_key.items():
+        if key in state.seen_fields:
+            continue
+        value = state.values.get(key)
+        if value is None or not str(value).strip():
+            continue
+        rows.append(
+            '<div class="wh-lookup-line"><dt>%s</dt><dd>%s</dd></div>'
+            % (_text(field.get("label") or key), _text(value)))
+    if not rows:
+        return ""
+    return ('<section class="wh-m wh-display"><dl class="wh-lookup-fields">%s</dl></section>'
+            % "".join(rows))
+
+
 def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
-            mode: str, lookup: str = "") -> str:
+            mode: str, lookup: str = "", include_unbound: bool = False) -> str:
     if mode not in MODES:
         raise RenderError(f"mode: 未知视角 {mode!r}")
     problems = _structural_problems(descriptor)
@@ -963,6 +990,8 @@ def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
     token_stack = _STACK.set(())
     try:
         blocks = "".join(str(render_module(module)) for module in _sorted_modules(descriptor))
+        if include_unbound:
+            blocks += _unshown_fields_block(state, mode)
     finally:
         _STACK.reset(token_stack)
         _DEPTH.reset(token_depth)
@@ -976,7 +1005,8 @@ def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
 
 def render_interface(descriptor: dict, values: dict | None = None,
                      aggregates: dict[str, float] | None = None,
-                     lookup: str = "") -> str:
+                     lookup: str = "",
+                     include_unbound: bool = False) -> str:
     """Department viewpoint: input modules render widgets, display modules real numbers.
 
     ``lookup`` is the already-rendered result block a lookup box should show on a
@@ -984,7 +1014,8 @@ def render_interface(descriptor: dict, values: dict | None = None,
     has asked yet", which is the box's own prompt -- so the renderer never talks to
     the database and never decides what a query means.
     """
-    return _render(descriptor, values, aggregates, mode="edit", lookup=lookup)
+    return _render(descriptor, values, aggregates, mode="edit", lookup=lookup,
+                   include_unbound=include_unbound)
 
 
 def render_read_only(descriptor: dict, values: dict | None = None,
