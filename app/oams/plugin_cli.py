@@ -177,13 +177,15 @@ def main(argv: list[str] | None = None) -> int:
         ("check", "静态校验：字段映射、状态映射、模块版本、容器深度"),
         ("preview", "本地渲染预览（假数据，不连数据库）"),
         ("upgrade", "把 schema 0.1 的描述升级到 0.2（含模块词汇表迁移）"),
+        ("convert", "把 YAML 描述转成 JSON（工作台「新建页面」只收 JSON；不用装东西）"),
     ):
         sub = verbs.add_parser(name, help=help_text)
         sub.add_argument("path", help="descriptor 文件路径（.yaml / .yml / .json）")
         sub.add_argument("--json", action="store_true", help="以 JSON 输出，便于接编辑器与 CI")
         sub.add_argument(
-            "--out",
-            help="preview 时写 HTML、upgrade 时写升级后的 descriptor（不写就打 stdout）",
+            "--out", "-o",
+            help="preview 时写 HTML、upgrade 写升级后的 descriptor、convert 写 JSON"
+                 "（都不写就打 stdout）",
         )
         if name in ("check", "preview"):
             sub.add_argument(
@@ -218,6 +220,26 @@ def main(argv: list[str] | None = None) -> int:
             print(render_upgrade_report(args.path, upgraded, hints))
             print("\n升级后的描述：")
             print(json.dumps(upgraded, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.verb == "convert":
+        # 工作台「新建页面」的描述框只做 json.loads，而文件是 YAML 写的。以前说明书让人手搓
+        # `python -c "import yaml…"`：本机 PATH 里往往没有 `python`（只有 python3），系统的
+        # python3 又不带 PyYAML，外人照抄会撞出 `ModuleNotFoundError: No module named 'yaml'`
+        # ——比不转还难懂。转换走产品自己的解析器，用户一个依赖都不用装。
+        try:
+            descriptor = load_descriptor(args.path)
+        except PluginFileError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        text = json.dumps(descriptor, ensure_ascii=False, indent=2) + "\n"
+        if args.out:
+            Path(args.out).write_text(text, encoding="utf-8")
+            print(f"已转成 JSON：{args.out}"
+                  "（贴进工作台「新建页面」的描述框；也可以先 `plugin check` 那份 JSON）",
+                  file=sys.stderr)
+        else:
+            sys.stdout.write(text)
         return 0
 
     if getattr(args, "database", False):

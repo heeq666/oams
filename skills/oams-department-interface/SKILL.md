@@ -43,12 +43,9 @@ description: 按 OAMS 插件契约（descriptor v0.2）帮部门负责人制作�
    先做：`mode: emit` 的绑定只写 `metric_key`、`mode`、`agg`、`from_field`、`where_status`、`label`、`unit`；筛选状态一律用 `where_status`，值取 `planned` / `in_progress` / `blocked` / `done` 之一。
    反例：写 `where: 紧急`（想筛部门自己的「紧急」）→ 直接报「不认识的键 'where'」并列出支持的键；部门词要先在 `status_map` 里映射到标准态，指标只认标准态。
 
-6. **YAML 只是书写格式，工作台只收 JSON。**
-   先做：`oams plugin check my-dept.yaml` 验过之后，把同一份描述转成 JSON 再贴进工作台「新建页面」的描述框（那里只做 `json.loads`）。
-   反例：直接把 YAML 贴进描述框 → 报的是格式错误，不是契约问题，白折腾一轮。转换一行：
-   ```sh
-   python -c "import json,sys,yaml;print(json.dumps(yaml.safe_load(open(sys.argv[1])),ensure_ascii=False,indent=2))" my-dept.yaml
-   ```
+6. **YAML 只是书写格式，工作台只收 JSON —— 用 `convert` 转，别手搓 python。**
+   先做：`oams plugin check my-dept.yaml` 验过之后，`oams plugin convert my-dept.yaml -o my-dept.json`，把那份 JSON 贴进工作台「新建页面」的描述框（那里只做 `json.loads`）。不写 `-o` 就直接打到 stdout，可以接着 `plugin check my-dept.json` 再验一遍。
+   反例：照旧办法手搓 `python -c "import yaml…"` —— 这台机器的 PATH 里没有 `python`（只有 `python3`），系统的 `python3` 又没装 PyYAML，会撞 `ModuleNotFoundError: No module named 'yaml'`，而且看起来像「描述写坏了」，实际什么都没坏。`convert` 用的是项目自己的解析器，你不需要装任何东西。
 
 ## 用法
 
@@ -57,6 +54,7 @@ description: 按 OAMS 插件契约（descriptor v0.2）帮部门负责人制作�
 ```sh
 python -m oams.cli plugin check  my-dept.yaml          # 校验，逐条列出问题与错误码
 python -m oams.cli plugin preview my-dept.yaml --out /tmp/p.html   # 渲染预览
+python -m oams.cli plugin convert my-dept.yaml -o my-dept.json   # YAML → JSON（贴进工作台用）
 python -m oams.cli plugin upgrade old.yaml             # 存量 0.1 描述自动升级
 ```
 
