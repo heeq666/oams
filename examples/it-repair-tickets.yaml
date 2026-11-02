@@ -1,0 +1,235 @@
+# 这份不是我们写的：2026-11-02 一个外部 AI 只读 skills/ 说明书、从一句话需求产出，第一次提交就通过校验。
+# 留在这里当证据与参照物——自己出题自己考，验不出外人卡在哪。原始文件未改动，下面三行是它自己写的头注释：
+#
+# IT 部 · 报修工单页（descriptor v0.2）
+# 自检：.venv/bin/python -m oams.cli plugin check it-repair-dept.yaml
+# 预览：.venv/bin/python -m oams.cli plugin preview it-repair-dept.yaml --out /tmp/it.html
+schema_version: "0.2"
+interface_id: it-repair-tickets
+name: IT 部报修工单
+org_unit_code: IT
+position_codes:
+  - IT_LEAD
+
+capabilities:
+  - entries:write
+  - entries:read:dept
+  - aggregate:read:dept
+  - entries:link:work_item
+
+modules:
+  # 一屏先给结论：受理量 / 在办 / 卡住 / 闭环
+  - key: kpi
+    type: metric_grid
+    order: 1
+    module_version: "^1.0"
+    params:
+      columns: 4
+      metric_keys:
+        - dept.IT.accepted_count
+        - dept.IT.wip_count
+        - dept.IT.blocked_count
+        - dept.IT.done_count
+
+  - key: main
+    type: columns
+    order: 2
+    params:
+      columns: 2
+      gap: md
+    children:
+      - key: intake
+        type: card
+        order: 1
+        params:
+          title: 工单登记
+        children:
+          - key: ticket
+            type: progress_row
+            order: 1
+            module_version: "^1.0"
+            source_fields: [fault, status, progress, note, evidence]
+            aggregatable: true
+          - key: stuck
+            type: blocker_list
+            order: 2
+            module_version: "^1.0"
+            source_fields: [fault, blocker, decision, status]
+            aggregatable: true
+      - key: rhythm
+        type: card
+        order: 2
+        params:
+          title: 流转与承诺
+        children:
+          - key: flow
+            type: flow_strip
+            order: 1
+            module_version: "^1.0"
+            params:
+              labels: [待接单, 处理中, 等配件, 已完成]
+              metrics:
+                - dept.IT.pending_count
+                - dept.IT.wip_count
+                - dept.IT.blocked_count
+                - dept.IT.done_count
+          - key: sla
+            type: timeline
+            order: 2
+            module_version: "^1.0"
+            source_fields: [fault, due, status]
+            aggregatable: true
+          - key: find
+            type: lookup_box
+            order: 3
+            module_version: "^1.0"
+            params:
+              key_field: order_no
+              label: 工单号
+
+  - key: proof
+    type: card
+    order: 3
+    params:
+      title: 工单凭据
+    children:
+      - key: shots
+        type: evidence_gallery
+        order: 1
+        module_version: "^1.0"
+        source_fields: [fault, shot_url, note]
+        aggregatable: false
+      - key: recent
+        type: activity_feed
+        order: 2
+        module_version: "^1.0"
+        params:
+          limit: 8
+
+fields:
+  - key: ticket_no
+    label: 工单号
+    type: text
+    required: true
+    map_to: order_no
+    aggregatable: true
+    example: IT-2026-1031
+  - key: fault
+    label: 故障事项
+    type: text
+    required: true
+    map_to: title
+    aggregatable: true
+    example: 三楼会议室投影无信号
+  - key: status
+    label: 处理状态
+    type: enum
+    required: true
+    map_to: status
+    aggregatable: true
+    example: 处理中
+    options: [待接单, 处理中, 等配件, 等厂商, 已完成]
+  - key: progress
+    label: 完成度
+    type: percent
+    required: false
+    map_to: progress_value
+    aggregatable: true
+    example: "60"
+  - key: blocker
+    label: 卡在哪
+    type: text
+    required: false
+    map_to: blocked_reason
+    aggregatable: true
+    example: 缺 HDMI 转接头，已下单
+  - key: decision
+    label: 需要谁决定
+    type: text
+    required: false
+    map_to: needs_decision
+    aggregatable: true
+    example: 是否走外修（等采购批）
+  - key: due
+    label: 承诺完成日
+    type: date
+    required: false
+    map_to: due_at
+    aggregatable: true
+    example: "2026-11-05"
+  - key: note
+    label: 处理备注
+    type: text
+    required: false
+    map_to: note
+    aggregatable: true
+    example: 已上门，等配件到货后复装
+  - key: evidence
+    label: 工单凭据
+    type: text
+    required: true
+    map_to: evidence
+    aggregatable: true
+    example: ITSM-2026-1031 / 现场照片 2 张
+  - key: shot_url
+    label: 照片链接
+    type: text
+    required: false
+    map_to: evidence_url
+    aggregatable: false
+    example: https://itsm.internal/tickets/IT-2026-1031
+
+status_map:
+  待接单: planned
+  处理中: in_progress
+  等配件: blocked
+  等厂商: blocked
+  已完成: done
+
+metrics:
+  # 键前缀必须是 dept.<本页 org_unit_code>.，名字与单位由这里声明
+  - metric_key: dept.IT.accepted_count
+    mode: emit
+    agg: count
+    from_field: status
+    label: 本期工单
+    unit: 单
+  - metric_key: dept.IT.pending_count
+    mode: emit
+    agg: count
+    from_field: status
+    where_status: planned
+    label: 待接单
+    unit: 单
+  - metric_key: dept.IT.wip_count
+    mode: emit
+    agg: count
+    from_field: status
+    where_status: in_progress
+    label: 处理中
+    unit: 单
+  - metric_key: dept.IT.blocked_count
+    mode: emit
+    agg: count
+    from_field: status
+    where_status: blocked
+    label: 卡住
+    unit: 单
+  - metric_key: dept.IT.done_count
+    mode: emit
+    agg: count
+    from_field: status
+    where_status: done
+    label: 已完成
+    unit: 单
+
+rules:
+  evidence_required: true
+  blocked_requires_reason: true
+
+meta:
+  author_position_code: IT_LEAD
+  version: 1
+  visibility: department
+  review:
+    status: draft
