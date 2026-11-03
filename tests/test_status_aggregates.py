@@ -88,6 +88,14 @@ DESCRIPTOR = {
 }
 
 
+def _insert_member(conn, employee_code, display_name):
+    """自造一个成员：用例不依赖某台机器上 bootstrap-admin 起的那个管理员叫什么。"""
+    return conn.execute(
+        "INSERT INTO oams.workforce_members (employee_code, display_name, employment_status) "
+        "VALUES (%s, %s, 'active') RETURNING member_id", (employee_code, display_name)
+    ).fetchone()["member_id"]
+
+
 def _insert_org(conn, code, name, unit_type):
     return conn.execute(
         "INSERT INTO oams.org_units (org_code, name, unit_type) "
@@ -139,12 +147,7 @@ def scratch_world(db_ready):
     with db_ready.connect() as conn:
         conn.execute("SAVEPOINT status_fixture")
         try:
-            row = conn.execute(
-                "SELECT member_id FROM oams.workforce_members WHERE employee_code = 'ADMIN001'"
-            ).fetchone()
-            if row is None:
-                pytest.skip("no ADMIN001 member in this database")
-            member_id = row["member_id"]
+            member_id = _insert_member(conn, "STATUSD01", "状态测试员")
             dept = _insert_org(conn, "STATUSD", "状态分布测试部门", "department")
             position = _insert_position(conn, "STATUSD_LEAD", dept)
             page = _insert_interface(conn, dept, member_id, position)
@@ -190,7 +193,7 @@ def test_aggregates_carry_activity_from_the_audit_table(status_world):
     activity = panel["aggregates"]["activity"]
     assert activity, "审计表里有条目事件，动态流不该空"
     assert activity[0]["what"] == "填写了页面条目"
-    assert activity[0]["who"] == "系统管理员"
+    assert activity[0]["who"] == "状态测试员", "署名取审计事件里的 actor，不是别的机器上的管理员名"
     assert activity[0]["when"], "时间列必须带东西，不然模板印一行空的"
 
 
@@ -200,12 +203,7 @@ def test_no_activity_key_when_nothing_ever_happened(db_ready):
     with db_ready.connect() as conn:
         conn.execute("SAVEPOINT status_quiet")
         try:
-            row = conn.execute(
-                "SELECT member_id FROM oams.workforce_members WHERE employee_code = 'ADMIN001'"
-            ).fetchone()
-            if row is None:
-                pytest.skip("no ADMIN001 member in this database")
-            member_id = row["member_id"]
+            member_id = _insert_member(conn, "STATUSQ01", "安静测试员")
             dept = _insert_org(conn, "STATUSQ", "安静部门", "department")
             position = _insert_position(conn, "STATUSQ_LEAD", dept)
             _insert_interface(conn, dept, member_id, position)
