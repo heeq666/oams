@@ -17,6 +17,11 @@
       "code": "IT_LEAD",
       "title": "IT 负责人",
       "org_unit_code": "IT"
+    },
+    {
+      "code": "IT_SUPERVISOR",
+      "title": "IT 主管",
+      "org_unit_code": "IT"
     }
   ],
   "members": [
@@ -24,6 +29,12 @@
       "name": "陈工",
       "employee_code": "IT001",
       "position_code": "IT_LEAD",
+      "assignment_type": "primary"
+    },
+    {
+      "name": "赵工",
+      "employee_code": "IT002",
+      "position_code": "IT_SUPERVISOR",
       "assignment_type": "primary"
     }
   ],
@@ -76,6 +87,56 @@
     {
       "subject_code": "IT_LEAD",
       "resource": "workforce.interfaces",
+      "action": "manage"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.org_units",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.positions",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.members",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.work_items",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.reports",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.reports",
+      "action": "submit"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.interfaces",
+      "action": "read"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.interfaces",
+      "action": "review"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.interfaces",
+      "action": "manage"
+    },
+    {
+      "subject_code": "IT_SUPERVISOR",
+      "resource": "workforce.work_items",
       "action": "manage"
     }
   ]
