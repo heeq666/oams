@@ -594,6 +594,11 @@ def _entry_mode_for(status):
     return "live" if status == "active" else "draft"
 
 
+def _entry_mode_label(mode: str) -> str:
+    """审计里给人看的说法：草稿版还在攒试用数据，现行版才是公司看到的那一份。"""
+    return "现行版" if mode == "live" else "草稿版"
+
+
 # --------------------------------------------------------------------------- #
 # 查件框（lookup_box）：只查正在看的这一版自己的条目
 #
@@ -942,7 +947,7 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
              Jsonb(descriptor), position, version, basis,
              principal["member_id"], principal["member_id"])).fetchone()
         api.audit(conn, principal["member_id"], "interface.created", "interface", row["interface_id"],
-                  "created inside department workbench",
+                  f"在部门工作台新建了页面草稿「{name.strip()}」",
                   {"slug": slug.strip(), "version_no": version,
                    "based_on": str(basis) if basis else None})
     return RedirectResponse(url=f"/departments/{org_unit_id}/{row['interface_id']}?saved=1", status_code=303)
@@ -1258,7 +1263,8 @@ async def department_page_submit(request: Request, org_unit_id: UUID, interface_
             + " RETURNING entry_id, title, status, note, evidence, reported_at",
             (interface_id, *columns.values())).fetchone()
         api.audit(conn, principal["member_id"], "interface_entry.created", "interface_entry",
-                  entry["entry_id"], "submitted through department page (" + mode + ")", entry)
+                  entry["entry_id"],
+                  f"在部门页面填了一条「{entry['title']}」（{_entry_mode_label(mode)}）", entry)
     return RedirectResponse(url=base + "?saved=1", status_code=303)
 
 
@@ -1324,7 +1330,8 @@ def entry_link(request: Request, org_unit_id: UUID, interface_id: UUID, entry_id
             api.audit(conn, principal["member_id"],
                       "interface_entry.unlinked" if target is None else "interface_entry.linked",
                       "interface_entry", entry_id,
-                      "attached to work item " + (str(target) or "(none)"), entry)
+                      (f"把条目「{entry['title']}」挂到了工作项 {target}" if target is not None
+                       else f"把条目「{entry['title']}」从工作项上摘了下来"), entry)
     except ForeignKeyViolation:
         return RedirectResponse(url=base + "?error=work-item-invalid", status_code=303)
     return RedirectResponse(url=base + "?saved=linked", status_code=303)
@@ -1388,8 +1395,11 @@ def department_submit_review(request: Request, org_unit_id: UUID, interface_id: 
             """UPDATE oams.interfaces
                   SET status = 'pending', review_stage = 'department', review_note = NULL, updated_at = now()
                WHERE interface_id = %s""", (interface_id,))
+        app_name = _app_name_for(conn, principal)
         api.audit(conn, principal["member_id"], "interface.review_requested", "interface", interface_id,
-                  "department submitted the page for review", {"from": prior["status"], "to": "pending"})
+                  (f"通过 {app_name} 代表 {principal.get('display_name') or '这个人'} 提交了页面送审，等公司审"
+                   if app_name else "提交了页面送审，等公司审"),
+                  {"from": prior["status"], "to": "pending"})
     return RedirectResponse(url=base + "?saved=review", status_code=303)
 
 
@@ -1434,7 +1444,7 @@ def department_withdraw_review(request: Request, org_unit_id: UUID, interface_id
             """UPDATE oams.interfaces SET status = 'draft', review_stage = 'department', updated_at = now()
                WHERE interface_id = %s""", (interface_id,))
         api.audit(conn, principal["member_id"], "interface.review_withdrawn", "interface", interface_id,
-                  "department withdrew the review request", {"from": "pending", "to": "draft"})
+                  "撤回了送审，页面回到草稿", {"from": "pending", "to": "draft"})
     return RedirectResponse(url=base + "?saved=withdrawn", status_code=303)
 
 def _review_bundle(conn, row):
@@ -1707,7 +1717,7 @@ def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
     bundle = _review_bundle(conn, page)
     summary = bundle["summary"]["headline"] if bundle else ""
     api.audit(conn, principal["member_id"], "interface.approved", "interface", page["interface_id"],
-              (note.strip() or "review approved") + (f"｜{summary}" if summary else ""),
+              (note.strip() or "审核通过") + (f"｜{summary}" if summary else ""),
               {"to": "active", "version_no": page["version_no"], "stage": signed_level,
                "acting": acting, "changes": bundle["summary"]["total"] if bundle else 0})
     return None
@@ -1932,7 +1942,7 @@ def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
             """UPDATE oams.interfaces SET review_stage = 'company', updated_at = now()
                WHERE interface_id = %s""", (interface_id,))
         api.audit(conn, principal["member_id"], "interface.review_stage_passed", "interface", interface_id,
-                  note.strip() or "department passed the page to the company stage",
+                  note.strip() or "部门一审通过，转公司审",
                   {"from": "department", "to": "company", "version_no": page["version_no"],
                    "stage": "department", "acting": acting})
     return RedirectResponse(url="/reviews?saved=passed", status_code=303)
@@ -2184,7 +2194,7 @@ async def interface_submit(request: Request, interface_id: UUID, csrf: str = For
             + " RETURNING entry_id, title, status, progress_value, evidence, reported_at",
             (interface_id, *columns.values())).fetchone()
         api.audit(conn, principal["member_id"], "interface_entry.created", "interface_entry",
-                  entry["entry_id"], "submitted through department interface", entry)
+                  entry["entry_id"], f"在页面填报页填了一条「{entry['title']}」", entry)
     return RedirectResponse(url="/interfaces/" + str(interface_id) + "?saved=1", status_code=303)
 
 
@@ -2286,7 +2296,8 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
              principal["member_id"], principal["member_id"],
              signer_id, review.get("reviewed_at") or None)).fetchone()
         api.audit(conn, principal["member_id"], "interface.created", "interface", row["interface_id"],
-                  "created through setup page", {"slug": slug.strip(), "version_no": row["version_no"]})
+                  f"在界面制作页新建了页面草稿「{name.strip()}」",
+                  {"slug": slug.strip(), "version_no": row["version_no"]})
     return RedirectResponse(url="/setup/interfaces?saved=1", status_code=303)
 
 @router.get("/progress", response_class=HTMLResponse)

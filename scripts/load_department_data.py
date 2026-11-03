@@ -54,8 +54,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PORT = int(os.environ.get("OAMS_LOADER_PORT", "8126"))
 BASE = f"http://127.0.0.1:{PORT}"
-REASON = "initial department load"
-DEFAULT_GRANT_REASON = "minimum permission needed to do the job"
+REASON = "按种子文件灌入部门与岗位"
+DEFAULT_GRANT_REASON = "完成本岗位工作所需的最小权限"
 
 planned: list[str] = []
 
