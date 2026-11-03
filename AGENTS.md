@@ -57,7 +57,7 @@ OAMS_DATABASE_URL=... .venv/bin/python -m pytest   # 不给库地址 = 整批 db
 - `docs/architecture/` —— 契约与方案（`plugin-host-concept.md` 是现行主线，`v1-ui-redesign-plan.md` 已作废）；`collab-room-implementation-plan.md` 是协作室的实现清单（设计稿见 `docs/design/design-system-v1.md` §7）
 - `docs/design/` —— 界面规范与令牌
 - `app/oams/schema.sql` —— **唯一一份**建表脚本：**22 张表 + 1 个视图**（`work_item_current_state`），`oams db init` 幂等执行。按 `information_schema.tables` 数会是 **23**（视图也占一行），别当成多建了一张表；老库可能还留着旧的迁移台账 `oams.schema_migrations`（`db init` 既不再建也不删），那样会数出 24。双角色时期的建库脚本已删除（2026-11-02）；现在只有单角色，建库建表见 `oams db init`
-- `examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill（两个：`oams-department-interface` 做部门界面、`oams-design-system` 做页面与组件；引用时写真实目录名，别指向不存在的路径）
+- `examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill（三个：`oams-department-interface` 做部门界面、`oams-design-system` 做页面与组件、`oams-connect` 接入 OAMS 拿票；引用时写真实目录名，别指向不存在的路径）
 - `data/` —— 演示种子：主种子 `neutral-demo-departments.json` **别动**（现有数据与测试基线按它算），要加部门就另开一份（如 `it-department.json`），灌库走 `scripts/load_department_data.py <file> --apply`，这样下一个 clone 的人能复现演示站的前置。
 
 ## 约定
