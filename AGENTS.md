@@ -27,12 +27,15 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 ## 运行
 
 ```sh
-python -m venv .venv && . .venv/bin/activate && pip install -e .
-oams db init                       # 需要 OAMS_DATABASE_URL；建表
-oams bootstrap-admin --name ... --employee-code ... --org-code ... --org-name ...
-oams serve
+# 一条命令：挑依赖路（有 uv 走 uv，没有才 pip）、装依赖、建表、建管理员、起服务并打印登录地址
+bash scripts/quickstart.sh --database-url "postgresql://<账号>:<口令>@127.0.0.1:<端口>/<库名>"
+
+# 要单独操作时（都只用 .venv 里的命令，不依赖激活）
+.venv/bin/oams db init               # 需要 OAMS_DATABASE_URL；建表，重复跑安全
+.venv/bin/oams bootstrap-admin --name ... --employee-code ... --org-code ... --org-name ...
+.venv/bin/oams serve                 # 端口跟 OAMS_BIND_PORT
 scripts/start-local-trial.sh          # 本机试用，默认开 OAMS_DEV_AUTOLOGIN=1
-pytest                                # 带 db 标记的用例在没数据库时跳过
+.venv/bin/python -m pytest            # 带 db 标记的用例在没数据库时跳过
 ```
 
 ## 浏览器自动化

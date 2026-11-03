@@ -106,35 +106,37 @@ export OAMS_DATABASE_URL="$DB_URL"
 export OAMS_BIND_HOST="$HOST"
 export OAMS_BIND_PORT="$PORT"
 
-# 2. 挑解释器：3.11+ 走 pip；否则用 uv 管一个 3.12（macOS 自带的 python3 是 3.9）。
+# 2. 挑装依赖的路：机器上有 uv 一律走 uv（比 pip 快一个数量级）；没有 uv 才用 pip，
+#    而 pip 这条路要求 python3 至少 3.11（macOS 自带的 3.9 装不起本项目）。
 python_ok() {
   "$1" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,11) else 1)' >/dev/null 2>&1
 }
 
 INSTALL_MODE=""
-if command -v python3 >/dev/null 2>&1 && python_ok python3; then
-  INSTALL_MODE="pip"
-  note "用 python3（$(python3 -V 2>&1)）建虚拟环境：$VENV_DIR"
-elif command -v uv >/dev/null 2>&1; then
+if command -v uv >/dev/null 2>&1; then
   INSTALL_MODE="uv"
-  note "机器上的 python3 不到 3.11，改用 uv 管一个 Python 3.12 到 ${VENV_DIR}（首次会下载，约十几秒）"
+  note "用 uv 装依赖（机器上有 uv 就走这条路）"
+elif command -v python3 >/dev/null 2>&1 && python_ok python3; then
+  INSTALL_MODE="pip"
+  note "机器上没有 uv，改用 python3（$(python3 -V 2>&1)）建虚拟环境；装依赖慢的话可加 -i <镜像地址>"
 else
   cat >&2 <<'EOF'
-错误：这台机器上既没有 3.11+ 的 python3，也没有 uv。
+错误：这台机器上既没有 uv，也没有 3.11+ 的 python3。
 
-二选一：
-  brew install python@3.11
+二选一（推荐第一个：装依赖快一个数量级）：
   brew install uv
+  brew install python@3.11
 EOF
   exit 2
 fi
 
 # 已有的 .venv 能用就接着用（别每次重建、也别把刚装好的依赖冲掉）。
 venv_ready() {
-  [ -x "$VENV_DIR/bin/python" ] && python_ok "$VENV_DIR/bin/python"     && [ -f "$VENV_DIR/pyvenv.cfg" ]
+  [ -x "$VENV_DIR/bin/python" ] && python_ok "$VENV_DIR/bin/python" \
+    && [ -f "$VENV_DIR/pyvenv.cfg" ]
 }
 
-# 装依赖：有 pip 用 pip，没有就借 uv，连 uv 也没有就用 venv 自带的 ensurepip 补一个。
+# 装依赖：有 pip 用 pip，没有就借 uv（uv 建的 venv 没有 pip），再没有就用 venv 自带的 ensurepip 补一个。
 install_into_venv() {
   if "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
     note "装依赖（pip install -e .）"
@@ -159,7 +161,7 @@ clear_broken_venv() {
     note "发现 $VENV_DIR 不是虚拟环境（多半是上一步失败留下的），清掉重建"
     rm -rf -- "$VENV_DIR"
   elif [ -e "$VENV_DIR" ] && ! "$VENV_DIR/bin/python" -c '' >/dev/null 2>&1; then
-    note "发现一个用不了的 ${VENV_DIR}，清掉重建"
+    note "发现一个用不了的 $VENV_DIR，清掉重建"
     rm -rf -- "$VENV_DIR"
   fi
 }
@@ -183,7 +185,7 @@ else
     note "复用已有的 ${VENV_DIR}（$("$VENV_DIR/bin/python" -V 2>&1)）"
   else
     # 正经虚拟环境交给 uv 自己 --clear 覆盖；uv 只肯清虚拟环境，普通目录上面已经清掉了。
-    note "用 uv 建虚拟环境：${VENV_DIR}（复用 uv 管好的 Python 3.12）"
+    note "用 uv 建虚拟环境：${VENV_DIR}（uv 自己管的 Python 3.12，已有能用的就复用）"
     uv venv --clear --python 3.12 "$VENV_DIR" >/dev/null
   fi
   install_into_venv

@@ -12,7 +12,9 @@ OAMS 是组织内 AI 应用的**宿主与应用商店**。应用由各部门自�
 
 ## 一条命令跑起来
 
-需要两样东西：一个**空的 PostgreSQL 库**（脚本只建表，不替你建库），以及 **Python 3.11+ 或 uv**（macOS 自带的 `python3` 是 3.9，那就装 uv）。
+需要两样东西：一个**空的 PostgreSQL 库**（脚本只建表，不替你建库），以及 **uv 或 Python 3.11+**。
+
+装依赖走哪条路由脚本自己挑：**机器上有 `uv` 就一律用 uv**（比 pip 快一个数量级），没有 uv 才退回 `pip`——那条路要求 `python3` 至少 3.11（macOS 自带的是 3.9，所以推荐先 `brew install uv`）。
 
 ```sh
 # 0. 先有一个库
@@ -32,7 +34,7 @@ bash scripts/quickstart.sh --database-url "postgresql://<账号>:<口令>@127.0.
 # 想免登录试用（右下角出身份切换角标）：OAMS_DEV_AUTOLOGIN=1 bash scripts/quickstart.sh ...
 ```
 
-它每一步重复跑都安全：机器上没有 3.11+ 的 `python3` 就用 uv 建一个（已有能用的 `.venv` 直接复用）；装依赖；`oams db init`；`oams bootstrap-admin`（库里已有管理员就跳过）；最后起服务，并把一个 `…/login?token=…` 的地址打出来，点进去就落到看板。
+它每一步重复跑都安全：有 uv 就用 uv 建虚拟环境（已有能用的 `.venv` 直接复用，不重建）；装依赖（走进 pip 那条路、下载又慢时，给 `pip` 加 `-i <镜像地址>` 即可，脚本不写死任何源）；`oams db init`；`oams bootstrap-admin`（库里已有管理员就跳过）；最后起服务，并把一个 `…/login?token=…` 的地址打出来，点进去就落到看板。
 
 **手敲老步骤会撞的两堵墙**（脚本都替你绕过去了）：
 
