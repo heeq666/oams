@@ -152,10 +152,10 @@ install_into_venv() {
     label=".[dev]（含 pytest）"
   fi
   if "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
-    note "装依赖（pip install $label）"
+    note "装依赖（pip install ${label}）"
     "$VENV_DIR/bin/python" -m pip install -q $target
   elif command -v uv >/dev/null 2>&1; then
-    note "装依赖（uv pip install $label）"
+    note "装依赖（uv pip install ${label}）"
     VIRTUAL_ENV="$VENV_DIR" uv pip install -q $target
   else
     note "虚拟环境里没有 pip，先补一个再装依赖"
@@ -174,7 +174,7 @@ clear_broken_venv() {
     note "发现 $VENV_DIR 不是虚拟环境（多半是上一步失败留下的），清掉重建"
     rm -rf -- "$VENV_DIR"
   elif [ -e "$VENV_DIR" ] && ! "$VENV_DIR/bin/python" -c '' >/dev/null 2>&1; then
-    note "发现一个用不了的 $VENV_DIR，清掉重建"
+    note "发现一个用不了的 ${VENV_DIR}，清掉重建"
     rm -rf -- "$VENV_DIR"
   fi
 }
@@ -210,7 +210,7 @@ OAMS="$VENV_DIR/bin/oams"
 [ -x "$OAMS" ] || die "命令行没装上：$OAMS 不存在（依赖安装失败，看上面的输出）"
 
 if [ "$WITH_TESTS" = "1" ]; then
-  note "测试依赖已装好：跑测试用 $VENV_DIR/bin/python -m pytest"
+  note "测试依赖已装好：跑测试用 ${VENV_DIR}/bin/python -m pytest"
 fi
 
 # 3. 建表 + 建管理员（重复跑都安全）。
