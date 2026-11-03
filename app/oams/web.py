@@ -28,7 +28,7 @@ import html as html_text
 import json
 import logging
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -855,6 +855,7 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
         return RedirectResponse(url="/login?next=/departments", status_code=302)
     except _NotPermitted:
         return _denied(request, "制作部门页面需要 workforce.reports 读写权限。")
+    api.require_app_scope(principal, "interfaces:draft")
     _check_form_token(request, csrf, "oams:page-form:v1")
     back = f"/departments/{org_unit_id}/new"
     try:
@@ -1226,6 +1227,7 @@ async def department_page_submit(request: Request, org_unit_id: UUID, interface_
         return RedirectResponse(url="/login?next=/departments", status_code=302)
     except _NotPermitted:
         return _denied(request, "填写部门页面需要 workforce.reports/read 与 submit 权限。")
+    api.require_app_scope(principal, "entries:write")
     _check_form_token(request, csrf, "oams:interface-form:v1")
     base = f"/departments/{org_unit_id}/{interface_id}"
     with connection() as conn:
@@ -1277,6 +1279,7 @@ def entry_link(request: Request, org_unit_id: UUID, interface_id: UUID, entry_id
         return RedirectResponse(url="/login?next=/departments", status_code=302)
     except _NotPermitted:
         return _denied(request, "关联工作项需要 workforce.reports/read 与 submit 权限。")
+    api.require_app_scope(principal, "entries:write")
     _check_form_token(request, csrf, ENTRY_LINK_PURPOSE)
     base = f"/departments/{org_unit_id}/{interface_id}"
     try:
@@ -1347,6 +1350,7 @@ def entry_trace(request: Request, org_unit_id: UUID, interface_id: UUID,
         unit = _resolve_department(conn, principal, org_unit_id)
         if unit is None:
             return JSONResponse(status_code=403, content={"available": False, "reason": "not in this department"})
+        api.require_app_scope(principal, "entries:read:dept")
         data = api.rollup_entries(conn, interface_id, metric_key)
     return JSONResponse(content=_jsonable(data))
 
@@ -1362,6 +1366,7 @@ def department_submit_review(request: Request, org_unit_id: UUID, interface_id: 
         return RedirectResponse(url="/login?next=/departments", status_code=302)
     except _NotPermitted:
         return _denied(request, "提交审核需要 workforce.reports 读写权限。")
+    api.require_app_scope(principal, "interfaces:draft")
     _check_form_token(request, review_csrf, "oams:page-form:v1")
     base = f"/departments/{org_unit_id}/{interface_id}"
     with connection() as conn:
@@ -2140,6 +2145,7 @@ async def interface_submit(request: Request, interface_id: UUID, csrf: str = For
         return RedirectResponse(url="/login?next=/interfaces", status_code=302)
     except _NotPermitted:
         return _denied(request, "填写部门界面需要 workforce.reports/read 与 submit 权限。")
+    api.require_app_scope(principal, "entries:write")
     _check_form_token(request, csrf, "oams:interface-form:v1")
     with connection() as conn:
         company_scope = has_company_scope(conn, principal["member_id"])
@@ -3208,3 +3214,355 @@ def collab_unread(request: Request):
     with connection() as conn:
         return JSONResponse({"total": collab.unread_total(conn, member["member_id"])})
 
+
+
+# ---------------------------------------------------------------------------
+# 接入方（connected app）：页面那一半 + 给应用用的三个 JSON 出口
+#
+# 页面这一半只有一件事：人登录后看见「谁、要什么、到哪天」，勾一次允许。
+# 应用那一半是 JSON：建草稿页、读条目、记条目；每个出口都要一张换来的票，
+# 而且票上的范围必须在（api.require_app_scope），不能靠「有票就等于全权」。
+# ---------------------------------------------------------------------------
+
+CONNECT_FORM_PURPOSE = "oams:app-connect:v1"
+
+
+def _api_principal(request: Request) -> dict[str, Any]:
+    """Bearer 票或浏览器会话都收；这是 JSON 出口，不跳登录页。"""
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("bearer "):
+        row = principal_for_token(header[7:].strip())
+        if row is None:
+            raise HTTPException(status_code=401, detail="令牌无效、已过期或已被吊销")
+        return row
+    member = _member(request)
+    if member is None:
+        raise HTTPException(status_code=401, detail="需要会话令牌")
+    return member
+
+
+class _JsonForm:
+    """把 JSON 对象当表单读：_read_entry_form 只要 getlist()。"""
+
+    def __init__(self, data: dict[str, Any]):
+        self._data = data
+
+    def getlist(self, key: str) -> list[str]:
+        value = self._data.get(key)
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            return [str(item) for item in value]
+        return [str(value)]
+
+
+def _json_error(detail: str, code: int = 422):
+    return JSONResponse({"error": detail}, status_code=code)
+
+
+@router.get("/connect/{code}", response_class=HTMLResponse)
+def connect_app_page(request: Request, code: str, error: str | None = None):
+    """人打开一次一码的地方：看清是谁、要什么，再决定点不点。"""
+    member = _member(request)
+    if member is None:
+        return RedirectResponse(url=f"/login?next=/connect/{urllib.parse.quote(code)}", status_code=302)
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT c.*, p.name AS app_name, p.status AS app_status
+                 FROM oams.app_codes c JOIN oams.connected_apps p USING (app_id)
+                WHERE c.code = %s""", (code.strip(),)).fetchone()
+        authorization = None
+        if row is not None and row["authorization_id"] is not None:
+            authorization = conn.execute(
+                "SELECT * FROM oams.app_authorizations WHERE authorization_id = %s",
+                (row["authorization_id"],)).fetchone()
+    now = datetime.now(timezone.utc)
+    reason = None
+    if row is None:
+        reason = "这个码不存在。"
+    elif row["app_status"] != "active":
+        reason = "这个应用已经被停用。"
+    elif row["approved_at"] is None and row["expires_at"] <= now:
+        reason = "这个码已经过期了，让应用重新取一个。"
+    return TEMPLATES.TemplateResponse(request, "connect_app.html", {
+        "member": member, "code": code, "app": row, "authorization": authorization,
+        "reason": reason, "error": error, "now": now,
+        "scopes": list(row["requested_scopes"] or []) if row is not None else [],
+        "labels": api.APP_SCOPE_LABELS,
+        "days_options": (1, 7, 30),
+        "default_days": api.APP_DEFAULT_AUTH_DAYS,
+        "csrf": _form_token(request, CONNECT_FORM_PURPOSE),
+    }, status_code=404 if row is None else 200)
+
+
+@router.post("/connect/{code}")
+def connect_app_approve(request: Request, code: str, csrf: str = Form(...),
+                        scope: list[str] = Form(default=[]), days: str = Form(default="7")):
+    """人点「允许」：把范围写进 app_authorizations，并把码标成「已批准」。"""
+    member = _member(request)
+    back = f"/connect/{urllib.parse.quote(code.strip())}"
+    if member is None:
+        return RedirectResponse(url=f"/login?next={back}", status_code=302)
+    _check_form_token(request, csrf, CONNECT_FORM_PURPOSE)
+    try:
+        want_days = int(days)
+    except (TypeError, ValueError):
+        want_days = api.APP_DEFAULT_AUTH_DAYS
+    want_days = max(1, min(want_days, api.APP_MAX_AUTH_DAYS))
+    now = datetime.now(timezone.utc)
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT c.*, p.name AS app_name, p.status AS app_status
+                 FROM oams.app_codes c JOIN oams.connected_apps p USING (app_id)
+                WHERE c.code = %s FOR UPDATE""", (code.strip(),)).fetchone()
+        if row is None:
+            return RedirectResponse(url=back + "?error=" + urllib.parse.quote("这个码不存在"), status_code=303)
+        if row["app_status"] != "active":
+            return RedirectResponse(url=back + "?error=" + urllib.parse.quote("这个应用已经被停用"),
+                                    status_code=303)
+        if row["approved_at"] is None and row["expires_at"] <= now:
+            return RedirectResponse(url=back + "?error=" + urllib.parse.quote("这个码已经过期，让应用重新取一个"),
+                                    status_code=303)
+        requested = list(row["requested_scopes"] or [])
+        chosen = [item for item in dict.fromkeys(scope or []) if item in requested and item in api.APP_SCOPES]
+        valid_until = now + timedelta(days=want_days)
+        existing = conn.execute(
+            """SELECT * FROM oams.app_authorizations
+                WHERE app_id = %s AND member_id = %s AND revoked_at IS NULL FOR UPDATE""",
+            (row["app_id"], member["member_id"])).fetchone()
+        if existing is None:
+            authorization = conn.execute(
+                """INSERT INTO oams.app_authorizations
+                       (app_id, member_id, scopes, valid_until, approved_by, approved_at)
+                   VALUES (%s, %s, %s, %s, %s, now()) RETURNING authorization_id""",
+                (row["app_id"], member["member_id"], chosen, valid_until,
+                 member["member_id"])).fetchone()
+        else:
+            # 同一个人再点一次允许 = 更新这一票，而不是叠出第二票：
+            # 「我有几张票、哪一张在被用」这个问题没有意义。
+            conn.execute(
+                """UPDATE oams.app_authorizations
+                      SET scopes = %s, valid_until = %s, approved_by = %s, approved_at = now()
+                    WHERE authorization_id = %s""",
+                (chosen, valid_until, member["member_id"], existing["authorization_id"]))
+            authorization = existing
+        conn.execute(
+            """UPDATE oams.app_codes
+                  SET approved_at = now(), approved_member_id = %s, authorization_id = %s
+                WHERE code = %s AND approved_at IS NULL""",
+            (member["member_id"], authorization["authorization_id"], row["code"]))
+        conn.execute(
+            """UPDATE oams.connected_apps
+                  SET owner_member_id = COALESCE(owner_member_id, %s),
+                      created_by = COALESCE(created_by, %s)
+                WHERE app_id = %s""",
+            (member["member_id"], member["member_id"], row["app_id"]))
+        labels = "、".join(api.APP_SCOPE_LABELS.get(item, item) for item in chosen) or "（没有勾任何范围）"
+        api.audit(conn, member["member_id"], "app.authorization.approved", "app_authorization",
+                  authorization["authorization_id"],
+                  f"通过 {row['app_name']} 代表 {member['display_name']} 允许：{labels}，"
+                  f"有效期到 {valid_until.astimezone().strftime('%Y-%m-%d %H:%M')}",
+                  {"app_id": str(row["app_id"]), "app_name": row["app_name"],
+                   "scopes": chosen, "valid_until": valid_until.isoformat()})
+    return RedirectResponse(url=back + "?approved=1", status_code=303)
+
+
+@router.post("/v1/interfaces", status_code=201)
+async def api_create_interface(request: Request):
+    """应用建一张草稿页：和页面里「新建页面」同一个校验，只是出口换成 JSON。"""
+    principal = _api_principal(request)
+    try:
+        payload = await request.json()
+    except Exception:
+        return _json_error("请求体必须是 JSON", 400)
+    if not isinstance(payload, dict):
+        return _json_error("请求体必须是 JSON 对象", 400)
+    slug = str(payload.get("slug") or "").strip()
+    name = str(payload.get("name") or "").strip()
+    if not slug or not name:
+        return _json_error("slug 和 name 都是必填的")
+    descriptor = payload.get("descriptor")
+    if isinstance(descriptor, str):
+        try:
+            descriptor = json.loads(descriptor)
+        except ValueError:
+            return _json_error("descriptor 不是合法的 JSON")
+    if not isinstance(descriptor, dict):
+        return _json_error("descriptor 要是一个 JSON 对象")
+    position_id = str(payload.get("position_id") or "").strip()
+    try:
+        target = UUID(position_id) if position_id else None
+    except ValueError:
+        return _json_error("position_id 不是合法的编号")
+    with connection() as conn:
+        if not (has_permission(conn, principal["member_id"], "workforce.reports", "read")
+                and has_permission(conn, principal["member_id"], "workforce.reports", "submit")):
+            raise HTTPException(status_code=403, detail="建页面需要 workforce.reports 读写权限")
+        api.require_app_scope(principal, "interfaces:draft")
+        org_hint = payload.get("org_unit_id") or payload.get("org_unit_code")
+        if not org_hint:
+            org_hint = (descriptor.get("meta") or {}).get("org_unit_code")
+        unit = None
+        try:
+            unit = _resolve_department(conn, principal, UUID(str(org_hint)))
+        except (ValueError, TypeError):
+            unit = None
+        if unit is None and isinstance(org_hint, str):
+            row = conn.execute(
+                "SELECT org_unit_id FROM oams.org_units WHERE org_code = %s AND status = 'active'",
+                (org_hint.strip(),)).fetchone()
+            unit = _resolve_department(conn, principal, row["org_unit_id"]) if row else None
+        if unit is None:
+            raise HTTPException(status_code=403, detail="你不在这个部门的范围内")
+        org_unit_id = unit["org_unit_id"]
+        codes = {row["org_code"] for row in conn.execute(
+            "SELECT org_code FROM oams.org_units WHERE status = 'active'").fetchall()}
+        known_positions = {row["position_code"] for row in conn.execute(
+            "SELECT position_code FROM oams.positions WHERE status = 'active'").fetchall()}
+        problems = validate_descriptor(descriptor, known_org_unit_codes=codes,
+                                       known_position_codes=known_positions)
+        if problems:
+            return JSONResponse({"error": "描述符没通过校验", "problems": problems}, status_code=422)
+        if target is not None:
+            owned = conn.execute(
+                "SELECT 1 FROM oams.positions WHERE position_id = %s AND org_unit_id = %s AND status = 'active'",
+                (target, org_unit_id)).fetchone()
+            if owned is None:
+                return _json_error("position_id 不是这个部门在用的岗位")
+        open_version = conn.execute(
+            """SELECT interface_id FROM oams.interfaces
+                WHERE org_unit_id = %s AND slug = %s AND status IN ('draft', 'pending')
+                ORDER BY version_no DESC LIMIT 1""", (org_unit_id, slug)).fetchone()
+        if open_version is not None:
+            return JSONResponse({"error": "这个页面已经有一版在改或待审核",
+                                 "interface_id": str(open_version["interface_id"])}, status_code=409)
+        live = conn.execute(
+            """SELECT interface_id FROM oams.interfaces
+                WHERE org_unit_id = %s AND slug = %s AND status = 'active'""",
+            (org_unit_id, slug)).fetchone()
+        version = conn.execute(
+            """SELECT COALESCE(max(version_no), 0) + 1 FROM oams.interfaces
+                WHERE org_unit_id = %s AND slug = %s""", (org_unit_id, slug)).fetchone()["?column?"]
+        row = conn.execute(
+            """INSERT INTO oams.interfaces
+                   (org_unit_id, slug, name, status, visibility, schema_version, descriptor,
+                    position_id, version_no, based_on, created_by, updated_by)
+               VALUES (%s, %s, %s, 'draft', 'department', %s, %s, %s, %s, %s, %s, %s)
+               RETURNING interface_id""",
+            (org_unit_id, slug, name, descriptor.get("schema_version", "0.1"), Jsonb(descriptor),
+             target, version, live["interface_id"] if live is not None else None,
+             principal["member_id"], principal["member_id"])).fetchone()
+        api.audit(conn, principal["member_id"], "interface.created", "interface", row["interface_id"],
+                  "created through the connected-app API",
+                  {"slug": slug, "version_no": version,
+                   "app_id": api.app_id_of(principal)})
+    return JSONResponse({
+        "interface_id": str(row["interface_id"]),
+        "org_unit_id": str(org_unit_id),
+        "slug": slug,
+        "name": name,
+        "status": "draft",
+        "version_no": version,
+        "url": f"/departments/{org_unit_id}/{row['interface_id']}",
+    }, status_code=201)
+
+
+def _page_for_app(conn, principal, interface_id):
+    """应用票能碰的页面：必须是这个人在部门范围内看得见的某一版。"""
+    page = conn.execute("SELECT * FROM oams.interfaces WHERE interface_id = %s",
+                        (interface_id,)).fetchone()
+    if page is None:
+        raise HTTPException(status_code=404, detail="没有这个页面")
+    require_org_unit_access(conn, principal["member_id"], page["org_unit_id"])
+    return page
+
+
+@router.get("/v1/interfaces/{interface_id}/entries")
+def api_list_entries(request: Request, interface_id: UUID, limit: int = 200):
+    principal = _api_principal(request)
+    limit = max(1, min(limit, 500))
+    with connection() as conn:
+        if not has_permission(conn, principal["member_id"], "workforce.reports", "read"):
+            raise HTTPException(status_code=403, detail="读条目需要 workforce.reports 读权限")
+        api.require_app_scope(principal, "entries:read:dept")
+        page = _page_for_app(conn, principal, interface_id)
+        rows = conn.execute(
+            """SELECT e.entry_id, e.interface_id, e.title, e.status, e.note, e.evidence,
+                      e.progress_value, e.reported_at, e.status_entry, e.entry_mode, e.extra,
+                      v.version_no
+                 FROM oams.interface_entries e JOIN oams.interfaces v USING (interface_id)
+                WHERE v.org_unit_id = %s AND v.slug = %s AND e.status_entry = 'active'
+                ORDER BY e.reported_at DESC LIMIT %s""",
+            (page["org_unit_id"], page["slug"], limit)).fetchall()
+    status_map = (page["descriptor"] or {}).get("status_map", {})
+    status_field = next((f.get("key") for f in (page["descriptor"] or {}).get("fields", [])
+                         if isinstance(f, dict) and f.get("map_to") == "status"), None)
+    entries = []
+    for row in rows:
+        item = {key: (str(row[key]) if key == "entry_id" else row[key])
+                for key in ("entry_id", "interface_id", "title", "note", "evidence",
+                            "progress_value", "status_entry", "entry_mode")}
+        item["status"] = row["status"]
+        item["status_word"] = ((row["extra"] or {}).get(status_field) if status_field else None) \
+            or next((word for word, state in status_map.items() if state == row["status"]), None) \
+            or row["status"]
+        item["version_no"] = row["version_no"]
+        item["reported_at"] = row["reported_at"].isoformat() if row["reported_at"] else None
+        item["extra"] = row["extra"] or {}
+        entries.append(item)
+    return {"interface_id": str(interface_id), "slug": page["slug"], "count": len(entries),
+            "entries": entries}
+
+
+@router.post("/v1/interfaces/{interface_id}/entries", status_code=201)
+async def api_create_entry(request: Request, interface_id: UUID):
+    principal = _api_principal(request)
+    try:
+        payload = await request.json()
+    except Exception:
+        return _json_error("请求体必须是 JSON", 400)
+    if not isinstance(payload, dict):
+        return _json_error("请求体必须是 JSON 对象", 400)
+    values = payload.get("values") if isinstance(payload.get("values"), dict) else payload
+    with connection() as conn:
+        if not (has_permission(conn, principal["member_id"], "workforce.reports", "read")
+                and has_permission(conn, principal["member_id"], "workforce.reports", "submit")):
+            raise HTTPException(status_code=403, detail="填报条目需要 workforce.reports 读写权限")
+        api.require_app_scope(principal, "entries:write")
+        page = conn.execute("SELECT * FROM oams.interfaces WHERE interface_id = %s FOR UPDATE",
+                            (interface_id,)).fetchone()
+        if page is None:
+            raise HTTPException(status_code=404, detail="没有这个页面")
+        require_org_unit_access(conn, principal["member_id"], page["org_unit_id"])
+        if page["status"] == "archived":
+            return _json_error("这一版已归档，不能再往里写；先打开这个页面现在的版本", 409)
+        descriptor = page["descriptor"] or {}
+        fields = [field for field in descriptor.get("fields", [])
+                  if isinstance(field, dict) and field.get("key")]
+        standard, extra, problem = _read_entry_form(fields, descriptor.get("status_map", {}),
+                                                    _JsonForm(values))
+        if problem is not None:
+            return _json_error(problem)
+        mode = _entry_mode_for(page["status"])
+        columns = dict(standard)
+        columns["extra"] = Jsonb(extra)
+        columns["reported_by"] = principal["member_id"]
+        columns["entry_mode"] = mode
+        keys = ", ".join(columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        entry = conn.execute(
+            "INSERT INTO oams.interface_entries (interface_id, " + keys + ") VALUES (%s, "
+            + placeholders + ") RETURNING entry_id, title, status, note, evidence, reported_at",
+            (interface_id, *columns.values())).fetchone()
+        api.audit(conn, principal["member_id"], "interface_entry.created", "interface_entry",
+                  entry["entry_id"], "submitted through the connected-app API (" + mode + ")",
+                  dict(entry, app_id=api.app_id_of(principal)))
+    return JSONResponse({
+        "entry_id": str(entry["entry_id"]),
+        "interface_id": str(interface_id),
+        "title": entry["title"],
+        "status": entry["status"],
+        "entry_mode": mode,
+        "status_entry": "active",
+        "extra": extra,
+    }, status_code=201)

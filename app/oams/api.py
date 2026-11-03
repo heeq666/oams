@@ -4,19 +4,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
+import secrets
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from psycopg.errors import CheckViolation, ForeignKeyViolation, RaiseException, UniqueViolation, ExclusionViolation
 from psycopg.types.json import Jsonb
 import json
 
 from oams import admin_labels
 from oams.db import connection
-from oams.schemas import (AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
+from oams.schemas import (APP_SCOPES, AppCodeCreate, AppRevokeRequest, AppTokenRequest,
+                             AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
                              WorkItemCreate, WorkItemUpdate)
 from oams.security import (active_org_unit_ids, current_principal, has_company_scope,
-                              has_permission, require_org_unit_access, require_permission, revoke_session)
+                              has_permission, issue_session, require_org_unit_access,
+                              require_permission, revoke_session)
 
 app = FastAPI(title="Company OAMS API", version="0.1.0")
 
@@ -1802,3 +1805,235 @@ async def attach_browser_principal(request, call_next):
             if request.method == "GET" and not request.url.path.startswith("/collab"):
                 request.state.collab_unread = collab.unread_total(conn, member_id)
     return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
+# 接入方（connected app）：一次性码 -> 人点一次「允许」-> 短期票
+#
+# 外部 AI（WorkBuddy 这类）不该拿一个人的长期票——那张票能做的和那个人一样多。
+# 这里给它一条更窄的路：
+#   1. 它自己报个名字、报它想要的范围，换一个 6 位一次性码（10 分钟）；
+#   2. 人在 /connect/<code> 登录，看见「谁 + 要什么范围 + 用到哪天」，
+#      自己勾范围、点一次允许；
+#   3. 应用拿这个码换一张票，有效期不超过人给的那一票的上限；
+#   4. 撤销是同步的：撤销那一刻，这个应用换出去的票一起吊销。
+#
+# 范围只描述**动作**，不描述**数据**：应用替哪个人做事，就只看那个人的任职边界，
+# 所以不存在「这个应用能看全公司」这种范围。
+# ---------------------------------------------------------------------------
+
+APP_PROVIDER_PREFIX = "connected-app:"
+#: 码本身的寿命：拿码的人要在 10 分钟内打开它。
+APP_CODE_TTL_SECONDS = 600
+#: 人点过允许之后，应用有 10 分钟把票换走（码仍然是原来那个码）。
+APP_TOKEN_EXCHANGE_SECONDS = 600
+#: 授权默认/最长的有效期（天），人在页面上可以选短一点。
+APP_DEFAULT_AUTH_DAYS = 7
+APP_MAX_AUTH_DAYS = 30
+
+APP_SCOPE_LABELS = {
+    "entries:read:dept": "读本部门的填报条目",
+    "interfaces:draft": "新建草稿页面并送审",
+    "entries:write": "往本部门页面里填报条目",
+}
+
+
+def app_id_of(principal: dict[str, Any] | None) -> str | None:
+    """这张票是不是某个接人方换来的；不是就返回 None（普通会话照旧按人判）。"""
+    provider = (principal or {}).get("auth_provider") or ""
+    if not provider.startswith(APP_PROVIDER_PREFIX):
+        return None
+    return provider[len(APP_PROVIDER_PREFIX):]
+
+
+def live_app_authorization(principal: dict[str, Any] | None):
+    """这一票背后那一行「人点过允许」，没有（或已撤销/过期）就 None。"""
+    app_id = app_id_of(principal)
+    if app_id is None:
+        return None
+    with connection() as conn:
+        return conn.execute(
+            """SELECT a.*, p.name AS app_name
+                 FROM oams.app_authorizations a
+                 JOIN oams.connected_apps p USING (app_id)
+                WHERE a.app_id = %s AND a.member_id = %s
+                  AND a.revoked_at IS NULL AND a.valid_until > now()""",
+            (app_id, principal["member_id"])).fetchone()
+
+
+def require_app_scope(principal: dict[str, Any] | None, scope: str):
+    """应用票只能做它被允许的那几件事；普通会话原样放行（它们按人判权）。
+
+    调用点都在「这个人本来就够权限」之后：票据收窄的是范围，不替代岗位授权。
+    """
+    if app_id_of(principal) is None:
+        return None
+    authorization = live_app_authorization(principal)
+    if authorization is None:
+        raise HTTPException(status_code=403, detail="这张票的授权已被撤销或已到期")
+    if scope not in (authorization["scopes"] or []):
+        label = APP_SCOPE_LABELS.get(scope, scope)
+        raise HTTPException(status_code=403, detail=f"这个接入方没有被允许「{label}」")
+    return authorization
+
+
+def _six_digit_code(conn) -> str:
+    for _ in range(30):
+        candidate = f"{secrets.randbelow(1000000):06d}"
+        taken = conn.execute("SELECT 1 FROM oams.app_codes WHERE code = %s", (candidate,)).fetchone()
+        if taken is None:
+            return candidate
+    raise HTTPException(status_code=503, detail="一次性码暂时发不出来，请重试")
+
+
+@app.post("/api/apps/codes", status_code=status.HTTP_201_CREATED)
+def create_app_code(payload: AppCodeCreate, request: Request):
+    """应用自助取码。码本身代表不了任何人——认人发生在人打开它那一刻。"""
+    scopes = list(dict.fromkeys(payload.scopes or []))
+    unknown = [scope for scope in scopes if scope not in APP_SCOPES]
+    if unknown:
+        raise HTTPException(status_code=422,
+                            detail="不认识的权限范围：" + "、".join(unknown)
+                                   + "；可用的是 " + "、".join(APP_SCOPES))
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="应用名不能是空的")
+    now = datetime.now(timezone.utc)
+    with connection() as conn:
+        app_row = conn.execute(
+            "SELECT app_id, status FROM oams.connected_apps WHERE name = %s", (name,)).fetchone()
+        if app_row is None:
+            app_row = conn.execute(
+                "INSERT INTO oams.connected_apps (name, status) VALUES (%s, 'active') RETURNING app_id",
+                (name,)).fetchone()
+        elif app_row["status"] != "active":
+            raise HTTPException(status_code=409, detail="这个应用已被停用")
+        pending = conn.execute(
+            """SELECT count(*) AS n FROM oams.app_codes
+                WHERE app_id = %s AND approved_at IS NULL AND expires_at > now()""",
+            (app_row["app_id"],)).fetchone()["n"]
+        if pending >= 5:
+            # 码是让人点一次的东西，不是队列：攒着只会让人分不清哪一个是刚才那个。
+            raise HTTPException(status_code=429, detail="这个应用已经有 5 个还没用掉的码，先让人处理或等它们过期")
+        code = _six_digit_code(conn)
+        expires_at = now + timedelta(seconds=APP_CODE_TTL_SECONDS)
+        conn.execute(
+            """INSERT INTO oams.app_codes (code, app_id, purpose, requested_scopes, expires_at)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (code, app_row["app_id"], (payload.purpose or "connect")[:200], scopes, expires_at))
+    base = str(request.base_url).rstrip("/")
+    return {
+        "code": code,
+        "app_id": str(app_row["app_id"]),
+        "app_name": name,
+        "scopes": scopes,
+        "scope_labels": {scope: APP_SCOPE_LABELS[scope] for scope in scopes},
+        "expires_at": expires_at.isoformat(),
+        "connect_path": f"/connect/{code}",
+        "connect_url": f"{base}/connect/{code}",
+    }
+
+
+@app.post("/api/apps/token")
+def exchange_app_token(payload: AppTokenRequest):
+    """拿「人已经点过允许」的码换一张短期票。一个码只换一次。"""
+    code = payload.code.strip()
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT c.code, c.app_id, c.expires_at, c.approved_at, c.approved_member_id,
+                      c.authorization_id, c.token_issued_at, c.requested_scopes,
+                      p.name AS app_name, p.status AS app_status
+                 FROM oams.app_codes c JOIN oams.connected_apps p USING (app_id)
+                WHERE c.code = %s""", (code,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="没有这个码")
+        now = datetime.now(timezone.utc)
+        if row["token_issued_at"] is not None:
+            raise HTTPException(status_code=409, detail="这个码已经换过票了，要再连就重新取一个码")
+        if row["approved_at"] is None:
+            if row["expires_at"] <= now:
+                raise HTTPException(status_code=410, detail="这个码已经过期，重新取一个")
+            raise HTTPException(status_code=409, detail="这个码还没有人点允许")
+        if now >= row["approved_at"] + timedelta(seconds=APP_TOKEN_EXCHANGE_SECONDS):
+            raise HTTPException(status_code=410, detail="人点允许之后要在 10 分钟内换票，这个码已作废")
+        if row["app_status"] != "active":
+            raise HTTPException(status_code=409, detail="这个应用已被停用")
+        authorization = conn.execute(
+            "SELECT * FROM oams.app_authorizations WHERE authorization_id = %s",
+            (row["authorization_id"],)).fetchone()
+        if authorization is None or authorization["revoked_at"] is not None:
+            raise HTTPException(status_code=403, detail="这次授权已经被撤销")
+        if authorization["valid_until"] <= now:
+            raise HTTPException(status_code=403, detail="这次授权已经到期")
+        member = conn.execute(
+            "SELECT display_name FROM oams.workforce_members WHERE member_id = %s",
+            (authorization["member_id"],)).fetchone()
+    token, expires_at = issue_session(
+        str(authorization["member_id"]),
+        provider=f"{APP_PROVIDER_PREFIX}{row['app_id']}",
+        expires_at=authorization["valid_until"],
+        reason=f"connected app {row['app_name']} exchanged an approved code")
+    with connection() as conn:
+        conn.execute("UPDATE oams.app_codes SET token_issued_at = now() WHERE code = %s", (code,))
+        conn.execute(
+            "UPDATE oams.app_authorizations SET last_token_issued_at = now() WHERE authorization_id = %s",
+            (authorization["authorization_id"],))
+    return {
+        "token": token,
+        "expires_at": expires_at.isoformat(),
+        "app_name": row["app_name"],
+        "member": member["display_name"] if member else None,
+        "scopes": list(authorization["scopes"] or []),
+        "scope_labels": {scope: APP_SCOPE_LABELS.get(scope, scope) for scope in (authorization["scopes"] or [])},
+        "authorization_id": str(authorization["authorization_id"]),
+    }
+
+
+@app.get("/api/apps/authorizations")
+def list_app_authorizations(include_revoked: bool = False,
+                            principal: dict = Depends(current_principal)):
+    """我自己允许过哪些应用——默认只列还能用的，撤销过的留在审计里。"""
+    filter_sql = "" if include_revoked else " AND a.revoked_at IS NULL AND a.valid_until > now()"
+    with connection() as conn:
+        rows = conn.execute(
+            """SELECT a.authorization_id, a.app_id, a.member_id, a.scopes, a.valid_until,
+                      a.approved_at, a.revoked_at, a.last_token_issued_at, p.name AS app_name
+                 FROM oams.app_authorizations a JOIN oams.connected_apps p USING (app_id)
+                WHERE a.member_id = %s""" + filter_sql + """
+                ORDER BY a.approved_at DESC""",
+            (principal["member_id"],)).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/apps/authorizations/{authorization_id}/revoke")
+def revoke_app_authorization(authorization_id: UUID, payload: AppRevokeRequest | None = None,
+                             principal: dict = Depends(current_principal)):
+    """撤销一票：同一刻把这个应用换出去的票一起吊销，不留「还没到期」的窗口。"""
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT a.*, p.name AS app_name FROM oams.app_authorizations a
+                 JOIN oams.connected_apps p USING (app_id)
+                WHERE a.authorization_id = %s""", (authorization_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="没有这条授权")
+        if row["member_id"] != principal["member_id"] and not has_company_scope(conn, principal["member_id"]):
+            raise HTTPException(status_code=403, detail="只有被代表的本人或公司管理员能撤销")
+        reason = (payload.reason.strip() if payload and payload.reason else "") or "revoked from the API"
+        if row["revoked_at"] is None:
+            conn.execute(
+                "UPDATE oams.app_authorizations SET revoked_at = now(), revoke_reason = %s "
+                "WHERE authorization_id = %s", (reason, authorization_id))
+            killed = conn.execute(
+                """UPDATE oams.workforce_sessions SET revoked_at = now()
+                    WHERE auth_provider = %s AND member_id = %s AND revoked_at IS NULL
+                    RETURNING session_id""",
+                (f"{APP_PROVIDER_PREFIX}{row['app_id']}", row["member_id"])).fetchall()
+            audit(conn, principal["member_id"], "app.authorization.revoked", "app_authorization",
+                  authorization_id,
+                  f"通过 {row['app_name']} 代表 {principal['display_name']} 撤销授权（同时吊销 {len(killed)} 张票）",
+                  {"app_id": str(row["app_id"]), "scopes": list(row["scopes"] or []),
+                   "sessions_revoked": len(killed), "reason": reason})
+        else:
+            killed = []
+    return {"authorization_id": str(authorization_id), "revoked": True,
+            "sessions_revoked": len(killed)}
