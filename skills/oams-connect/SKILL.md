@@ -52,9 +52,15 @@ Content-Type: application/json
 | --- | --- |
 | 读本部门条目 | `GET {base}/v1/interfaces/{interface_id}/entries` |
 | 往页面里填报条目 | `POST {base}/v1/interfaces/{interface_id}/entries`，体是 `{"values": {字段: 值}}` |
-| 新建草稿页面并送审 | `POST {base}/v1/interfaces`，体是完整 descriptor |
+| 新建草稿页面并送审 | `POST {base}/v1/interfaces`，体是 `{"slug": ..., "name": ..., "descriptor": {...}}` |
 
 `interface_id` 从哪来：用户给你，或者你先按部门问用户要哪一页——**别自己编**。
+
+**一条容易踩的硬规矩**：你手里的票**代表某个具体的人**，那人属于哪个部门，你就只能动那个部门的页面。
+
+- 描述符里 `org_unit_code: IT`，但点「允许」的是总部管理员 → 403「你不在这个部门的范围内」。
+- 这不是权限没勾，**重新授权十次也没用**。正确做法：请**目标部门的人**来点「允许」。
+- 想先确认：让用户告诉你他自己在哪个部门，或先问清楚这页归哪个部门做。
 
 ## 范围对照表（申请时写英文键，页面上显示中文）
 
