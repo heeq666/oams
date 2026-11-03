@@ -37,7 +37,8 @@ bash scripts/quickstart.sh --database-url "postgresql://<账号>:<口令>@127.0.
 scripts/start-local-trial.sh          # 本机试用，默认开 OAMS_DEV_AUTOLOGIN=1
 # 跑测试先装开发依赖（[dev] 里有 pytest / httpx；只跑服务不需要它们）
 .venv/bin/pip install -e ".[dev]"    # uv 环境：VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
-.venv/bin/python -m pytest           # skip 数怎么读见 README「想跑测试」：主仓刚建库 4、灌了种子 0
+OAMS_DATABASE_URL=... .venv/bin/python -m pytest   # 不给库地址 = 整批 db 用例静默跳过，不是绿
+# skip 数怎么读见 README「想跑测试」：主仓刚建库 4、灌了种子 0
 ```
 
 ## 浏览器自动化

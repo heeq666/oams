@@ -210,7 +210,7 @@ OAMS="$VENV_DIR/bin/oams"
 [ -x "$OAMS" ] || die "命令行没装上：$OAMS 不存在（依赖安装失败，看上面的输出）"
 
 if [ "$WITH_TESTS" = "1" ]; then
-  note "测试依赖已装好：跑测试用 ${VENV_DIR}/bin/python -m pytest"
+  note "测试依赖已装好：跑测试先 export OAMS_DATABASE_URL（就是刚才给这个脚本的那条），再 ${VENV_DIR}/bin/python -m pytest"
 fi
 
 # 3. 建表 + 建管理员（重复跑都安全）。
