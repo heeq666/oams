@@ -12,10 +12,10 @@ OAMS 是组织内 AI 应用的**宿主与应用商店**。应用由各部门自�
 
 ## 一条命令跑起来
 
-需要 Python 3.11+ 和一个 PostgreSQL 数据库。机器上的 `python3` 版本不够时（macOS 自带的是 3.9）：`brew install python@3.11`，或者按下面第 1 步里的 uv 那条路来。
+需要两样东西：一个**空的 PostgreSQL 库**（脚本只建表，不替你建库），以及 **Python 3.11+ 或 uv**（macOS 自带的 `python3` 是 3.9，那就装 uv）。
 
 ```sh
-# 0. 先有一个库 —— db init 只建表，不替你建库
+# 0. 先有一个库
 docker run -d --name oams-pg \
   -e POSTGRES_USER='<账号>' -e POSTGRES_PASSWORD='<你的口令>' -e POSTGRES_DB='<库名>' \
   -p 127.0.0.1:<你的端口>:5432 postgres:16-alpine
@@ -24,45 +24,25 @@ docker run -d --name oams-pg \
 # 等它起来（约 2–3 秒）再往下跑；立刻连会报 connection refused
 ```
 
-装依赖两条路，按机器上的 Python 挑一条。
-
 ```sh
-# 1a. 机器上有 3.11+ 的 python：venv + pip
-python -m venv .venv
-. .venv/bin/activate
-pip install -e .
+# 1. 一条命令：装依赖 → 建表 → 建管理员 → 起服务 → 打印能点开的登录地址
+bash scripts/quickstart.sh --database-url "postgresql://<账号>:<口令>@127.0.0.1:<你的端口>/<库名>"
+# 库地址也可以先 export OAMS_DATABASE_URL 再跑；脚本不写 .env、也不改你已有的 .env
+# 端口默认 8000，被占就加 --port 8080；管理员默认 ADMIN001，可用 --admin-code 改
+# 想免登录试用（右下角出身份切换角标）：OAMS_DEV_AUTOLOGIN=1 bash scripts/quickstart.sh ...
 ```
 
-```sh
-# 1b. 没有 3.11+，改用 uv 管 Python：uv venv + uv pip
-uv venv --python 3.12 .venv
-. .venv/bin/activate
-uv pip install -e .          # uv 建的 venv 没有 pip，装依赖就用 uv pip
-```
+它每一步重复跑都安全：机器上没有 3.11+ 的 `python3` 就用 uv 建一个（已有能用的 `.venv` 直接复用）；装依赖；`oams db init`；`oams bootstrap-admin`（库里已有管理员就跳过）；最后起服务，并把一个 `…/login?token=…` 的地址打出来，点进去就落到看板。
+
+**手敲老步骤会撞的两堵墙**（脚本都替你绕过去了）：
+
+- `python -m venv .venv` —— macOS 上只有 `python3`，`python: command not found`；而且自带的 3.9 装不起本项目（要 3.11+）。
+- 上一步失败留下半截 `.venv`，再跑 `uv venv --python 3.12 .venv` —— `Use the --clear flag…`。脚本会先清掉用不了的残留再建，不用你手动 `rm -rf`。
+
+想用真实会话（而不是点令牌链接）：
 
 ```sh
-# 2. 配库地址 —— 两种写法二选一
-#   A) 写进 .env（之后每条命令都读它）
-cp .env.example .env
-#      再把 .env 里这一行改成你自己的库：
-#      OAMS_DATABASE_URL=postgresql://<账号>:<口令>@127.0.0.1:<你的端口>/<库名>
-#   B) 不碰 .env，只在当前终端临时给（换个终端要重给一遍）
-export OAMS_DATABASE_URL="postgresql://<账号>:<口令>@127.0.0.1:<你的端口>/<库名>"
-# 口令别提交进仓库：.env 已在 .gitignore 里
-
-# 3. 建表、建管理员、起服务
-oams db init                  # 建表：把库结构建出来
-oams bootstrap-admin --name "系统管理员" --employee-code "ADMIN001" --org-code "COMPANY" --org-name "公司"
-oams serve                    # 默认 http://127.0.0.1:8000；端口被占就设 OAMS_BIND_PORT=<你的端口>
-```
-
-起来后打开 <http://127.0.0.1:8000>，会先停在登录页。进去有两条路：
-
-```sh
-export OAMS_DEV_AUTOLOGIN=1   # 本机试用：免登录，右下角出现身份切换角标；部署到共享环境前必须去掉
-
-oams issue-token --member-id <bootstrap 打印的 member_id>   # 真实会话：签一张令牌
-# 命令会直接打出能点开的登录地址（终端一行提示 + JSON 里的 login_url），贴进浏览器就进
+oams issue-token --employee-code ADMIN001   # 打印能点开的登录地址（终端一行提示 + JSON 里的 login_url）
 # 服务不在 8000 上时加 --base-url http://127.0.0.1:<你的端口>，或先 export OAMS_BASE_URL
 ```
 
