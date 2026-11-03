@@ -28,6 +28,7 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 
 ```sh
 # 一条命令：挑依赖路（有 uv 走 uv，没有才 pip）、装依赖、建表、建管理员、起服务并打印登录地址
+# 要跑测试就加 --with-tests（连 [dev] 依赖一起装，否则 pytest 会报 No module named pytest）
 bash scripts/quickstart.sh --database-url "postgresql://<账号>:<口令>@127.0.0.1:<端口>/<库名>"
 
 # 要单独操作时（都只用 .venv 里的命令，不依赖激活）
@@ -65,10 +66,12 @@ OAMS_DATABASE_URL=... .venv/bin/python -m pytest   # 不给库地址 = 整批 db
 - 中文优先：注释、文档、界面文案都用中文。
 - 提交前跑 `pytest`；改 UI 要截图自检（1440 / 1024 / 768 三档，窄屏不许横向滚动），工具与命令见「浏览器自动化」。
 - **验收 pytest 要两种机器状态都跑，并且看 skip 数**：本机有库 → **0 skipped**，这才是真绿；故意指向不存在的库 → 允许 skip，那只证明「无库不炸」。skip 数一涨就说明有库没被用上，别拿 `0 failed` 当验收口径。
+- **对外承诺要在干净环境里验**：改 README / quickstart / skill / 测试这类外人照着做的东西，推之前要在**全新 clone + 全新空库**上原样跑一遍才算数。拿主仓的 `.venv` 加 `PYTHONPATH` 跑不算外人环境——这道闸已经抓过两次（本机显示名写进断言、全新 clone 缺 pytest 依赖）。
 - **新库上最容易出的假绿：db 用例整批静默跳过。** 在一套刚建的空库上（没跑 `db init` 或没灌种子）直接 `pytest`，会得到「全绿 + 4 秒跑完」——**592 passed / 207 skipped / 0 failed**，看起来完美，实际数据库用例**一条都没跑**。原因在 `tests/conftest.py`：schema 没建时 `:259` 直接 `pytest.skip`，种子行缺时 `:237` 直接 skip（另有 `:270` 缺 `ADMIN001` 也 skip）。所以**跑全量前先确认 `db init` + `bootstrap-admin` + 两个种子脚本都跑过**，看到 `skipped` 不是 0 先查库，别急着报绿。参考（2026-11-01 实测，同一台机器）：空库无种子 → 592 passed / 207 skipped；种子齐 → 796 passed / 3 skipped（那 3 条是「内部重写脚本不随源码发布」的声明，属正常）。
 - **跑全量有两条禁令**：**不许套 `timeout`**——本机没有这个命令，套上去整轮根本没跑，你却以为跑了；**也不许用管道取退出码**——`pytest … | tail` 的 `$?` 是 `tail` 的 0，测试全挂也报成功。成功与否**只看 pytest 自己最后那行汇总**（`N passed` / `N failed` / `N skipped`）；要存日志就重定向到文件（`pytest > /tmp/pt.txt 2>&1; echo "exit=$?"`，退出码要在同一行紧接命令取，别跨管道）。依据：2026-11-01 一次「跑过全量」两条禁令同时踩中，整轮其实没执行。
 - **同一时间只允许一个人跑全量 pytest**：两人同时跑会互相踩出假红——同一棵树、同一个库上并行跑到 1 failed / 809 passed，串行重跑是 810 passed。并行期间看到的红先当无效结果，串行重跑过再下结论。
 - db 用例不许在 import 期写 `OAMS_DATABASE_URL`，地址一律由 fixture 注入。
+- **新用例不许依赖「这台机器上恰好有」的数据**：管理员显示名、种子行、条数这类，在别人的库或全新空库里都不一样。要么在用例自己的事务里自造（结束 `ROLLBACK TO SAVEPOINT`），要么先从库里查出来再比；**别改断言去迁就某台机器**。反例：断言最新动态是「系统管理员」，而按文档 `bootstrap-admin --name 管理员` 建的新库里叫「管理员」——开发库绿、干净库必红。
 - **查不到条目时，先看页面是「草稿版」还是「已启用版」**：`_entry_mode_for`（`app/oams/web.py:585`）只有 `status == "active"` 才走 `entry_mode='live'`，其余一律 `draft`——条目落在 active 版上时，用一张还在审核的草稿版页面去查必然查不到，表现为「数据明明在、用例假红」。反例形状：拿库里已有的条目直接去查 `pending` 页面（`16f3e6b^` 上红过一次，出处 `08bd166` 那两条）。写用例时把目标版本真走完「提交 → 部门初审通过」，别只插数据。
 - **动过 Python 模块就重启服务再验页面**：模板每次从磁盘读（Jinja loader，`app/oams/render.py:753` 的 `_ENV`），Python 模块只在进程启动时 import 一次、再把函数对象绑进模板全局（`render.py:762` 的 `_ENV.globals.update(...)`）。所以改完 `render.py` 这类模块的函数签名再刷页面，跑着的旧进程还算旧签名，报 `TypeError: input_for_key() got an unexpected keyword argument 'prefill'`（2026-11-01 演示站 500 即此）。**不重启就验的是新旧混着的组合**，那种「验过了」不算数。
 - 不往生产库写、不连公网暴露 PostgreSQL；改动 `.env` 前先看 `.env.example`。
