@@ -18,21 +18,32 @@ from oams.schemas import (APP_SCOPES, AppCodeCreate, AppRevokeRequest, AppTokenR
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
                              WorkItemCreate, WorkItemUpdate)
 from oams.security import (active_org_unit_ids, current_principal, has_company_scope,
-                              has_permission, issue_session, require_org_unit_access,
+                              has_permission, issue_session, principal_for_token,
+                              principal_from_request, require_org_unit_access,
                               require_permission, revoke_session)
 
 app = FastAPI(title="Company OAMS API", version="0.1.0")
 
 
 def audit(conn, actor_id: UUID, event_type: str, subject_type: str, subject_id: UUID, reason: str,
-          after: dict[str, Any], before: dict[str, Any] | None = None):
+          after: dict[str, Any], before: dict[str, Any] | None = None,
+          metadata: dict[str, Any] | None = None):
+    """写一条审计。
+
+    ``metadata`` 是给「事后要按某个键查」的东西留的：接入方那几条事件把 app_id
+    放在这里，于是 `metadata->>'app_id'` 一句就能把「这个应用做过的所有事」捞出来，
+    不用去 after_state 里猜结构。
+    """
+
     conn.execute(
         """INSERT INTO oams.workforce_audit_events
-           (actor_member_id, event_type, subject_type, subject_id, reason, before_state, after_state)
-           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+           (actor_member_id, event_type, subject_type, subject_id, reason, before_state, after_state,
+            metadata)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
         (actor_id, event_type, subject_type, subject_id, reason,
          Jsonb(before, dumps=lambda obj: json.dumps(obj, default=str)) if before is not None else None,
-         Jsonb(after, dumps=lambda obj: json.dumps(obj, default=str))),
+         Jsonb(after, dumps=lambda obj: json.dumps(obj, default=str)),
+         Jsonb(metadata or {}, dumps=lambda obj: json.dumps(obj, default=str))),
     )
 
 
@@ -1989,9 +2000,28 @@ def exchange_app_token(payload: AppTokenRequest):
     }
 
 
+def _api_or_browser_principal(request: Request) -> dict[str, Any]:
+    """撤销与查看授权这两种「人来办」的请求：Bearer 或浏览器会话都收。
+
+    App 自己不需要这两个出口——它们是为「本人或公司管理员在页面上办理」准备的，
+    所以不能只认 Bearer（那个人手上没有运维令牌）。
+    """
+
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("bearer "):
+        row = principal_for_token(header[7:].strip())
+        if row is None:
+            raise HTTPException(status_code=401, detail="令牌无效、已过期或已被吊销")
+        return row
+    member = principal_from_request(request)
+    if member is None:
+        raise HTTPException(status_code=401, detail="需要浏览器会话或 Bearer 令牌")
+    return member
+
+
 @app.get("/api/apps/authorizations")
 def list_app_authorizations(include_revoked: bool = False,
-                            principal: dict = Depends(current_principal)):
+                            principal: dict = Depends(_api_or_browser_principal)):
     """我自己允许过哪些应用——默认只列还能用的，撤销过的留在审计里。"""
     filter_sql = "" if include_revoked else " AND a.revoked_at IS NULL AND a.valid_until > now()"
     with connection() as conn:
@@ -2005,35 +2035,54 @@ def list_app_authorizations(include_revoked: bool = False,
     return [dict(row) for row in rows]
 
 
+def revoke_authorization(conn, actor_member_id, authorization_id, reason: str) -> int:
+    """把一票断开，并吊销这个应用替这个人换出去的所有票；返回吊销了几张。
+
+    「我的授权」那页与 JSON 出口共用这一条：断开这件事只有一个行为，不能两处各写一份。
+    任何一刻都不留「票还没到期」的窗口——人点了断开，票就是断的。
+    """
+
+    row = conn.execute(
+        """SELECT a.*, p.name AS app_name FROM oams.app_authorizations a
+             JOIN oams.connected_apps p USING (app_id)
+            WHERE a.authorization_id = %s""", (authorization_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="没有这条授权")
+    if row["member_id"] != actor_member_id and not has_company_scope(conn, actor_member_id):
+        raise HTTPException(status_code=403, detail="只有被代表的本人或公司管理员能撤销")
+    if row["revoked_at"] is not None:
+        return 0
+    conn.execute(
+        "UPDATE oams.app_authorizations SET revoked_at = now(), revoke_reason = %s "
+        "WHERE authorization_id = %s", (reason, authorization_id))
+    killed = conn.execute(
+        """UPDATE oams.workforce_sessions SET revoked_at = now()
+            WHERE auth_provider = %s AND member_id = %s AND revoked_at IS NULL
+            RETURNING session_id""",
+        (f"{APP_PROVIDER_PREFIX}{row['app_id']}", row["member_id"])).fetchall()
+    actor = conn.execute(
+        "SELECT display_name FROM oams.workforce_members WHERE member_id = %s",
+        (actor_member_id,)).fetchone()
+    who = actor["display_name"] if actor else "某人"
+    audit(conn, actor_member_id, "app.authorization.revoked", "app_authorization",
+          authorization_id,
+          f"通过 {row['app_name']} 代表 {who} 撤销授权（同时吊销 {len(killed)} 张票）",
+          {"app_id": str(row["app_id"]), "scopes": list(row["scopes"] or []),
+           "sessions_revoked": len(killed), "reason": reason},
+          metadata={"app_id": str(row["app_id"]), "app_name": row["app_name"]})
+    return len(killed)
+
+
 @app.post("/api/apps/authorizations/{authorization_id}/revoke")
 def revoke_app_authorization(authorization_id: UUID, payload: AppRevokeRequest | None = None,
-                             principal: dict = Depends(current_principal)):
-    """撤销一票：同一刻把这个应用换出去的票一起吊销，不留「还没到期」的窗口。"""
+                             principal: dict = Depends(_api_or_browser_principal)):
+    """撤销一票（JSON 出口）。行为本身在 revoke_authorization。"""
+
+    reason = (payload.reason.strip() if payload and payload.reason else "") or "revoked from the API"
     with connection() as conn:
-        row = conn.execute(
-            """SELECT a.*, p.name AS app_name FROM oams.app_authorizations a
-                 JOIN oams.connected_apps p USING (app_id)
-                WHERE a.authorization_id = %s""", (authorization_id,)).fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="没有这条授权")
-        if row["member_id"] != principal["member_id"] and not has_company_scope(conn, principal["member_id"]):
-            raise HTTPException(status_code=403, detail="只有被代表的本人或公司管理员能撤销")
-        reason = (payload.reason.strip() if payload and payload.reason else "") or "revoked from the API"
-        if row["revoked_at"] is None:
-            conn.execute(
-                "UPDATE oams.app_authorizations SET revoked_at = now(), revoke_reason = %s "
-                "WHERE authorization_id = %s", (reason, authorization_id))
-            killed = conn.execute(
-                """UPDATE oams.workforce_sessions SET revoked_at = now()
-                    WHERE auth_provider = %s AND member_id = %s AND revoked_at IS NULL
-                    RETURNING session_id""",
-                (f"{APP_PROVIDER_PREFIX}{row['app_id']}", row["member_id"])).fetchall()
-            audit(conn, principal["member_id"], "app.authorization.revoked", "app_authorization",
-                  authorization_id,
-                  f"通过 {row['app_name']} 代表 {principal['display_name']} 撤销授权（同时吊销 {len(killed)} 张票）",
-                  {"app_id": str(row["app_id"]), "scopes": list(row["scopes"] or []),
-                   "sessions_revoked": len(killed), "reason": reason})
-        else:
-            killed = []
+        killed_count = revoke_authorization(conn, principal["member_id"], authorization_id, reason)
     return {"authorization_id": str(authorization_id), "revoked": True,
-            "sessions_revoked": len(killed)}
+            "sessions_revoked": killed_count}
+
+
+
