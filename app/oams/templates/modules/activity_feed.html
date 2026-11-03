@@ -2,6 +2,7 @@
 {% set p = params_of(module) %}
 {% set items = activity_items(p.get('limit')) %}
 <section class="wh-m wh-display wh-activity-feed" data-type="activity_feed">
+  {% if sample_data() %}<p class="wh-meta">示例数据：预览里用样例数画出样子，真页面按这一页的实际条目统计。</p>{% endif %}
   {% if items %}
   <ul class="wh-feed">
     {% for item in items %}
