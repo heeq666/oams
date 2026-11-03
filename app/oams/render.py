@@ -613,6 +613,15 @@ def metric_unit(metric_key: Any) -> str:
     return "" if unit in ("%", "元") else unit
 
 
+def sample_data() -> bool:
+    """预览用的是样例数，真页面按条目统计——模板据此标一句「示例」。
+
+    两种视图共用同一套模板，只有 mode 不同（见模块 docstring），所以这里读 mode，
+    不另开一个开关；否则总有一天两边不一致。
+    """
+    return _state().mode == "preview"
+
+
 def status_counts() -> list[dict]:
     """Status distribution from aggregates; tolerates either key shape."""
     aggregates = _state().aggregates
@@ -620,9 +629,13 @@ def status_counts() -> list[dict]:
     seen = set()
     for word in status_options():
         standard = str((_state().descriptor.get("status_map") or {}).get(word, ""))
-        raw = aggregates.get(f"status.{standard}") if standard else None
+        # 先认部门自己的词：两个词可能映到同一个标准态（等配件 / 等厂商都是 blocked），
+        # 只读标准态会把两条各算一遍、加起来比条目总数还多。
+        raw = aggregates.get(f"status.{word}")
+        if raw is None and standard:
+            raw = aggregates.get(f"status.{standard}")
         if raw is None:
-            raw = aggregates.get(f"status.{word}", 0)
+            raw = 0
         rows.append({"label": str(word), "standard": standard,
                      "value": float(raw or 0)})
         seen.add(word)
@@ -782,6 +795,7 @@ _ENV.globals.update({
     "metric_name": metric_name,
     "metric_unit": metric_unit,
     "status_counts": status_counts,
+    "sample_data": sample_data,
     "rank_rows": rank_rows,
     "activity_items": activity_items,
     "as_int": _as_int,

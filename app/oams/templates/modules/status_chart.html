@@ -2,6 +2,7 @@
 {% set rows = status_counts() %}
 {% set total = rows | sum(attribute='value') %}
 <section class="wh-m wh-display wh-status-chart" data-type="status_chart">
+  {% if sample_data() %}<p class="wh-meta">示例数据：预览里用样例数画出样子，真页面按这一页的实际条目统计。</p>{% endif %}
   {% if not total %}
   <p class="wh-empty">还没有状态数据。</p>
   {% else %}

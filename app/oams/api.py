@@ -10,6 +10,7 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, RaiseException, 
 from psycopg.types.json import Jsonb
 import json
 
+from oams import admin_labels
 from oams.db import connection
 from oams.schemas import (AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
@@ -1451,6 +1452,85 @@ def aggregate_entries(conn, org_unit_id, metric_key, interface_id=None):
                 "value": None, "entries": [], "entry_count": 0}
 
 
+#: render 的状态分布读这两组键：`status.<部门词>`（本页字段里那个词）与
+#: `status.<标准态>`（planned / in_progress / blocked / done）。
+STATUS_AGGREGATE_PREFIX = "status."
+
+#: 计入数字的那两种 rollup 状态：草稿与已撤回不是干过的活，不该进分布图。
+COUNTED_ROLLUP_STATES = ("counted", "counted_unlinked")
+
+#: 动态流一次给几行（activity_feed 自己的默认也是 10）。
+ACTIVITY_LIMIT = 10
+
+
+def _status_field_key(descriptor):
+    """descriptor 里映射到标准 status 的那个字段 key（部门词就存在 extra[它]）。"""
+    for field in (descriptor or {}).get("fields") or []:
+        if isinstance(field, dict) and field.get("map_to") == "status":
+            return field.get("key")
+    return None
+
+
+def _status_tally(rows):
+    """四个标准态的真实计数；没有状态的条目不编一个出来。"""
+    tally = {}
+    for row in rows:
+        standard = str(row.get("status") or "")
+        if standard:
+            tally[standard] = tally.get(standard, 0) + 1
+    return tally
+
+
+def _status_word_tally(descriptor, rows):
+    """本页字段里那个部门词的真实计数（`等配件` / `等厂商` 各自算各自的）。
+
+    先看 extra[字段 key]（口径 A 起条目自己带着部门词）；老条目没有词，就只在该标准态
+    唯一对应一个部门词时归过去，多对一不猜——把「等配件」算成「等厂商」比留空更糟。
+    """
+    status_map = (descriptor or {}).get("status_map") or {}
+    key = _status_field_key(descriptor)
+    tally = {}
+    for row in rows:
+        word = (row.get("extra") or {}).get(key) if key else None
+        if not isinstance(word, str) or word not in status_map:
+            standard = str(row.get("status") or "")
+            matches = [word for word, mapped in status_map.items() if mapped == standard]
+            word = matches[0] if len(matches) == 1 else None
+        if word:
+            tally[word] = tally.get(word, 0) + 1
+    return tally
+
+
+def _page_activity(conn, interface_id, limit=ACTIVITY_LIMIT):
+    """这一页真发生过的动作，来源是既有的审计表（不另建流水表）。
+
+    取两类：属于这一页的条目（`interface_entry.*`）与这一页自身（`interface.*`）；
+    两者都按整页口径跨版本取，跟列表与数字同一个范围。没有事件就返回空，由模板说空态。
+    """
+    rows = conn.execute(
+        "SELECT e.event_type, e.occurred_at, COALESCE(m.display_name, '') AS actor "
+        "FROM oams.workforce_audit_events e "
+        "LEFT JOIN oams.workforce_members m ON m.member_id = e.actor_member_id "
+        "WHERE (e.subject_type = 'interface_entry' AND e.subject_id IN ("
+        "        SELECT x.entry_id FROM oams.interface_entries x WHERE x.interface_id IN ("
+        "          SELECT v.interface_id FROM oams.interfaces v WHERE (v.org_unit_id, v.slug) = ("
+        "            SELECT w.org_unit_id, w.slug FROM oams.interfaces w WHERE w.interface_id = %s)))) "
+        "   OR (e.subject_type = 'interface' AND e.subject_id IN ("
+        "        SELECT v.interface_id FROM oams.interfaces v WHERE (v.org_unit_id, v.slug) = ("
+        "          SELECT w.org_unit_id, w.slug FROM oams.interfaces w WHERE w.interface_id = %s))) "
+        "ORDER BY e.occurred_at DESC, e.event_id DESC LIMIT %s",
+        (interface_id, interface_id, limit)).fetchall()
+    activity = []
+    for row in rows:
+        when = row.get("occurred_at")
+        activity.append({
+            "when": when.astimezone().strftime("%m-%d %H:%M") if when else "",
+            "what": admin_labels.describe_event(row.get("event_type")),
+            "who": row.get("actor") or "",
+        })
+    return activity
+
+
 def build_department_aggregates(conn, org_unit_id, descriptor=None, interface_id=None):
     """Everything a department page and a board panel need about its numbers.
 
@@ -1470,12 +1550,26 @@ def build_department_aggregates(conn, org_unit_id, descriptor=None, interface_id
         panel = dict(empty)
         panel.update({"available": True, "interfaces": [], "metrics": [], "aggregates": {}})
         totals = {state: 0 for state in DEPARTMENT_ROLLUP_STATES}
+        activity = []
         for page in pages:
             page_interface_id = page.get("interface_id")
             counts = (entry_state_counts(conn, page_interface_id) if page_interface_id is not None
                       else {state: 0 for state in DEPARTMENT_ROLLUP_STATES})
             for state, count in counts.items():
                 totals[state] = totals.get(state, 0) + count
+            # 状态分布与动态流：真数据，不是预览里那套样例数。只算计入数字的条目，
+            # 草稿与已撤回不进分布图（它们不是干过的活）。
+            counted_rows = ([row for row in page_entries(conn, page_interface_id)
+                             if row.get("rollup_state") in COUNTED_ROLLUP_STATES]
+                            if page_interface_id is not None else [])
+            for standard, number in _status_tally(counted_rows).items():
+                key = STATUS_AGGREGATE_PREFIX + standard
+                panel["aggregates"][key] = panel["aggregates"].get(key, 0) + number
+            for word, number in _status_word_tally(page.get("descriptor"), counted_rows).items():
+                key = STATUS_AGGREGATE_PREFIX + word
+                panel["aggregates"][key] = panel["aggregates"].get(key, 0) + number
+            if page_interface_id is not None:
+                activity.extend(_page_activity(conn, page_interface_id))
             page_metrics = []
             for binding in _descriptor_bindings(page.get("descriptor")):
                 column = _field_map_to(page.get("descriptor"), binding.get("from_field"))
@@ -1513,6 +1607,8 @@ def build_department_aggregates(conn, org_unit_id, descriptor=None, interface_id
                 "entry_count": sum(counts.values()),
                 "metrics": page_metrics,
             })
+        if activity:
+            panel["aggregates"]["activity"] = activity[:ACTIVITY_LIMIT]
         panel["counts"] = totals
         panel["total"] = sum(totals.values())
         return panel
