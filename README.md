@@ -61,7 +61,16 @@ oams issue-token --employee-code ADMIN001   # 打印能点开的登录地址（�
 
 也可以在第一次就一起装上：`bash scripts/quickstart.sh --database-url … --with-tests`。
 
-**skip 数怎么读**：有库时正常只有 **3 skipped**（`tests/test_opensource_pw_audit.py` 整组——公开版没带内部重写脚本，那组判据只在主仓跑，属设计性跳过）。**一处种子都没灌的空库**是 **7 skipped**，多出来的那几条是 `tests/conftest.py` 在「schema 没建 / 缺种子行 / 缺 ADMIN001」时静默跳过的数据库用例——那不是绿，是没验。看到 skip 比预期多，先查库（`oams db init` + `bootstrap-admin` + 两个种子脚本跑过没有）。
+**skip 数怎么读**（2026-11-03 在真·全新 clone 上量的，库 55433）：
+
+| 库里有什么 | 主仓（带内部重写脚本） | 公开版 clone（脚本被剥掉） |
+| --- | --- | --- |
+| 刚 `quickstart` 完：只有表和一个管理员 | **4 skipped** | **7 skipped** |
+| 灌过部门种子（`load_department_data.py` + 四个 `seed-live-interface.py`） | **0 skipped** | **3 skipped** |
+
+多出来的两种跳过各有出处，都不是「没验到功能」：`tests/test_collab_directory.py` 那 4 条要有两个以上在职成员才能跑（只有 ADMIN001 时跳过，灌种子就有）；`tests/test_opensource_pw_audit.py` 那 3 条是公开版没带内部重写脚本时的**设计性**跳过，反而证明剥离生效。
+
+真正的假绿是另一类：`tests/conftest.py` 在「schema 没建 / 缺种子行 / 缺 ADMIN001」时会让整批数据库用例静默跳过。看到 skip 比上表多，先按 `oams db init` → `bootstrap-admin` → 种子脚本的顺序查库。
 
 ## 建第一页
 
