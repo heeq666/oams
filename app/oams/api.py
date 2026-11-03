@@ -47,6 +47,11 @@ def audit(conn, actor_id: UUID, event_type: str, subject_type: str, subject_id: 
     )
 
 
+def _submitted_via_label(value: str | None) -> str:
+    """库里的枚举只有 human / agent 两种，别把英文值直接写进人看的句子。"""
+    return "AI 助手" if value == "agent" else "本人"
+
+
 @app.get("/health/live")
 def live():
     return {"status": "ok"}
@@ -88,7 +93,8 @@ def insert_org_unit(conn, payload: OrgUnitCreate, actor_member_id: Any) -> dict[
                RETURNING org_unit_id, parent_org_unit_id, org_code, name, unit_type, status""",
             (payload.org_code, payload.name, payload.parent_org_unit_id, payload.unit_type),
         ).fetchone()
-        audit(conn, actor_member_id, "org_unit.created", "org_unit", row["org_unit_id"], "created through management API", row)
+        audit(conn, actor_member_id, "org_unit.created", "org_unit", row["org_unit_id"],
+              f"通过管理接口新建了部门「{row['name']}」", row)
         return row
     except UniqueViolation:
         raise HTTPException(status_code=409, detail="org_code already exists")
@@ -204,7 +210,8 @@ def insert_member(conn, payload: MemberCreate, actor_member_id: Any) -> dict[str
                RETURNING member_id, employee_code, display_name, employment_status, joined_at""",
             (payload.employee_code, payload.display_name, payload.joined_at),
         ).fetchone()
-        audit(conn, actor_member_id, "member.created", "member", member["member_id"], "created through management API", member)
+        audit(conn, actor_member_id, "member.created", "member", member["member_id"],
+              f"通过管理接口新建了成员「{member['display_name']}」", member)
         return member
     except UniqueViolation:
         raise _conflict(CONFLICT_EMPLOYEE_CODE, "employee code already exists")
@@ -572,7 +579,7 @@ def update_work_item(work_item_id: UUID, payload: WorkItemUpdate,
                 params,
             ).fetchone()
             audit(conn, actor["member_id"], "work_item.updated", "work_item", work_item_id,
-                  "updated through management API", row, prior)
+                  f"通过管理接口更新了工作项「{row['title']}」", row, prior)
             return row
     except CheckViolation:
         raise HTTPException(status_code=422, detail="blocked work items require a non-empty blocked_reason")
@@ -618,7 +625,7 @@ def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: An
             ).fetchone()
             conn.execute("UPDATE oams.work_items SET updated_at = now() WHERE work_item_id = %s", (work_item_id,))
             audit(conn, actor_member_id, "work_item_report.created", "work_item_report", row["report_id"],
-                  f"progress submitted via {payload.submitted_via}", row)
+                  f"通过 {_submitted_via_label(payload.submitted_via)} 提交了进展", row)
             return row
     except CheckViolation:
         raise HTTPException(status_code=422, detail="evidence is required and progress_value must be between 0 and 100")
@@ -917,7 +924,7 @@ def insert_work_item(conn, payload: WorkItemCreate, actor_member_id: Any) -> dic
          payload.blocked_reason, payload.needs_decision, actor_member_id),
     ).fetchone()
     audit(conn, actor_member_id, "work_item.created", "work_item", row["work_item_id"],
-          "created through management API", row)
+          f"通过管理接口新建了工作项「{row['title']}」", row)
     return row
 
 
@@ -929,7 +936,7 @@ def insert_position(conn, payload: PositionCreate, actor_member_id: Any) -> dict
         (payload.position_code, payload.title, payload.org_unit_id),
     ).fetchone()
     audit(conn, actor_member_id, "position.created", "position", position["position_id"],
-          "created through management API", position)
+          f"通过管理接口新建了岗位「{position['title']}」", position)
     return position
 
 
@@ -1983,7 +1990,7 @@ def exchange_app_token(payload: AppTokenRequest):
         str(authorization["member_id"]),
         provider=f"{APP_PROVIDER_PREFIX}{row['app_id']}",
         expires_at=authorization["valid_until"],
-        reason=f"connected app {row['app_name']} exchanged an approved code")
+        reason=f"接入方「{row['app_name']}」凭一次码换到了票")
     with connection() as conn:
         conn.execute("UPDATE oams.app_codes SET token_issued_at = now() WHERE code = %s", (code,))
         conn.execute(

@@ -25,7 +25,7 @@ def new_token() -> str:
 
 def issue_session(member_id: str, provider: str = "administrator-issued",
                   expires_at: datetime | None = None,
-                  reason: str = "session issued through trusted operator CLI") -> tuple[str, datetime]:
+                  reason: str = "由运维命令行签发了登录会话") -> tuple[str, datetime]:
     """Mint a session token.
 
     ``expires_at`` exists for one caller only: a connected app's ticket must never
@@ -362,7 +362,7 @@ def revoke_session(conn, session_id: Any, member_id: Any) -> None:
     conn.execute(
         """INSERT INTO oams.workforce_audit_events
            (actor_member_id, event_type, subject_type, subject_id, reason)
-           VALUES (%s, 'session.revoked', 'session', %s, 'member ended the current session')""",
+           VALUES (%s, 'session.revoked', 'session', %s, '本人结束了当前登录会话')""",
         (member_id, session_id),
     )
 

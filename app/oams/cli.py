@@ -77,7 +77,7 @@ def bootstrap_admin(args):
         conn.execute(
             """INSERT INTO oams.workforce_audit_events
                (actor_member_id, event_type, subject_type, subject_id, reason, after_state)
-               VALUES (%s, 'system.bootstrapped', 'member', %s, 'initial administrator bootstrap', %s)""",
+               VALUES (%s, 'system.bootstrapped', 'member', %s, '初始化了第一位管理员', %s)""",
             (member["member_id"], member["member_id"], Jsonb({"position_id": str(position["position_id"]), "org_unit_id": str(org["org_unit_id"])})),
         )
     print(json.dumps({"member_id": str(member["member_id"]), "position_id": str(position["position_id"]), "org_unit_id": str(org["org_unit_id"])}, indent=2))
