@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}我的授权 · OAMS{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>我的授权</h1>
+    <p class="sub">这些应用可以代表你在 OAMS 里做事。断开之后，它们手里的票当场失效，想再连得重新让你点一次允许。</p>
+  </div>
+  <span class="pill neutral">连着 {{ authorizations | length }} 个</span>
+</div>
+
+{% if disconnected is not none %}
+<div class="flash" role="status">已断开。它手里的票一起作废了{% if disconnected and disconnected != '0' %}（吊销 {{ disconnected }} 张）{% endif %}。</div>
+{% endif %}
+
+{% if not authorizations %}
+<section class="card">
+  <p class="meta">现在没有应用代表你做事。外部 AI 来取一次码，你点了「允许」之后，它才会出现在这里。</p>
+</section>
+{% else %}
+<div class="grid-12">
+{% for a in authorizations %}
+<section class="card span-12">
+  <div class="card-head">
+    <div>
+      <span class="title-line">{{ a.app_name }}</span>
+      <p class="meta">
+        你允许于 {{ a.approved_at | dt }} · 用到 {{ a.valid_until | dt }}
+        {% if a.last_token_issued_at %}· 最近换过一次票{% endif %}
+      </p>
+    </div>
+    <span class="spacer"></span>
+    <form method="post" action="/apps/{{ a.authorization_id }}/revoke" class="inline">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit" class="btn ghost">断开</button>
+    </form>
+  </div>
+  <div class="row" style="gap:8px;flex-wrap:wrap">
+    {% for scope in a.scopes %}
+    <span class="pill neutral">{{ labels.get(scope, scope) }}</span>
+    {% else %}
+    <span class="meta">没有允许任何范围，它做不了任何事</span>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

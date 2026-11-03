@@ -920,6 +920,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     <div class="menu-name">{{ member.display_name }}</div>
     <div class="menu-role">{{ member.position_title or '未分配岗位' }}</div>
   </div>
+  {# 允许过的应用要能自己收回，所以入口跟「退出登录」同一层：账号里的东西。 #}
+  <a class="menu-item" role="menuitem" href="/apps">我的授权</a>
   <form method="post" action="/logout" class="inline">
     <button type="submit" class="menu-item" role="menuitem">退出登录</button>
   </form>

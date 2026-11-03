@@ -3260,6 +3260,17 @@ def _json_error(detail: str, code: int = 422):
     return JSONResponse({"error": detail}, status_code=code)
 
 
+def _app_name_for(conn, principal) -> str | None:
+    """这张票是哪个应用换来的（接入方票才有；普通会话返回 None）。"""
+
+    app_id = api.app_id_of(principal)
+    if not app_id:
+        return None
+    row = conn.execute("SELECT name FROM oams.connected_apps WHERE app_id = %s",
+                       (app_id,)).fetchone()
+    return row["name"] if row is not None else None
+
+
 @router.get("/connect/{code}", response_class=HTMLResponse)
 def connect_app_page(request: Request, code: str, error: str | None = None):
     """人打开一次一码的地方：看清是谁、要什么，再决定点不点。"""
@@ -3363,8 +3374,56 @@ def connect_app_approve(request: Request, code: str, csrf: str = Form(...),
                   f"通过 {row['app_name']} 代表 {member['display_name']} 允许：{labels}，"
                   f"有效期到 {valid_until.astimezone().strftime('%Y-%m-%d %H:%M')}",
                   {"app_id": str(row["app_id"]), "app_name": row["app_name"],
-                   "scopes": chosen, "valid_until": valid_until.isoformat()})
+                   "scopes": chosen, "valid_until": valid_until.isoformat()},
+                  metadata={"app_id": str(row["app_id"]), "app_name": row["app_name"]})
     return RedirectResponse(url=back + "?approved=1", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# 我的授权：允许过哪些应用、它们能做什么、到哪一天，以及一个「断开」
+#
+# 允许这一下是人在 /connect 里点的，收回也必须由人自己点得动。最早这一屏没有，
+# 只在允许成功那页写「找管理员在审计里按应用名撤」——而审计是只读的，等于没退路。
+# ---------------------------------------------------------------------------
+
+APPS_PAGE_PURPOSE = "oams:apps-page:v1"
+
+
+@router.get("/apps", response_class=HTMLResponse)
+def my_app_authorizations(request: Request, disconnected: str | None = None):
+    """我允许过的应用：范围用人话写、有效期写日期，每条一个「断开」。"""
+
+    member = _member(request)
+    if member is None:
+        return RedirectResponse(url="/login?next=/apps", status_code=302)
+    with connection() as conn:
+        rows = conn.execute(
+            """SELECT a.authorization_id, a.app_id, a.scopes, a.valid_until, a.approved_at,
+                      a.last_token_issued_at, p.name AS app_name
+                 FROM oams.app_authorizations a JOIN oams.connected_apps p USING (app_id)
+                WHERE a.member_id = %s AND a.revoked_at IS NULL AND a.valid_until > now()
+                ORDER BY a.approved_at DESC""", (member["member_id"],)).fetchall()
+    return TEMPLATES.TemplateResponse(request, "app_authorizations.html", {
+        "member": member,
+        "authorizations": rows,
+        "labels": api.APP_SCOPE_LABELS,
+        "csrf": _form_token(request, APPS_PAGE_PURPOSE),
+        "disconnected": disconnected,
+    })
+
+
+@router.post("/apps/{authorization_id}/revoke")
+def my_app_authorization_revoke(request: Request, authorization_id: UUID, csrf: str = Form(...)):
+    """断开一个应用：与 JSON 出口共用 api.revoke_authorization，票当场吊销。"""
+
+    member = _member(request)
+    if member is None:
+        return RedirectResponse(url="/login?next=/apps", status_code=302)
+    _check_form_token(request, csrf, APPS_PAGE_PURPOSE)
+    with connection() as conn:
+        killed = api.revoke_authorization(conn, member["member_id"], authorization_id,
+                                          "在「我的授权」里断开")
+    return RedirectResponse(url=f"/apps?disconnected={killed}", status_code=303)
 
 
 @router.post("/v1/interfaces", status_code=201)
@@ -3452,10 +3511,13 @@ async def api_create_interface(request: Request):
             (org_unit_id, slug, name, descriptor.get("schema_version", "0.1"), Jsonb(descriptor),
              target, version, live["interface_id"] if live is not None else None,
              principal["member_id"], principal["member_id"])).fetchone()
+        app_name = _app_name_for(conn, principal) or "接入方"
         api.audit(conn, principal["member_id"], "interface.created", "interface", row["interface_id"],
-                  "created through the connected-app API",
+                  f"通过 {app_name} 代表 {principal.get('display_name') or '这个人'} 新建了页面草稿"
+                  f"「{name}」",
                   {"slug": slug, "version_no": version,
-                   "app_id": api.app_id_of(principal)})
+                   "app_id": api.app_id_of(principal)},
+                  metadata={"app_id": api.app_id_of(principal), "slug": slug})
     return JSONResponse({
         "interface_id": str(row["interface_id"]),
         "org_unit_id": str(org_unit_id),
@@ -3554,9 +3616,14 @@ async def api_create_entry(request: Request, interface_id: UUID):
             "INSERT INTO oams.interface_entries (interface_id, " + keys + ") VALUES (%s, "
             + placeholders + ") RETURNING entry_id, title, status, note, evidence, reported_at",
             (interface_id, *columns.values())).fetchone()
+        app_name = _app_name_for(conn, principal) or "接入方"
+        wrote = "本页现行的条目" if mode == "live" else "草稿版里的条目"
         api.audit(conn, principal["member_id"], "interface_entry.created", "interface_entry",
-                  entry["entry_id"], "submitted through the connected-app API (" + mode + ")",
-                  dict(entry, app_id=api.app_id_of(principal)))
+                  entry["entry_id"],
+                  f"通过 {app_name} 代表 {principal.get('display_name') or '这个人'} 记了一条"
+                  f"「{entry['title']}」（{wrote}）",
+                  dict(entry, app_id=api.app_id_of(principal)),
+                  metadata={"app_id": api.app_id_of(principal)})
     return JSONResponse({
         "entry_id": str(entry["entry_id"]),
         "interface_id": str(interface_id),
