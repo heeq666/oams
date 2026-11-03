@@ -132,3 +132,26 @@ class ReportCreate(BaseModel):
 
 class ReportRetract(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
+
+
+# ---------------------------------------------------------------------------
+# 接入方（connected app）：它只能申请范围，不能申请身份
+# ---------------------------------------------------------------------------
+
+# 范围是**动作**（能做什么），不是**数据**（能看到几个部门）：部门边界永远由人
+# 的任职决定，应用只是替这个人动手。所以这里没有「全公司」这种范围。
+APP_SCOPES = ("entries:read:dept", "interfaces:draft", "entries:write")
+
+
+class AppCodeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    scopes: list[str] = Field(default_factory=list)
+    purpose: str | None = Field(default=None, max_length=200)
+
+
+class AppTokenRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=12)
+
+
+class AppRevokeRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)

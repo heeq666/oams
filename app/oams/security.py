@@ -23,9 +23,19 @@ def new_token() -> str:
     return secrets.token_urlsafe(40)
 
 
-def issue_session(member_id: str, provider: str = "administrator-issued") -> tuple[str, datetime]:
+def issue_session(member_id: str, provider: str = "administrator-issued",
+                  expires_at: datetime | None = None,
+                  reason: str = "session issued through trusted operator CLI") -> tuple[str, datetime]:
+    """Mint a session token.
+
+    ``expires_at`` exists for one caller only: a connected app's ticket must never
+    outlive the human's "允许" (app_authorizations.valid_until). Everything else
+    keeps the ordinary TTL, so a short-lived ticket cannot become a long one by
+    being issued from somewhere else.
+    """
     token = new_token()
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.session_ttl_hours)
+    if expires_at is None:
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.session_ttl_hours)
     with connection() as conn:
         member = conn.execute(
             "SELECT employment_status, token_version FROM oams.workforce_members WHERE member_id = %s FOR UPDATE",
@@ -39,7 +49,7 @@ def issue_session(member_id: str, provider: str = "administrator-issued") -> tup
         )
         conn.execute(
             "INSERT INTO oams.workforce_audit_events (event_type, subject_type, subject_id, reason, metadata) VALUES ('session.issued', 'member', %s, %s, %s)",
-            (member_id, "session issued through trusted operator CLI", Jsonb({"provider": provider})),
+            (member_id, reason, Jsonb({"provider": provider, "expires_at": expires_at.isoformat()})),
         )
     return token, expires_at
 
@@ -54,6 +64,7 @@ def principal_for_token(token: str) -> dict[str, Any] | None:
         row = conn.execute(
             """SELECT m.member_id, m.display_name, m.employment_status, m.token_version,
                       s.session_id, s.token_version AS session_token_version,
+                      s.auth_provider,
                       (SELECT p.title FROM oams.position_assignments a
                          JOIN oams.positions p USING (position_id)
                         WHERE a.member_id = m.member_id

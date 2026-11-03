@@ -516,6 +516,65 @@ CREATE TABLE IF NOT EXISTS oams.workforce_sessions (
 );
 
 --
+-- Name: connected_apps; Type: TABLE; Schema: oams; Owner: -
+--
+
+-- 接入方：一个「应用」是跑在外面的 AI / 脚本给自己起的名字（WorkBuddy 这类）。
+-- 它没有密码，也不能自己决定代表谁——只能拿一次性码换到「某人点过允许」的短期票。
+CREATE TABLE IF NOT EXISTS oams.connected_apps (
+    app_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    owner_member_id uuid,
+    status text DEFAULT 'active'::text NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone,
+    CONSTRAINT connected_apps_name_key UNIQUE (name),
+    CONSTRAINT connected_apps_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text])))
+);
+
+--
+-- Name: app_codes; Type: TABLE; Schema: oams; Owner: -
+--
+
+-- 一次性 6 位码：应用拿来换一张「等人点允许」的凭证。发码时不认人，认人发生在
+-- 人打开 /connect/<code> 点允许那一刻——码本身决定不了代表谁。
+CREATE TABLE IF NOT EXISTS oams.app_codes (
+    code text NOT NULL,
+    app_id uuid NOT NULL,
+    purpose text DEFAULT 'connect'::text NOT NULL,
+    requested_scopes text[] DEFAULT '{}'::text[] NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    approved_at timestamp with time zone,
+    approved_member_id uuid,
+    authorization_id uuid,
+    token_issued_at timestamp with time zone,
+    CONSTRAINT app_codes_check CHECK ((expires_at > created_at))
+);
+
+--
+-- Name: app_authorizations; Type: TABLE; Schema: oams; Owner: -
+--
+
+-- 人点过「允许」的那一票：(应用, 人) 一行，生效到 valid_until。撤销就是 revoked_at，
+-- 同时把这个应用的短期票一起吊销——票不会因为还没到期就继续能用。
+CREATE TABLE IF NOT EXISTS oams.app_authorizations (
+    authorization_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    app_id uuid NOT NULL,
+    member_id uuid NOT NULL,
+    scopes text[] DEFAULT '{}'::text[] NOT NULL,
+    valid_until timestamp with time zone NOT NULL,
+    approved_by uuid NOT NULL,
+    approved_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone,
+    revoke_reason text,
+    last_token_issued_at timestamp with time zone,
+    CONSTRAINT app_authorizations_check CHECK ((valid_until > approved_at))
+);
+
+--
 -- Name: approval_records approval_records_pkey; Type: CONSTRAINT; Schema: oams; Owner: -
 --
 
@@ -1667,6 +1726,134 @@ BEGIN
 EXCEPTION
         WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
 END $$;
+
+--
+-- Name: connected_apps connected_apps_pkey; Type: CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.connected_apps
+        ADD CONSTRAINT connected_apps_pkey PRIMARY KEY (app_id);
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: app_codes app_codes_pkey; Type: CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.app_codes
+        ADD CONSTRAINT app_codes_pkey PRIMARY KEY (code);
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: app_authorizations app_authorizations_pkey; Type: CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.app_authorizations
+        ADD CONSTRAINT app_authorizations_pkey PRIMARY KEY (authorization_id);
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: connected_apps connected_apps_owner_member_id_fkey; Type: FK CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.connected_apps
+        ADD CONSTRAINT connected_apps_owner_member_id_fkey FOREIGN KEY (owner_member_id) REFERENCES oams.workforce_members(member_id) ON DELETE RESTRICT;
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: connected_apps connected_apps_created_by_fkey; Type: FK CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.connected_apps
+        ADD CONSTRAINT connected_apps_created_by_fkey FOREIGN KEY (created_by) REFERENCES oams.workforce_members(member_id) ON DELETE RESTRICT;
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: app_codes app_codes_app_id_fkey; Type: FK CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.app_codes
+        ADD CONSTRAINT app_codes_app_id_fkey FOREIGN KEY (app_id) REFERENCES oams.connected_apps(app_id) ON DELETE RESTRICT;
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: app_codes app_codes_approved_member_id_fkey; Type: FK CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.app_codes
+        ADD CONSTRAINT app_codes_approved_member_id_fkey FOREIGN KEY (approved_member_id) REFERENCES oams.workforce_members(member_id) ON DELETE RESTRICT;
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: app_authorizations app_authorizations_app_id_fkey; Type: FK CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.app_authorizations
+        ADD CONSTRAINT app_authorizations_app_id_fkey FOREIGN KEY (app_id) REFERENCES oams.connected_apps(app_id) ON DELETE RESTRICT;
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: app_authorizations app_authorizations_member_id_fkey; Type: FK CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.app_authorizations
+        ADD CONSTRAINT app_authorizations_member_id_fkey FOREIGN KEY (member_id) REFERENCES oams.workforce_members(member_id) ON DELETE RESTRICT;
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: app_authorizations app_authorizations_approved_by_fkey; Type: FK CONSTRAINT; Schema: oams; Owner: -
+--
+
+DO $$
+BEGIN
+    ALTER TABLE ONLY oams.app_authorizations
+        ADD CONSTRAINT app_authorizations_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES oams.workforce_members(member_id) ON DELETE RESTRICT;
+EXCEPTION
+        WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $$;
+
+--
+-- Name: app_authorizations_live; Type: INDEX; Schema: oams; Owner: -
+--
+
+-- 一个 (应用, 人) 同时只有一票有效；撤销过的留着当历史，不挡下一次允许。
+CREATE UNIQUE INDEX IF NOT EXISTS app_authorizations_live
+    ON oams.app_authorizations (app_id, member_id) WHERE (revoked_at IS NULL);
 
 --
 -- PostgreSQL database dump complete

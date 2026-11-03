@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}连接 {{ app.app_name if app else '应用' }} · OAMS{% endblock %}
+{% block bodyclass %}auth{% endblock %}
+{# 这一屏只有一件事：让人看清「这个应用、代表我、能做这几件事、到哪一天」，
+   再点一次允许。导航在这里会分散注意力，和登录页同理。 #}
+{% block shell %}
+<div class="auth-wrap">
+  <div class="auth-col">
+    <a class="auth-brand" href="/board" aria-label="OAMS">
+      <img src="{{ static_url('brand/logo-login.png') }}" alt="OAMS" width="77" height="60">
+    </a>
+
+    {% if reason %}
+    <div class="auth-card">
+      <h1>这次连接不能继续</h1>
+      <p class="auth-error" role="alert">{{ reason }}</p>
+      <p class="auth-help">让发起它的应用重新取一个码，再打开一次。</p>
+      <p><a class="btn" href="/board">回看板</a></p>
+    </div>
+    {% elif authorization and app.approved_at %}
+    <div class="auth-card">
+      <h1>你允许了 {{ app.app_name }}</h1>
+      <p class="sub">这一票代表 <strong>{{ member.display_name }}</strong>，用到
+        <strong>{{ authorization.valid_until.strftime('%Y-%m-%d %H:%M') }}</strong> 为止。</p>
+      <ul class="connect-scopes">
+        {% for scope in authorization.scopes %}
+        <li>{{ labels.get(scope, scope) }}</li>
+        {% else %}
+        <li>（没有允许任何范围，它做不了任何事）</li>
+        {% endfor %}
+      </ul>
+      {% if authorization.revoked_at %}
+      <p class="auth-error" role="alert">这一票已被撤销，应用手里的票同时失效了。</p>
+      {% else %}
+      <p class="auth-help">回到应用里继续就行，它会自己拿这个码来换票。要用完之前撤销，找管理员在审计里按应用名撤。</p>
+      {% endif %}
+      <p><a class="btn" href="/board">回看板</a></p>
+    </div>
+    {% else %}
+    <form method="post" action="/connect/{{ code }}" class="auth-card">
+      <h1>允许 {{ app.app_name }} 代表你？</h1>
+      <p class="sub">
+        这是应用 <strong>{{ app.app_name }}</strong> 自己报的名字，不是 OAMS 发的证书——只在你认得它时才允许。
+        这个码 {{ app.expires_at.strftime('%H:%M') }} 前有效。
+      </p>
+      {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <fieldset class="field">
+        <legend>它想做的事（可只勾一部分）</legend>
+        {% for scope in scopes %}
+        <label class="connect-scope">
+          <input type="checkbox" name="scope" value="{{ scope }}"
+                 {% if scope == 'entries:read:dept' %}checked{% endif %}>
+          <span>{{ labels.get(scope, scope) }}</span>
+        </label>
+        {% else %}
+        <p class="auth-help">这个应用没有申请任何范围。</p>
+        {% endfor %}
+      </fieldset>
+      <div class="field">
+        <label for="days">这一票用到什么时候</label>
+        <select id="days" name="days">
+          {% for day in days_options %}
+          <option value="{{ day }}"{% if day == default_days %} selected{% endif %}>
+            {% if day == 1 %}1 天{% else %}{{ day }} 天{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">允许</button>
+      <p class="auth-help">
+        允许之后，它替你做的一切都记在你名下，审计里能看到是这个应用动的手。范围只在你的岗位权限之内，不会多出一点。
+      </p>
+    </form>
+    {% endif %}
+
+    <p class="auth-foot">OAMS · 这一下只该由你本人点</p>
+  </div>
+</div>
+{% endblock %}
