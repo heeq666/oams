@@ -160,16 +160,22 @@ class Human:
             return error.code
 
 
-def _signed_in(world) -> Human:
-    """以管理员身份真登录一次，拿到会话 cookie。"""
+def _signed_in_as(world, member_id: str) -> Human:
+    """以某个具体成员的身份真登录一次，拿到会话 cookie。"""
 
     from oams.security import issue_session
 
     human = Human(world["base"])
-    token, _ = issue_session(world["admin_member_id"])
+    token, _ = issue_session(member_id)
     status = human.post("/login", {"token": token})
     assert status in (200, 302, 303), status
     return human
+
+
+def _signed_in(world) -> Human:
+    """以管理员身份真登录一次，拿到会话 cookie。"""
+
+    return _signed_in_as(world, world["admin_member_id"])
 
 
 def _issue_code(world, scopes: list[str], name: str = "外部应用") -> dict:
@@ -466,3 +472,118 @@ def test_what_an_app_did_is_written_in_chinese_and_names_it(world):
     assert "「接入方靶页」" in rows[0]["reason"], rows[0]["reason"]
     assert "connected-app API" not in rows[0]["reason"], "审计理由不许是英文"
     assert rows[0]["app_id"], "按应用筛要靠 metadata.app_id，不能只靠名字"
+
+
+# ---------------------------------------------------------------------------
+# ⑨ 部门线索：descriptor 顶层写了就算数；一条都没有是 422，不是 403
+# ---------------------------------------------------------------------------
+
+
+def _draft_ticket(world) -> str:
+    """换一张只有「建草稿页」范围的票。"""
+
+    code = _issue_code(world, ["interfaces:draft"])
+    assert _allow(world, code["code"], ["interfaces:draft"]) in (302, 303)
+    status, ticket = _exchange(world, code["code"])
+    assert status == 200, ticket
+    return ticket["token"]
+
+
+def test_the_descriptor_naming_its_department_is_enough(world):
+    """descriptor 顶层自报 org_unit_code=GA，请求体不抄一遍，也该建得出来。
+
+    外部 AI 就是照说明书只交 descriptor 的；顶层那个字段被忽略时，我们回的是
+    403「你不在这个部门的范围内」，让它以为是人没权限——其实它什么都没做错。
+    """
+
+    token = _draft_ticket(world)
+    slug = "descriptor-says-ga-" + uuid.uuid4().hex[:6]
+    status, page = _post_json(
+        world["base"],
+        "/v1/interfaces",
+        {"slug": slug, "name": "只看 descriptor 的页", "descriptor": GA_DESCRIPTOR},
+        token=token,
+    )
+    assert status == 201, page
+    rows = _sql(
+        world,
+        """SELECT i.org_unit_id::text AS unit, o.org_code
+             FROM oams.interfaces i JOIN oams.org_units o USING (org_unit_id)
+            WHERE i.slug = %s""",
+        (slug,),
+    )
+    assert rows[0]["org_code"] == "GA", rows
+    assert rows[0]["unit"] == page["org_unit_id"]
+
+
+def test_a_page_with_no_department_anywhere_is_a_422_not_a_403(world):
+    """请求体和 descriptor 都没说部门：那是「没说清」，不是「没权限」。"""
+
+    token = _draft_ticket(world)
+    bare = {key: value for key, value in GA_DESCRIPTOR.items() if key != "org_unit_code"}
+    status, body = _post_json(
+        world["base"],
+        "/v1/interfaces",
+        {"slug": "no-department", "name": "没说部门", "descriptor": bare},
+        token=token,
+    )
+    assert status == 422, body
+    assert "org_unit_code" in body["error"], body
+
+
+def test_an_unknown_department_is_a_422_not_a_misleading_403(world):
+    """部门代码写错了，也要说「没有这个部门」，别让人回去猜自己的权限。"""
+
+    token = _draft_ticket(world)
+    status, body = _post_json(
+        world["base"],
+        "/v1/interfaces",
+        {"slug": "nope-department", "name": "写错部门", "org_unit_code": "NOPE",
+         "descriptor": GA_DESCRIPTOR},
+        token=token,
+    )
+    assert status == 422, body
+    assert "没有这个部门" in body["error"], body
+
+
+def test_a_person_outside_the_department_still_gets_the_403(world):
+    """真的不在范围内时，403 与那句话还得在——422 不能把这条也吞掉。"""
+
+    outsider = _sql(
+        world,
+        """WITH baru AS (
+               INSERT INTO oams.workforce_members (employee_code, display_name, employment_status)
+               VALUES ('OUTSIDER1', '外部门的人', 'active')
+               RETURNING member_id)
+           INSERT INTO oams.permission_grants
+                  (subject_type, member_id, resource, action, scope_type, valid_until, reason,
+                   approved_by, approved_at)
+           SELECT 'member', baru.member_id, 'workforce.reports', action, 'all',
+                  now() + interval '30 days', '用例：只给填报权限，不给公司级范围',
+                  baru.member_id, now()
+             FROM baru, (VALUES ('read'), ('submit')) AS wanted(action)
+           RETURNING member_id""",
+    )
+    outsider_id = str(outsider[0]["member_id"])
+
+    code = _issue_code(world, ["interfaces:draft"])
+    human = _signed_in_as(world, outsider_id)
+    status, html = human.get(f"/connect/{code['code']}")
+    assert status == 200, status
+    match = re.search(r'name="csrf" value="([^"]+)"', html)
+    assert match
+    assert human.post(
+        f"/connect/{code['code']}", {"csrf": match.group(1), "scope": ["interfaces:draft"],
+                                      "days": "7"}
+    ) in (302, 303)
+    status, ticket = _exchange(world, code["code"])
+    assert status == 200, ticket
+
+    status, body = _post_json(
+        world["base"],
+        "/v1/interfaces",
+        {"slug": "outsider-page", "name": "外部门的页", "descriptor": GA_DESCRIPTOR},
+        token=ticket["token"],
+    )
+    assert status == 403, body
+    assert "你不在这个部门的范围内" in body["detail"], body

@@ -3458,19 +3458,34 @@ async def api_create_interface(request: Request):
                 and has_permission(conn, principal["member_id"], "workforce.reports", "submit")):
             raise HTTPException(status_code=403, detail="建页面需要 workforce.reports 读写权限")
         api.require_app_scope(principal, "interfaces:draft")
+        # 部门线索的取法：请求体显式给的 > descriptor 顶层 > descriptor.meta。
+        # 顶层那条最要紧：descriptor 自己就写着 org_unit_code，调用方不该被迫再抄一遍。
         org_hint = payload.get("org_unit_id") or payload.get("org_unit_code")
         if not org_hint:
+            org_hint = descriptor.get("org_unit_code")
+        if not org_hint:
             org_hint = (descriptor.get("meta") or {}).get("org_unit_code")
-        unit = None
-        try:
-            unit = _resolve_department(conn, principal, UUID(str(org_hint)))
-        except (ValueError, TypeError):
-            unit = None
-        if unit is None and isinstance(org_hint, str):
+        if not org_hint:
+            return _json_error(
+                "没说清要建哪个部门的页面：请在请求体里给 org_unit_code（或 org_unit_id），"
+                "或写进 descriptor 的顶层 org_unit_code。")
+        # 先认出部门，再判权限：「认不出这个部门」是请求写错了，不是「你没有权限」。
+        row = None
+        if isinstance(org_hint, str) and org_hint.strip():
             row = conn.execute(
                 "SELECT org_unit_id FROM oams.org_units WHERE org_code = %s AND status = 'active'",
                 (org_hint.strip(),)).fetchone()
-            unit = _resolve_department(conn, principal, row["org_unit_id"]) if row else None
+        if row is None:
+            try:
+                row = conn.execute(
+                    """SELECT org_unit_id FROM oams.org_units
+                        WHERE org_unit_id = %s AND status = 'active'""",
+                    (UUID(str(org_hint)),)).fetchone()
+            except (ValueError, TypeError):
+                row = None
+        if row is None:
+            return _json_error(f"没有这个部门：{org_hint}——请给部门的 org_code（如 IT）或 org_unit_id")
+        unit = _resolve_department(conn, principal, row["org_unit_id"])
         if unit is None:
             raise HTTPException(status_code=403, detail="你不在这个部门的范围内")
         org_unit_id = unit["org_unit_id"]
