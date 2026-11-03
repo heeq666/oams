@@ -35,7 +35,9 @@ bash scripts/quickstart.sh --database-url "postgresql://<账号>:<口令>@127.0.
 .venv/bin/oams bootstrap-admin --name ... --employee-code ... --org-code ... --org-name ...
 .venv/bin/oams serve                 # 端口跟 OAMS_BIND_PORT
 scripts/start-local-trial.sh          # 本机试用，默认开 OAMS_DEV_AUTOLOGIN=1
-.venv/bin/python -m pytest            # 带 db 标记的用例在没数据库时跳过
+# 跑测试先装开发依赖（[dev] 里有 pytest / httpx；只跑服务不需要它们）
+.venv/bin/pip install -e ".[dev]"    # uv 环境：VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+.venv/bin/python -m pytest           # 有库应 3 skipped；空库无种子是 7 skipped（那是没验，不是绿）
 ```
 
 ## 浏览器自动化

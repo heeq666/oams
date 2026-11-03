@@ -50,6 +50,19 @@ oams issue-token --employee-code ADMIN001   # 打印能点开的登录地址（�
 
 命令是 `oams`。完整步骤与常见报错见[在你电脑上跑起来（本地试用）](docs/runbooks/local-trial.md)。
 
+### 想跑测试
+
+跑测试要另装一份**开发依赖**（`pytest`、`httpx`），它们不在运行依赖里：
+
+```sh
+.venv/bin/pip install -e ".[dev]"          # uv 建的环境：VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+.venv/bin/python -m pytest
+```
+
+也可以在第一次就一起装上：`bash scripts/quickstart.sh --database-url … --with-tests`。
+
+**skip 数怎么读**：有库时正常只有 **3 skipped**（`tests/test_opensource_pw_audit.py` 整组——公开版没带内部重写脚本，那组判据只在主仓跑，属设计性跳过）。**一处种子都没灌的空库**是 **7 skipped**，多出来的那几条是 `tests/conftest.py` 在「schema 没建 / 缺种子行 / 缺 ADMIN001」时静默跳过的数据库用例——那不是绿，是没验。看到 skip 比预期多，先查库（`oams db init` + `bootstrap-admin` + 两个种子脚本跑过没有）。
+
 ## 建第一页
 
 前提：**先有一个部门，以及那个部门里能签字的负责人**——在 `/setup` 建成员时勾上「部门负责人」，这个人才有权一审；没人能签，下面这一步会卡死。

@@ -14,6 +14,7 @@
 #   bash scripts/quickstart.sh --database-url "postgresql://<账号>:<口令>@127.0.0.1:<端口>/<库名>"
 #   OAMS_DATABASE_URL=... bash scripts/quickstart.sh
 #   bash scripts/quickstart.sh --database-url ... --port 8080 --admin-code ADMIN001
+#   bash scripts/quickstart.sh --database-url ... --with-tests   # 连 pytest 一起装上
 #
 # 前置：库里得先有那个库（脚本只建表，不替你建库）；端口默认 8000，可用 --port 或 OAMS_BIND_PORT 改。
 
@@ -27,6 +28,9 @@ ADMIN_CODE="ADMIN001"
 ORG_CODE="COMPANY"
 ORG_NAME="公司"
 VENV_DIR="${OAMS_VENV_DIR:-.venv}"
+# 默认只装跑服务要的东西。--with-tests 才装上 [dev]（pytest / httpx）：
+# 一个只来试用的人不该为测试依赖多等一次下载。
+WITH_TESTS=0
 
 die() {
   printf '错误：%s\n' "$1" >&2
@@ -78,6 +82,8 @@ while [ "$#" -gt 0 ]; do
       ORG_NAME="$2"; shift 2 ;;
     --org-name=*)
       ORG_NAME="${1#*=}"; shift ;;
+    --with-tests)
+      WITH_TESTS=1; shift ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -138,16 +144,23 @@ venv_ready() {
 
 # 装依赖：有 pip 用 pip，没有就借 uv（uv 建的 venv 没有 pip），再没有就用 venv 自带的 ensurepip 补一个。
 install_into_venv() {
+  # 装的是哪些 extra：不带 --with-tests 只装运行依赖，带上才加 [dev]。
+  local target="-e ."
+  local label="."
+  if [ "$WITH_TESTS" = "1" ]; then
+    target='-e .[dev]'
+    label=".[dev]（含 pytest）"
+  fi
   if "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
-    note "装依赖（pip install -e .）"
-    "$VENV_DIR/bin/python" -m pip install -q -e .
+    note "装依赖（pip install $label）"
+    "$VENV_DIR/bin/python" -m pip install -q $target
   elif command -v uv >/dev/null 2>&1; then
-    note "装依赖（uv pip install -e .）"
-    VIRTUAL_ENV="$VENV_DIR" uv pip install -q -e .
+    note "装依赖（uv pip install $label）"
+    VIRTUAL_ENV="$VENV_DIR" uv pip install -q $target
   else
     note "虚拟环境里没有 pip，先补一个再装依赖"
     "$VENV_DIR/bin/python" -m ensurepip --upgrade >/dev/null
-    "$VENV_DIR/bin/python" -m pip install -q -e .
+    "$VENV_DIR/bin/python" -m pip install -q $target
   fi
 }
 
@@ -195,6 +208,10 @@ PY="$VENV_DIR/bin/python"
 OAMS="$VENV_DIR/bin/oams"
 [ -x "$PY" ] || die "虚拟环境没建起来：$VENV_DIR/bin/python 不存在"
 [ -x "$OAMS" ] || die "命令行没装上：$OAMS 不存在（依赖安装失败，看上面的输出）"
+
+if [ "$WITH_TESTS" = "1" ]; then
+  note "测试依赖已装好：跑测试用 $VENV_DIR/bin/python -m pytest"
+fi
 
 # 3. 建表 + 建管理员（重复跑都安全）。
 note "建表（oams db init）"
