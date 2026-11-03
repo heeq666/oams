@@ -52,6 +52,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 - `docs/design/` —— 界面规范与令牌
 - `app/oams/schema.sql` —— **唯一一份**建表脚本：**19 张表 + 1 个视图**（`work_item_current_state`），`oams db init` 幂等执行。按 `information_schema.tables` 数会是 **20**（视图也占一行），别当成多建了一张表；老库可能还留着旧的迁移台账 `oams.schema_migrations`（`db init` 既不再建也不删），那样会数出 21。双角色时期的建库脚本已删除（2026-11-02）；现在只有单角色，建库建表见 `oams db init`
 - `examples/` —— 能过校验的 descriptor 样本；`skills/` —— 给外部 AI 的 skill（两个：`oams-department-interface` 做部门界面、`oams-design-system` 做页面与组件；引用时写真实目录名，别指向不存在的路径）
+- `data/` —— 演示种子：主种子 `neutral-demo-departments.json` **别动**（现有数据与测试基线按它算），要加部门就另开一份（如 `it-department.json`），灌库走 `scripts/load_department_data.py <file> --apply`，这样下一个 clone 的人能复现演示站的前置。
 
 ## 约定
 
@@ -75,6 +76,7 @@ pytest                                # 带 db 标记的用例在没数据库时
 - **开源验收一律全仓 0 命中，不排除任何目录**：写成 `git grep -n '旧名' -- .`。发现旧记录与现状不符，改现行文档（`docs/architecture/`、`docs/design/`）并在里面说明，别重写历史记录；靠排除目录、改旧记录把指标做绿，等于为了让指标好看而篡改证据。
 - **文档口径先行，行为以仓库实际为准**：本轮文档统一写目标名（包 `app/oams/`、环境变量 `OAMS_*`、schema `oams`、命令 `oams db init`），代码可能还没跟上——这是排期，不是笔误。两边不一致时报给负责人，别自行把文档改回旧名；同一事实只在文档里写一次目标口径，别到处贴「暂未实现」的补丁。
 - **文档里举例不写真名**：主机名、账户名、客户名一律用 `x[.]local`、`<原品牌>` 这类占位写法——成品字面量进了仓库就再也洗不干净，公开前只能整文件重写；这条坑已经在报告、手册、标志说明页踩过三次。
+- **写进文档 / 说明书的命令，先在这台机器上原样跑一遍再发**：`python` 不在 PATH、系统 `python3` 没装 PyYAML，一条照抄的转换命令就把外人挡在下一堵墙前（报错还看不懂）；对外一律给产品自带的能力（如 `oams plugin convert`），别让人现装依赖。
 
 ### 共享库写操作：先锁行 id
 
