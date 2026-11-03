@@ -55,9 +55,13 @@ oams issue-token --employee-code ADMIN001   # 打印能点开的登录地址（�
 跑测试要另装一份**开发依赖**（`pytest`、`httpx`），它们不在运行依赖里：
 
 ```sh
+# 测试连的库和 quickstart 用的是同一个：先把它给出来（写了 .env 的话会自动读，可跳过这一行）
+export OAMS_DATABASE_URL="postgresql://<账号>:<口令>@127.0.0.1:<你的端口>/<库名>"
 .venv/bin/pip install -e ".[dev]"          # uv 建的环境：VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 .venv/bin/python -m pytest
 ```
+
+**没有库地址时测试不会报错**：它会把整批数据库用例静默跳过，看到「全绿 + 几秒跑完」不要当成通过——那正是下面那张跳过表在说的假绿。
 
 也可以在第一次就一起装上：`bash scripts/quickstart.sh --database-url … --with-tests`。
 
