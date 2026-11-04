@@ -125,7 +125,7 @@ def _script() -> None:
 
     # Can review.
     status, page, _ = lead("/reviews")
-    check("reviewer permission opens the review queue", status == 200 and "页面审核" in page, status)
+    check("reviewer permission opens the review queue", status == 200 and "页面管理" in page, status)
 
     # Cannot do administrator work. A page they may not read is not an error
     # screen: they are sent on to one they can read, with the reason in a short
