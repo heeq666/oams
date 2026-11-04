@@ -383,6 +383,22 @@ def written_param_names(module: Any) -> set[str]:
     return written
 
 
+def written_param_value(module: Any, name: str) -> tuple[bool, Any]:
+    """The value the author actually wrote for `name`, nested shape first.
+
+    Returns ``(written, value)`` so a caller can tell "the author wrote nothing"
+    (registry default applies, nothing to validate) from "the author wrote None".
+    """
+    if not isinstance(module, dict):
+        return False, None
+    nested = module.get("params")
+    if isinstance(nested, dict) and name in nested:
+        return True, nested[name]
+    if name in module:
+        return True, module[name]
+    return False, None
+
+
 def module_params(module: Any) -> dict[str, Any]:
     """Declared param values for one node: registry defaults, `params`, then flat keys.
 
@@ -408,26 +424,86 @@ def module_params(module: Any) -> dict[str, Any]:
     return merged
 
 
+def _written_value(value: Any) -> str:
+    """How to quote a value back to an author: they must recognise what they wrote."""
+
+    if isinstance(value, str):
+        return f"字符串 {value!r}"
+    if isinstance(value, bool):
+        return f"布尔值 {str(value).lower()}"
+    if isinstance(value, (int, float)):
+        return f"数字 {value}"
+    if value is None:
+        return "空值 null"
+    if isinstance(value, list):
+        return f"列表 {value!r}"
+    if isinstance(value, dict):
+        return f"对象 {value!r}"
+    return repr(value)
+
+
 def param_problem(spec: ModuleSpec, name: str, value: Any) -> str | None:
     """Why `value` cannot serve as param `name`, or None when it is fine.
 
-    Only the types that carry a range are checked here (`int` with `minimum` /
-    `maximum`); everything else is validated where it is rendered.
+    The registry's `params` table is a promise to the author, so the shape is
+    checked here, at validation time, against exactly what the renderer will ask
+    for. Silently normalising a wrong shape is how `columns: ["title", …]` reached
+    生产: the check passed, the review passed, and the page returned 500 the first
+    time somebody opened it. The renderer may still be forgiving (`_as_columns`
+    fills a missing label), but that is a safety net, never the contract.
+
+    Messages are Chinese and name the module by its display name, because they
+    are read by whoever wrote the descriptor, not by us.
     """
     declaration = spec.params.get(name)
     if not isinstance(declaration, dict):
         return None
-    type_name = declaration.get("type") or ""
-    if type_name != "int":
+    type_name = str(declaration.get("type") or "")
+    where = f"{spec.name}的 {name}"
+
+    if type_name == "int":
+        if isinstance(value, bool) or not isinstance(value, int):
+            return f"{where} 要写整数，你写的是 {_written_value(value)}"
+        minimum = declaration.get("minimum")
+        maximum = declaration.get("maximum")
+        if minimum is not None and value < minimum:
+            return f"{where} 至少 {minimum}，你写的是 {value}"
+        if maximum is not None and value > maximum:
+            return f"{where} 最多 {maximum}，你写的是 {value}"
         return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        return f"param {name!r} of module {spec.key!r} must be an integer, got {value!r}"
-    minimum = declaration.get("minimum")
-    maximum = declaration.get("maximum")
-    if minimum is not None and value < minimum:
-        return f"param {name!r} of module {spec.key!r} must be at least {minimum}, got {value}"
-    if maximum is not None and value > maximum:
-        return f"param {name!r} of module {spec.key!r} must be at most {maximum}, got {value}"
+
+    if type_name == "str":
+        if not isinstance(value, str):
+            return f"{where} 要写一行文字，你写的是 {_written_value(value)}"
+        return None
+
+    if type_name == "list[str]":
+        if not isinstance(value, list):
+            return f"{where} 要写一组文字（列表），你写的是 {_written_value(value)}"
+        for index, item in enumerate(value, 1):
+            if not isinstance(item, str):
+                return f"{where} 第 {index} 项要写文字，你写的是 {_written_value(item)}"
+        return None
+
+    if type_name == "list[{key,label}]":
+        if not isinstance(value, list):
+            return (f"{where} 要写一组 {{key,label}} 对象，你写的是 "
+                    f"{_written_value(value)}")
+        for index, item in enumerate(value, 1):
+            if isinstance(item, str):
+                return (f"{where} 要写 {{key,label}}，你写的是字符串 {item!r}；"
+                        f"要么改成对象，要么我在渲染时按字段名补标签")
+            if not isinstance(item, dict):
+                return (f"{where} 第 {index} 项要写 {{key,label}} 对象，你写的是 "
+                        f"{_written_value(item)}")
+            key = item.get("key")
+            if not isinstance(key, str) or not key.strip():
+                return f"{where} 第 {index} 项缺 key：写 {{key,label}}，key 是字段名"
+            label = item.get("label")
+            if label is not None and not isinstance(label, str):
+                return f"{where} 第 {index} 项的 label 要写文字，你写的是 {_written_value(label)}"
+        return None
+
     return None
 
 
@@ -607,7 +683,20 @@ def validate_module_tree(modules: list[dict]) -> list[str]:
                     f"{type(params).__name__}"
                 )
                 params = {}
+            nested_params = node.get("params") if isinstance(node.get("params"), dict) else {}
             params = params or {}
+
+            # A declared param is a promise about shape, so the shape is checked
+            # here -- one place, every caller (plugin check, MCP tools, review).
+            for param_name in sorted(written_param_names(node)):
+                present, value = written_param_value(node, param_name)
+                if not present:
+                    continue
+                problem = param_problem(spec, param_name, value)
+                if problem is not None:
+                    where = (f"{path}.params.{param_name}" if param_name in nested_params
+                             else f"{path}.{param_name}")
+                    problems.append(f"[{DATA_RULE_VIOLATION}] {where}: {problem}")
 
             children = node.get("children")
             if spec.layer == "container":

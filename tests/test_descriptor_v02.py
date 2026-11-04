@@ -234,7 +234,7 @@ def test_required_param_missing_is_rejected():
     )
     problems = validate_descriptor(broken)
     assert "DATA_RULE_VIOLATION" in codes(problems)
-    assert any("required param 'text'" in p for p in problems)
+    assert any("说明块的 text 是必填的" in p for p in problems)
 
 
 # --------------------------------------------------------------------------- #
@@ -584,13 +584,13 @@ def test_table_rows_out_of_range_is_refused_not_clamped():
     assert codes(problems) == ["DATA_RULE_VIOLATION"]
     assert problems[0].startswith("[DATA_RULE_VIOLATION] modules[board].children[left]"
                                   ".children[detail].rows:")
-    assert "at most 5" in problems[0]
+    assert "最多 5" in problems[0]
 
     nested = table_descriptor()
     nested["modules"][0]["children"][0]["children"][0]["params"]["rows"] = 0
     nested_problems = validate_descriptor(nested)
     assert codes(nested_problems) == ["DATA_RULE_VIOLATION"]
-    assert nested_problems[0].endswith("must be at least 1, got 0")
+    assert nested_problems[0].endswith("至少 1，你写的是 0")
 
 
 def test_an_undeclared_node_key_is_refused_not_ignored():

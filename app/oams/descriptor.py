@@ -38,7 +38,6 @@ from oams.modules import (
     get_module,
     module_depth,
     module_params,
-    param_problem,
     validate_module_tree,
     written_param_names,
 )
@@ -409,12 +408,12 @@ def _check_modules_v02(problems: _Problems, modules: Any, fields: list[dict],
         for name, declaration in spec.params.items():
             if isinstance(declaration, dict) and declaration.get("required") and name not in written:
                 problems.add("DATA_RULE_VIOLATION", f"{path}.params",
-                             f"required param {name!r} is missing for module {spec.key!r}")
+                             f"{spec.name}的 {name} 是必填的，你没写")
         for name in nested:
             if name not in spec.params:
                 problems.add("DATA_RULE_VIOLATION", f"{path}.params",
-                             f"param {name!r} is not declared by module {spec.key!r} "
-                             f"(allowed: {sorted(spec.params)})")
+                             f"{spec.name}没有名为 {name!r} 的参数"
+                             f"（能写的是 {sorted(spec.params)}）")
         # A declaration is a promise: a value outside it must be refused. Flat keys
         # are a legal way to write a declared param (`rows: 3` beside params.columns)
         # and are validated exactly like the nested shape -- silently ignoring a key
@@ -434,11 +433,9 @@ def _check_modules_v02(problems: _Problems, modules: Any, fields: list[dict],
                              f"unknown key(s) {unknown} on module {spec.key!r}; a module node "
                              f"carries {sorted(MODULE_NODE_KEYS)} plus its declared params "
                              f"{sorted(spec.params)}")
-        for name in sorted(written):
-            problem = param_problem(spec, name, params.get(name))
-            if problem is not None:
-                where = f"{path}.params.{name}" if name in nested else f"{path}.{name}"
-                problems.add("DATA_RULE_VIOLATION", where, problem)
+        # Param shapes are checked by validate_module_tree (called above), so this
+        # pass never reports them twice; here we only say which params are missing
+        # or not declared at all.
 
         # A display module may show a platform metric **or one this page emits itself**
         # (contract §2). Cross-department keys are not a display concern: they are

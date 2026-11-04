@@ -331,9 +331,9 @@ def test_param_problem_states_the_bound_it_broke():
     assert param_problem(spec, "rows", 1) is None
     assert param_problem(spec, "rows", 5) is None
     out_of_range = param_problem(spec, "rows", 9)
-    assert out_of_range is not None and "at most 5" in out_of_range
+    assert out_of_range is not None and "最多 5" in out_of_range
     too_small = param_problem(spec, "rows", 0)
-    assert too_small is not None and "at least 1" in too_small
+    assert too_small is not None and "至少 1" in too_small
     wrong_type = param_problem(spec, "rows", "3")
-    assert wrong_type is not None and "must be an integer" in wrong_type
+    assert wrong_type is not None and "要写整数" in wrong_type
     assert param_problem(spec, "columns", []) is None
