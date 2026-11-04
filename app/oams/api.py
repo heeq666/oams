@@ -1815,7 +1815,7 @@ def _shell_rail(path, nav, departments, dept_active, caps):
         # 真页面。原来三条都指 /reviews 加锚点，而「待审核」正好就是页面本身，
         # 于是另外两条读起来像被塞进了它里面（用户原话就是这么问的）。
         add("待审核", "/reviews", path in ("/reviews", "/reviews/"))
-        add("各部门页面", "/reviews/catalog", path.startswith("/reviews/catalog"))
+        add("页面设置", "/reviews/settings", path.startswith("/reviews/settings"))
         add("最近决定", "/reviews/decided", path.startswith("/reviews/decided"))
     elif head in ("settings", "admin", "setup"):
         if caps.get("settings"):

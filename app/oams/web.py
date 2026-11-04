@@ -1726,10 +1726,14 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
     return _review_view(request, "pending", saved=saved, error=error)
 
 
-@router.get("/reviews/catalog", response_class=HTMLResponse)
-def review_catalog(request: Request):
-    """「页面管理 · 各部门页面」：这个人管得到的每一页，连它现在谁能看、谁能填。"""
-    return _review_view(request, "catalog")
+@router.get("/reviews/settings", response_class=HTMLResponse)
+def review_page_settings(request: Request):
+    """「页面管理 · 页面设置」：这个人管得到的每一页，连它现在谁能看、谁能填。
+
+    以前叫「各部门页面」——那说的是「有哪些页」，可这一屏真正要管的是**每页的设置**
+    （谁能看、谁能填，往后还要在这页上开权限弹窗），所以名字跟着用途走。
+    """
+    return _review_view(request, "settings")
 
 
 @router.get("/reviews/decided", response_class=HTMLResponse)
