@@ -31,6 +31,11 @@
     {% elif saved %}<div class="flash">{{ '已保存到测试区——页面还没正式使用，这条不计入公司汇总。' if draft_mode else '已保存。关联到工作项后，这条才会计入公司汇总。' }}</div>{% endif %}
     {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
+    {# 跨部门「借」这一页来用的人：顶部一句中性说明——你看到的不是自己部门的东西。
+       文案由 web.py 的 `access_note` 给（复用 _page_access 算出来的授权，不另查库）；
+       本部门的人、以及没有这句的情况都不进 DOM。 #}
+    {% if access_note %}<p class="strip neutral" style="margin-bottom:12px">{{ access_note }}</p>{% endif %}
+
     {% if page %}
       {% if page.status != 'active' %}
       <div class="card" style="margin-bottom:12px">
@@ -81,10 +86,14 @@
       {# 别的部门共享过来的人：看得到这一页，但不能往里填。别把表单画出来再拒一次，
          直接说清「你只能查看、找谁要编辑」——按钮点下去才被拒是更差的做法。 #}
       <div class="card">{{ rendered | safe }}</div>
+      {# 页头已经有「这是谁的页面、开给谁查看」那条时，这里不再叠第二条：两句说的是同一件事，
+         叠起来只是噪音。只有在拿不到那条说明（例如代管进来）时才用下面这句兜底。 #}
+      {% if not access_note %}
       <p class="strip neutral" style="margin-top:12px">
         你在这个页面<strong>只能查看</strong>：内容、条目都看得到，但不能编辑。
         要往这里提数据，请联系{{ unit.name }}——这一页的权限由他们在「页面设置」里调整。
       </p>
+      {% endif %}
       {% endif %}
 
       {% if recent %}
@@ -102,11 +111,12 @@
           {% if e.note %}<p class="note">{{ e.note }}</p>{% endif %}
           {% if e.evidence %}<p class="evidence">依据：{{ e.evidence }}</p>{% endif %}
           {% if e.rollup_blocker %}<p class="meta">{{ e.rollup_blocker }}</p>{% endif %}
-          {% if e.rollup_state == 'counted_unlinked' %}
+          {% if e.rollup_state == 'counted_unlinked' and can_fill %}
           {# The link form: the only thing that moves an entry into the company number.
              Only shown for a live entry that already counts for the department --
              a draft entry cannot be linked into the company number, and an entry
-             already feeding the company has nothing left to link. #}
+             already feeding the company has nothing left to link.
+             只读共享进来的人看不到它：链接工作项会改变公司数字，属于编辑动作。 #}
           <form method="post"
                 action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/entries/{{ e.entry_id }}/link"
                 class="field" style="margin-top:8px">

@@ -623,6 +623,30 @@ def _page_access(conn, principal, page) -> tuple[bool, bool]:
             security.can_fill_interface(conn, member_id, page["org_unit_id"], page["slug"]))
 
 
+def _access_note(conn, principal, page) -> str | None:
+    """别人共享给我的页：谁开的、开到什么程度，一句话说清；本部门的人不看这句。
+
+    句子在服务端拼，模板只按纯文本输出。判据用的是 `security.interface_access_via`
+    ——它读的就是 `_page_access` 判可见性的那张表、同一条岗位链，这里不另写 SQL，
+    也不另判一次「能不能看」（那件事只由 `_page_access` 回答）。
+
+    口径来自负责人 2026-11-04：说部门不说人（权限是发给部门的）；只给查看就说
+    「查看」，也给了编辑就说「查看和编辑」；公司根那行说「全公司可见」；点名部门与
+    公司根同时命中时只提更具体的那个部门。
+    """
+    row = security.interface_access_via(conn, principal["member_id"],
+                                        page["org_unit_id"], page["slug"])
+    if row is None:
+        return None
+    owner = _department_row(conn, page["org_unit_id"])
+    owner_name = (owner["name"] if owner else "别的部门")
+    if row["unit_type"] == "company":
+        return f"这是{owner_name}的页面：全公司可见。你能看到它，但不是这一页的主人。"
+    name = row["name"] or row["org_code"]
+    grant = f"{name}可查看、可编辑" if row["can_write"] else f"{name}可查看"
+    return f"这是{owner_name}的页面：{grant}。你能到这里来，是因为这一页开给了{name}。"
+
+
 def _access_editor(powers, org_unit_id) -> tuple[bool, str | None]:
     """能不能改这一页的权限，以及不能改的那句人话。
 
@@ -1225,6 +1249,10 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
             unit = _department_row(conn, org_unit_id)
             if unit is None:
                 return _denied(request, "这个页面不存在或不属于该部门。")
+            # 页头那句「谁开的」：只有靠授权跨部门进来的人才有，本部门的人（主人）没有。
+            access_note = _access_note(conn, principal, page)
+        else:
+            access_note = None
         if page["status"] == "archived":
             # Contract 6.4: the page is addressed by (org_unit_id, slug); this row
             # is only one version of it, and the entries recorded here still count
@@ -1294,6 +1322,8 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         "unit": unit, "departments": departments, "pages": pages,
         # 只读共享：能看这一页、但填写由所属部门负责（模板据此收起表单，只留一行说明）。
         "can_fill": can_fill,
+        # 靠授权跨部门进来时的一句话「谁开的」；本部门与系统管理员看自己的页时是 None。
+        "access_note": access_note,
         "current": page, "page": page, "rendered": rendered, "recent": recent,
         "preview": page["status"] != "active", "draft_mode": page["status"] != "active",
         "page_status_label": {"draft": "待提交审核", "pending": "审核中"}.get(page["status"], page["status"]),
