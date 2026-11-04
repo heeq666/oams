@@ -362,7 +362,8 @@ def test_versions_side_by_side(site) -> None:
         check("the page goes back to draft", row["status"] == "draft", row["status"])
         check("the reason code is recorded", row["review_code"] == "STATUS_UNMAPPED", row["review_code"])
 
-        status, html, _ = review("/reviews")
+        # 最近决定是左侧栏里另一个页面（二级菜单项得是真页面），不在 /reviews 这一屏。
+        status, html, _ = review("/reviews/decided")
         check("the decision list shows the reason by name", "状态词没有映射" in html)
 
         # A department editing v2 must know the company still reads v1.
