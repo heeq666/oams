@@ -275,29 +275,45 @@ def principal_from_request(request: Request) -> dict[str, Any] | None:
     return row if row is not None else dev_principal(request)
 
 
-def effective_grants(conn, member_id: Any, resource: str, action: str) -> list[dict[str, Any]]:
-    # SCOPE GAP: only scope_type='all' is honoured today, so a narrow grant gives
-    # nothing and a broad grant gives everything. Row-level range filtering has to
-    # land here -- not in each endpoint, and not in the UI -- before a second
-    # department joins.
-    return conn.execute(
-        """SELECT g.effect, g.scope_type, g.scope_org_unit_id, g.scope_definition
-           FROM oams.permission_grants g
-           WHERE g.resource = %s AND g.action = %s AND g.revoked_at IS NULL
-             AND g.valid_from <= now() AND (g.valid_until IS NULL OR now() < g.valid_until)
-             AND g.scope_type = 'all'
-             AND ((g.subject_type = 'member' AND g.member_id = %s)
+#: 授权能管到的范围有两档：整个公司（`all`）与指定部门（`org_unit` + 部门 id）。
+#: 一档都不命中就是在这件事上没有权限——窄授权不是「等于没有」，是「只在这些部门里」。
+_SUBJECT_MATCH = """((g.subject_type = 'member' AND g.member_id = %s)
                OR (g.subject_type = 'position' AND EXISTS (
                     SELECT 1 FROM oams.position_assignments a
                     WHERE a.position_id = g.position_id AND a.member_id = %s
                       AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
-                      AND (a.ends_at IS NULL OR now() < a.ends_at))))""",
-        (resource, action, member_id, member_id),
-    ).fetchall()
+                      AND (a.ends_at IS NULL OR now() < a.ends_at))))"""
 
 
-def has_permission(conn, member_id: Any, resource: str, action: str) -> bool:
-    grants = effective_grants(conn, member_id, resource, action)
+def effective_grants(conn, member_id: Any, resource: str, action: str, *,
+                     org_unit_id: Any = None, company_only: bool = False) -> list[dict[str, Any]]:
+    """这一件事上，落在**这个人的范围里**的授权行。
+
+    - 不传 `org_unit_id`：两档都算（全公司的 + 任何部门的），问的是「他有没有这个权」。
+    - 传 `org_unit_id`：全公司的 + 正好指定这个部门的，问的是「他能不能在这个部门做」。
+    - `company_only=True`：只认 `scope_type='all'`，「公司级」这类判断专用。
+
+    范围过滤只在这里做：每个页面各写一套，迟早会有一套写漏。
+    """
+    sql = f"""SELECT g.effect, g.scope_type, g.scope_org_unit_id, g.scope_definition
+              FROM oams.permission_grants g
+              WHERE g.resource = %s AND g.action = %s AND g.revoked_at IS NULL
+                AND g.valid_from <= now() AND (g.valid_until IS NULL OR now() < g.valid_until)
+                AND {_SUBJECT_MATCH}"""
+    params: list[Any] = [resource, action, member_id, member_id]
+    if company_only:
+        sql += " AND g.scope_type = 'all'"
+    elif org_unit_id is not None:
+        sql += (" AND (g.scope_type = 'all'"
+                " OR (g.scope_type = 'org_unit' AND g.scope_org_unit_id = %s))")
+        params.append(org_unit_id)
+    return conn.execute(sql, params).fetchall()
+
+
+def has_permission(conn, member_id: Any, resource: str, action: str, *,
+                   org_unit_id: Any = None, company_only: bool = False) -> bool:
+    grants = effective_grants(conn, member_id, resource, action,
+                              org_unit_id=org_unit_id, company_only=company_only)
     if not grants:
         return False
     return not any(grant["effect"] == "deny" for grant in grants)
@@ -318,7 +334,82 @@ def active_org_unit_ids(conn, member_id: Any) -> set[Any]:
 
 def has_company_scope(conn, member_id: Any) -> bool:
     """Company-wide operational visibility is reserved for security administrators."""
-    return has_permission(conn, member_id, "workforce.grants", "manage")
+    return has_permission(conn, member_id, "workforce.grants", "manage", company_only=True)
+
+
+def granted_org_unit_ids(conn, member_id: Any, resource: str | None = None,
+                         action: str | None = None) -> set[Any]:
+    """凭授权（`scope_type='org_unit'`）管得到的部门，用于「只授权几个部门」这一档。
+
+    `resource`/`action` 给空就是「任何一件授权落到部门上都算」。deny 优先：
+    同一个部门上既 allow 又 deny 的，不算管得到。
+    """
+    sql = f"""SELECT g.effect, g.scope_org_unit_id
+              FROM oams.permission_grants g
+              WHERE g.scope_type = 'org_unit' AND g.scope_org_unit_id IS NOT NULL
+                AND g.revoked_at IS NULL
+                AND g.valid_from <= now() AND (g.valid_until IS NULL OR now() < g.valid_until)
+                AND {_SUBJECT_MATCH}"""
+    params: list[Any] = [member_id, member_id]
+    if resource is not None:
+        sql += " AND g.resource = %s"
+        params.append(resource)
+    if action is not None:
+        sql += " AND g.action = %s"
+        params.append(action)
+    allowed, denied = set(), set()
+    for row in conn.execute(sql, params).fetchall():
+        (denied if row["effect"] == "deny" else allowed).add(row["scope_org_unit_id"])
+    return allowed - denied
+
+
+def has_all_scope_grant(conn, member_id: Any, resource: str | None = None,
+                        action: str | None = None) -> bool:
+    """有没有一条全公司范围（`scope_type='all'`）的有效授权。
+
+    `resource`/`action` 给了就只问这一件事——「任何一件落到全公司上都算数」会把
+    「能看全公司报表」误当成「能进每个部门」。
+    """
+    sql = f"""SELECT 1 FROM oams.permission_grants g
+              WHERE g.scope_type = 'all' AND g.effect = 'allow' AND g.revoked_at IS NULL
+                AND g.valid_from <= now() AND (g.valid_until IS NULL OR now() < g.valid_until)
+                AND {_SUBJECT_MATCH}"""
+    params: list[Any] = [member_id, member_id]
+    if resource is not None:
+        sql += " AND g.resource = %s"
+        params.append(resource)
+    if action is not None:
+        sql += " AND g.action = %s"
+        params.append(action)
+    return conn.execute(sql + " LIMIT 1", params).fetchone() is not None
+
+
+def all_department_ids(conn) -> set[Any]:
+    """所有在用的部门（公司本级除外）——用来把「全公司范围」摊成部门 id。"""
+    rows = conn.execute(
+        """SELECT org_unit_id FROM oams.org_units
+            WHERE status = 'active' AND unit_type <> 'company'""").fetchall()
+    return {row["org_unit_id"] for row in rows}
+
+
+def accessible_org_unit_ids(conn, member_id: Any, resource: str | None = None,
+                            action: str | None = None) -> set[Any]:
+    """这个人**能进**哪些部门：岗位所在的，加上被授权管的那几个。
+
+    两条边界，都是踩过的：
+
+    * `scope_type='all'` 只在**这个人没有岗位座位**时摊成全部在用部门。现有种子
+      里 67 条授权全是 `all`（存量数据只有这一档），若把 `all` 一律当全公司，设计部
+      负责人立刻能看到行政部的页——岗位所在就是他的范围。没有座位的人拿全公司
+      范围，本来就是公司级角色，摊成全部部门才对。
+    * `resource`/`action` 给了就按这件事问（`has_all_scope_grant` 同口径），不给
+      就只认岗位与点名部门的授权——「任何一件授权」不能变成「能进这个部门」。
+    """
+    seats = active_org_unit_ids(conn, member_id)
+    units = seats | granted_org_unit_ids(conn, member_id, resource, action)
+    if not seats and has_all_scope_grant(conn, member_id, resource, action):
+        units |= all_department_ids(conn)
+    return units
 
 
 def has_admin_rights(conn, member_id: Any) -> bool:
@@ -344,16 +435,20 @@ def administered_org_unit_ids(conn, member_id: Any) -> set[Any]:
     """The departments a member runs: their own departments, once they manage anything."""
     if not has_admin_rights(conn, member_id):
         return set()
-    return active_org_unit_ids(conn, member_id)
+    return accessible_org_unit_ids(conn, member_id)
 
 
 def can_access_org_unit(conn, member_id: Any, org_unit_id: Any) -> bool:
-    return has_company_scope(conn, member_id) or org_unit_id in active_org_unit_ids(conn, member_id)
+    if has_company_scope(conn, member_id):
+        return True
+    return org_unit_id in accessible_org_unit_ids(conn, member_id)
 
 
 def require_org_unit_access(conn, member_id: Any, org_unit_id: Any) -> None:
     if not can_access_org_unit(conn, member_id, org_unit_id):
-        raise HTTPException(status_code=403, detail="org unit is outside the member assignment scope")
+        raise HTTPException(
+            status_code=403,
+            detail="这个部门不在你的范围内：你的岗位和被授权的部门都不含它")
 
 
 def revoke_session(conn, session_id: Any, member_id: Any) -> None:

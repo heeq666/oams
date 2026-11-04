@@ -17,8 +17,8 @@ from oams.schemas import (APP_SCOPES, AppCodeCreate, AppRevokeRequest, AppTokenR
                              AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
                              WorkItemCreate, WorkItemUpdate)
-from oams.security import (active_org_unit_ids, current_principal, has_company_scope,
-                              has_permission, issue_session, principal_for_token,
+from oams.security import (accessible_org_unit_ids, active_org_unit_ids, has_all_scope_grant, current_principal,
+                              has_company_scope, has_permission, issue_session, principal_for_token,
                               principal_from_request, require_org_unit_access,
                               require_permission, revoke_session)
 
@@ -82,7 +82,7 @@ def writable_org_units(conn, member_id: Any) -> tuple[list[dict[str, Any]], bool
             """SELECT org_unit_id, org_code, name FROM oams.org_units
                 WHERE status = 'active' ORDER BY org_code""").fetchall()
     else:
-        ids = sorted(active_org_unit_ids(conn, member_id), key=str)
+        ids = sorted(accessible_org_unit_ids(conn, member_id), key=str)
         rows = conn.execute(
             """SELECT org_unit_id, org_code, name FROM oams.org_units
                 WHERE status = 'active' AND org_unit_id = ANY(%s) ORDER BY org_code""",
@@ -105,6 +105,11 @@ def writable_org_units(conn, member_id: Any) -> tuple[list[dict[str, Any]], bool
         note = "你不在任何在用的部门里，建不了页——先请管理员把岗位挂到你名下"
     elif company:
         note = "你是公司级管理员，哪个在用部门都能建页"
+    elif (not active_org_unit_ids(conn, member_id)
+          and has_all_scope_grant(conn, member_id, "workforce.reports", "read")):
+        # 没有岗位座位、却拿着全公司范围的填报授权：他本来就是公司级角色。
+        # 有座位的人不写这句——「只有 GA 一个部门」时这两种情况看起来一模一样。
+        note = "你的授权覆盖所有在用部门，哪个都能建页"
     else:
         note = "你只能给这些部门建页：" + "、".join(unit["org_code"] for unit in units)
     return units, company, note
