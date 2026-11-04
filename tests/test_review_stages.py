@@ -159,12 +159,19 @@ def room(seeded_database, monkeypatch):
         "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
         (code,)).fetchone()["member_id"]
         for code in (DESIGN_REVIEWER, PLATFORM, DESIGN_AUTHOR, HR_AUTHOR)}
-    state = {"me": DESIGN_REVIEWER, "cookie": "review-stage-test"}
-    monkeypatch.setattr(oams.api, "principal_from_request",
-                        lambda request: {"member_id": people[state["me"]],
-                                         "employee_code": state["me"],
-                                         "display_name": state["me"],
-                                         "employment_status": "active"})
+    state = {"me": DESIGN_REVIEWER, "cookie": "review-stage-test", "app": None}
+
+    def _principal(request):
+        out = {"member_id": people[state["me"]],
+               "employee_code": state["me"],
+               "display_name": state["me"],
+               "employment_status": "active"}
+        if state["app"] is not None:
+            # 这张票是某个应用换来的：审核要认出「接入方」这个身份。
+            out["auth_provider"] = f"connected-app:{state['app']}"
+        return out
+
+    monkeypatch.setattr(oams.api, "principal_from_request", _principal)
 
     def client() -> TestClient:
         made = TestClient(oams.api.app)
@@ -173,6 +180,7 @@ def room(seeded_database, monkeypatch):
 
     def as_(code):
         state["me"] = code
+        state["app"] = None
 
     def author_for(org):
         """这个部门里谁来当作者：平台身份哪个部门都进得去，所以兜底给他。"""
@@ -223,7 +231,32 @@ def room(seeded_database, monkeypatch):
         as_(who)
         return interface_id
 
-    room = {"conn": conn, "client": client, "as_": as_, "token": _token(state["cookie"]),
+    def as_app(code, scopes, name=None):
+        """让当前客户端变成「代表 code 这个人的一个应用」。
+
+        真插一行应用 + 一行授权，`auth_provider` 因此是 `connected-app:<id>`；
+        范围就给这一组，剩下的由「这个人自己有没有审核权」决定。
+        """
+        member_id = people[code]
+        app_id = uuid.uuid4()
+        conn.execute(
+            """INSERT INTO oams.connected_apps (app_id, name, owner_member_id, status, created_by)
+               VALUES (%s, %s, %s, 'active', %s)""",
+            (app_id, name or f"审核助手-{app_id.hex[:6]}", member_id, member_id))
+        conn.execute(
+            """INSERT INTO oams.app_authorizations
+                     (app_id, member_id, scopes, valid_until, approved_by)
+               VALUES (%s, %s, %s, now() + interval '7 days', %s)""",
+            (app_id, member_id, list(scopes), member_id))
+        state["app"] = app_id
+        state["me"] = code
+
+    def as_person(code):
+        state["app"] = None
+        state["me"] = code
+
+    room = {"conn": conn, "client": client, "as_": as_person, "as_app": as_app,
+            "token": _token(state["cookie"]),
             "page": page, "create": create, "submit": submit,
             "design": design, "hr": hr, "people": people}
     try:
@@ -274,15 +307,30 @@ def test_a_department_lead_sees_only_their_own_first_level_pages(room):
     assert f"/reviews/{at_company}/approve" not in body
 
 
-def test_nobody_reviews_the_version_they_submitted(room):
-    authored_by_reviewer = room["page"](room["design"], author=DESIGN_REVIEWER)
+def test_a_department_lead_signs_what_they_submitted(room):
+    """2026-11-04 起「作者回避」作废：主管签自己部门交的页，包括自己交的那一版。"""
+    authored_by_lead = room["page"](room["design"], author=DESIGN_REVIEWER)
+
     room["as_"](DESIGN_REVIEWER)
     body = room["client"]().get("/reviews").text
+    assert f"/reviews/{authored_by_lead}/approve" in body
 
-    assert f"/reviews/{authored_by_reviewer}/approve" not in body
+    signed = _approve(room, authored_by_lead, note="自己交的，自己签")
+    assert signed.status_code == 303, signed.text
+    assert signed.headers["location"] == "/reviews?saved=approved", signed.headers["location"]
+    assert _row(room, authored_by_lead)["status"] == "active"
+
+    # 没有审核权的人照样签不了，但拒绝的理由是「没有这个权限」，不是「你是作者」。
+    plain = room["page"](room["design"], author=DESIGN_AUTHOR)
+    room["as_"](DESIGN_AUTHOR)
+    refused = _approve(room, plain, note="想自己签")
+    assert refused.status_code == 303
+    assert "初审需要 workforce.interfaces/review 权限" in urllib.parse.unquote(
+        refused.headers["location"])
 
 
-def test_the_platform_sees_the_final_stage_and_a_read_only_view_of_the_rest(room):
+def test_the_platform_signs_any_stage_it_is_shown(room):
+    """系统管理员不受审核限制：公司终审与部门初审两张卡都带按钮，不再有「只读」那张表。"""
     at_company = room["page"](room["design"], stage="company")
     still_department = room["page"](room["design"])
 
@@ -290,36 +338,29 @@ def test_the_platform_sees_the_final_stage_and_a_read_only_view_of_the_rest(room
     body = room["client"]().get("/reviews").text
 
     assert f"/reviews/{at_company}/approve" in body
-    # 部门初审那页只读地列出来，按钮不给
-    assert f"/reviews/{still_department}/approve" not in body
-    # 标题不带「初审」：这张表里本来就混着公司终审的页，说成只等初审会让人看漏。
-    assert "别处还在等" in body
-    assert "别处还在等初审" not in body
+    assert f"/reviews/{still_department}/approve" in body
     # 在等谁一列按 review_stage 说实话，这页是部门初审。
     assert "部门初审" in body
 
 
 def test_a_department_with_an_empty_queue_says_so_plainly(room):
-    # 自己交的那版不给自己审，队列空着；他没有公司终审权，也不该提全公司。
-    own = room["page"](room["design"], author=DESIGN_REVIEWER)
-
+    # 真的没有待审页：说实话；他没有公司终审权，也不该提全公司。
     room["as_"](DESIGN_REVIEWER)
     body = room["client"]().get("/reviews").text
 
-    assert f"/reviews/{own}/approve" not in body
     assert "没有轮到你审的页面。" in body
     assert "全公司还在等" not in body
 
 
-def test_the_platform_with_nothing_to_sign_points_at_the_queue_below(room):
-    # 只有部门初审在等：平台没有卡可签，但下面那张表里有东西，空态得说实话。
+def test_the_platform_has_no_read_only_leftovers(room):
+    """系统管理员能签任何待审页，「别处还在等」那张只读表对他永远是空的。"""
     waiting = room["page"](room["design"])
 
     room["as_"](PLATFORM)
     body = room["client"]().get("/reviews").text
 
-    assert f"/reviews/{waiting}/approve" not in body
-    assert "没有等你签的页面，全公司还在等的列在下面。" in body
+    assert f"/reviews/{waiting}/approve" in body
+    assert "别处还在等" not in body
 
 
 def test_the_platform_says_the_departments_are_done_when_nothing_is_waiting(room):
@@ -390,19 +431,19 @@ def test_a_return_starts_the_page_over_at_the_first_level(room):
     assert row["reviewed_at"] is not None
 
 
-def test_the_platform_stands_in_only_when_the_department_has_nobody_left(room):
-    """部门唯一的审核人就是提交者时，平台必须能代签第一级，否则这页永远发不出去。
+def test_the_platform_may_take_a_departments_first_level_at_any_time(room):
+    """系统管理员签部门初审不再要求「部门里没人能签」——他签，记录写 company_proxy。
 
-    有别人能审的时候不许代签：那是抢部门的活，不是救场。
+    记的是「这一版没有被本部门签过，出手的不是这个部门的人」，所以 pill 照旧出现。
     """
-    stuck = room["page"](room["design"], author=DESIGN_REVIEWER)
-    covered = room["page"](room["design"])
+    by_lead = room["page"](room["design"], author=DESIGN_REVIEWER)
+    by_others = room["page"](room["design"])
 
     room["as_"](PLATFORM)
     body = room["client"]().get("/reviews").text
-    assert f"/reviews/{stuck}/approve" in body
+    assert f"/reviews/{by_lead}/approve" in body
+    assert f"/reviews/{by_others}/approve" in body
     assert "平台代审" in body
-    assert f"/reviews/{covered}/approve" not in body
 
 
 def test_a_standing_in_approval_says_so_in_the_audit_record(room):
@@ -485,3 +526,105 @@ def test_a_public_page_is_signed_by_two_people_from_end_to_end(room):
     assert by_type["interface.review_stage_passed"]["stage"] == "department"
     assert by_type["interface.approved"]["stage"] == "company"
     assert by_type["interface.approved"]["acting"] == "company"
+
+
+# --------------------------------------------------------------------------- #
+# 2026-11-04 的身份模型：系统管理员不受限，部门主管可签自己，AI 要人明确授权
+# --------------------------------------------------------------------------- #
+
+
+def test_the_system_administrator_signs_a_page_they_built_themselves(room):
+    """最高权限不看作者：他自己建、自己提交的页也是他签（旧模型会把他挡在门外）。"""
+    room["as_"](PLATFORM)
+    own = room["create"](room["design"], author=PLATFORM, name="管理员自己建的页")
+    room["submit"](room["design"], own)
+
+    signed = _approve(room, own, note="我自己建的，我自己签")
+    assert signed.status_code == 303, signed.text
+    assert signed.headers["location"] == "/reviews?saved=approved", signed.headers["location"]
+    assert _row(room, own)["status"] == "active"
+
+
+def test_an_app_without_the_review_scope_cannot_sign(room):
+    """人本来能签，但允许时没勾「替你签页面审核」——应用这一步不许走。"""
+    waiting = room["page"](room["design"])
+    room["as_app"](DESIGN_REVIEWER, ["interfaces:draft"])
+
+    refused = _approve(room, waiting, note="我想替你签")
+    assert refused.status_code == 303, refused.text
+    assert "这是接入方的动作，审核要人自己点" in urllib.parse.unquote(
+        refused.headers["location"])
+    assert _row(room, waiting)["status"] == "pending"
+
+
+def test_an_app_with_the_review_scope_signs_for_a_reviewer(room):
+    """人勾了「审核」、这个人自己也够权限：应用替他签，记录署的是这个人。"""
+    waiting = room["page"](room["design"])
+    room["as_app"](DESIGN_REVIEWER, ["interfaces:review", "interfaces:draft"])
+
+    signed = _approve(room, waiting, note="主管让我签")
+    assert signed.status_code == 303, signed.text
+    assert signed.headers["location"] == "/reviews?saved=approved", signed.headers["location"]
+    assert _row(room, waiting)["status"] == "active"
+
+
+def test_an_app_cannot_widen_the_range_of_the_person_behind_it(room):
+    """勾了「审核」也没用：它代表的那个人本人没有审核权，应用签得不能比他多。"""
+    waiting = room["page"](room["design"])
+    room["as_app"](DESIGN_AUTHOR, ["interfaces:review"])
+
+    refused = _approve(room, waiting, note="替他签")
+    assert refused.status_code == 303, refused.text
+    assert "你本人没有审核权限" in urllib.parse.unquote(refused.headers["location"])
+    assert _row(room, waiting)["status"] == "pending"
+
+
+# --------------------------------------------------------------------------- #
+# JSON 出口：接入方替你签（/v1/interfaces/{id}/review），判据与表单同一份
+# --------------------------------------------------------------------------- #
+
+
+def _review_api(room, interface_id, **body):
+    return room["client"]().post(f"/v1/interfaces/{interface_id}/review", json=body)
+
+
+def test_the_json_outlet_signs_when_the_app_was_allowed_to(room):
+    waiting = room["page"](room["design"])
+    room["as_app"](DESIGN_REVIEWER, ["interfaces:review", "interfaces:draft"])
+
+    signed = _review_api(room, waiting, decision="approve", note="主管让我签")
+    assert signed.status_code == 200, signed.text
+    payload = signed.json()
+    assert payload["status"] == "active"
+    assert payload["decision"] == "approve"
+    assert _row(room, waiting)["status"] == "active"
+
+
+def test_the_json_outlet_refuses_an_app_that_was_not_allowed_to_review(room):
+    waiting = room["page"](room["design"])
+    room["as_app"](DESIGN_REVIEWER, ["interfaces:draft"])
+
+    refused = _review_api(room, waiting, decision="approve", note="我来签")
+    assert refused.status_code == 403, refused.text
+    assert "替你签页面审核" in refused.json()["detail"]
+    assert _row(room, waiting)["status"] == "pending"
+
+
+def test_the_json_outlet_cannot_beat_the_persons_own_rights(room):
+    waiting = room["page"](room["design"])
+    room["as_app"](DESIGN_AUTHOR, ["interfaces:review"])
+
+    refused = _review_api(room, waiting, decision="approve", note="替他签")
+    assert refused.status_code == 403, refused.text
+    assert "你本人没有审核权限" in refused.json()["detail"]
+    assert _row(room, waiting)["status"] == "pending"
+
+
+def test_the_json_outlet_can_send_a_page_back(room):
+    waiting = room["page"](room["design"])
+    room["as_app"](DESIGN_REVIEWER, ["interfaces:review"])
+
+    sent_back = _review_api(room, waiting, decision="reject", note="字段没接标准字段")
+    assert sent_back.status_code == 200, sent_back.text
+    assert sent_back.json()["status"] == "draft"
+    assert _row(room, waiting)["status"] == "draft"

@@ -176,14 +176,15 @@ def test_the_row_is_wide_and_the_behaviour_is_narrow(pilot_room):
     assert refused.status_code == 303, refused.text
     assert "这个页面不在你所在部门的范围内" in urllib.parse.unquote(refused.headers["location"])
 
-    # 三、自己提交的页：签不了——有审核权也不等于能自审。
+    # 三、自己提交的页：签得动——2026-11-04 起主管签自己交的页（「作者回避」作废）。
     pilot_room["as_"]("PILOT301")
     own_page = pilot_room["create"](pilot_room["design"], author="PILOT301", name="自己交的那一页")
     pilot_room["submit"](pilot_room["design"], own_page)
     pilot_room["as_"]("PILOT301")
-    self_refused = _approve(pilot_room, own_page, note="想自己签")
-    assert self_refused.status_code == 303, self_refused.text
-    assert "自己提交的页面要由别人审" in urllib.parse.unquote(self_refused.headers["location"])
+    self_signed = _approve(pilot_room, own_page, note="自己交的，自己签")
+    assert self_signed.status_code == 303, self_signed.text
+    assert self_signed.headers["location"] == "/reviews?saved=approved", \
+        self_signed.headers["location"]
 
 
 # --------------------------------------------------------------------------- #

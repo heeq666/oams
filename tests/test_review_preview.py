@@ -149,13 +149,13 @@ def test_a_department_reviewer_previews_a_page_waiting_for_them(room):
     assert SAMPLE_TITLE in seen.text
 
 
-def test_the_author_is_not_the_person_who_gets_to_preview_it(room):
-    """作者看自己交的版本同样被拒——预览不能变成「自己先审一遍」。"""
+def test_a_plain_author_cannot_preview_for_lack_of_the_review_right(room):
+    """2026-11-04 起拒的是权限，不是「你是作者」：设计师没有审核权，预览看不了。"""
     waiting = room["page"](room["design"])  # author_for(DESIGN) = DESIGN_AUTHOR
     room["as_"](DESIGN_AUTHOR)
     refused = _preview(room, waiting)
     assert refused.status_code == 403
-    assert "自己提交的页面要由别人审" in refused.text
+    assert "初审需要 workforce.interfaces/review 权限" in refused.text
 
 
 def test_someone_without_review_power_is_told_which_permission_is_missing(room):
@@ -198,13 +198,13 @@ def test_a_live_page_can_still_be_previewed(room):
     assert 'data-mode="preview"' in seen.text
 
 
-def test_the_author_still_cannot_preview_their_own_live_page(room):
-    """状态放宽不等于身份放宽：活页面的作者仍然是「自己交的那一版」。"""
+def test_a_plain_author_cannot_preview_their_own_live_page_either(room):
+    """状态放宽不等于权限放宽：没有审核权的作者，活页面那一版也看不了预览。"""
     live = _a_live_page(room)
-    room["as_"](DESIGN_AUTHOR)  # 这一版就是他交的
+    room["as_"](DESIGN_AUTHOR)  # 这一版就是他交的，但他没有审核权
     refused = _preview(room, live)
     assert refused.status_code == 403
-    assert "自己提交的页面要由别人审" in refused.text
+    assert "初审需要 workforce.interfaces/review 权限" in refused.text
 
 
 def test_a_draft_has_no_version_to_show_yet(room):
@@ -383,7 +383,7 @@ def test_the_preview_is_never_cached(room):
 def test_a_refusal_answered_to_htmx_is_a_flash_block_not_a_page(room):
     """审核卡只换一个片段：把整页 denied.html 塞进卡片里等于把卡片撑爆。"""
     waiting = room["page"](room["design"])
-    room["as_"](DESIGN_AUTHOR)  # 作者本人：必然被拒
+    room["as_"](DESIGN_AUTHOR)  # 没有审核权的作者：必然被拒
     fragment = _preview(room, waiting, htmx=True)
     assert fragment.status_code == 403
     assert fragment.text.startswith('<div class="flash error" role="alert">')
@@ -393,7 +393,7 @@ def test_a_refusal_answered_to_htmx_is_a_flash_block_not_a_page(room):
     assert whole.status_code == 403
     # 同一个人、同一页，换成浏览器直接打开就是一张完整的「不许看」页面。
     assert "<html" in whole.text.lower()
-    assert "自己提交的页面要由别人审" in whole.text
+    assert "初审需要 workforce.interfaces/review 权限" in whole.text
 
 
 # --------------------------------------------------------------------------- #
