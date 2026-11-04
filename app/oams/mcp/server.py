@@ -25,6 +25,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from oams.mcp.live import build_live_registry
 from oams.mcp.tools import (
     ToolContext,
     ToolRegistry,
@@ -37,9 +38,13 @@ SERVER_VERSION = "0.1.0"
 
 #: Instruction block a client shows to the AI before the first call.
 SERVER_INSTRUCTIONS = (
-    "OAMS 部门界面插件服务端。你可以：读模块注册表/指标目录/标准字段，"
-    "在 draft 上创建与修改插件描述符，预览渲染结果。"
-    "你不能批准任何插件：submit_for_review 只接受人类调用（插件描述符的每次上架都必须人工评审）。"
+    "OAMS 部门界面服务端。两组工具，别混用：\n"
+    "① 真站点（走 HTTP，用票说话）：oams_departments 看自己是哪张票、能给哪些部门建页、"
+    "每个部门的岗位码；oams_check_descriptor 本地校验描述符并给中文问题清单；"
+    "oams_submit_page 建草稿并送审。这三个不连数据库，票就是外部 AI 手上那张"
+    "（~/.config/oams/token.json，先按 skills/oams-connect 取）。\n"
+    "② 沙盒（内存，不落库）：读模块注册表/指标目录/标准字段、在 draft 上试排版本、预览渲染。\n"
+    "送审之后是人看的：AI 不能批准任何页面，submit_for_review 也只接受人类调用。"
 )
 
 
@@ -94,9 +99,14 @@ def build_server(registry: ToolRegistry | None = None) -> Any:
 
     Kept as a function (not module-level state) so a test can build one per case
     with its own in-memory store and inspect the audit trail afterwards.
+
+    Default is `build_live_registry()`: the stdio server serves both groups (the
+    12 sandbox tools over the in-memory store and the three HTTP tools that talk
+    to a real site with the caller's ticket). `build_registry()` alone stays the
+    sandbox-only surface the contract tests pin.
     """
     lowlevel, types = _import_sdk()
-    registry = registry or build_registry()
+    registry = registry or build_live_registry()
     session_id = _session_id()
 
     async def on_list_tools(ctx: Any, params: Any) -> Any:

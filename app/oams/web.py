@@ -3555,6 +3555,106 @@ async def api_create_interface(request: Request):
     }, status_code=201)
 
 
+@router.post("/v1/interfaces/{interface_id}/submit")
+def api_submit_interface(request: Request, interface_id: UUID):
+    """应用把一张草稿页送审：和工作台「提交送审」同一条规则，出口换成 JSON。
+
+    送审本身不认作者（工作台表单也不认）：部门里任何一个有填报权的人都能把草稿
+    送上去。真正把作者挡在外面的是审核那一侧——作者不能签自己的页。
+    """
+    principal = _api_principal(request)
+    with connection() as conn:
+        page = conn.execute("SELECT * FROM oams.interfaces WHERE interface_id = %s",
+                            (interface_id,)).fetchone()
+        if page is None:
+            raise HTTPException(status_code=404, detail="没有这个页面")
+        if not (has_permission(conn, principal["member_id"], "workforce.reports", "read")
+                and has_permission(conn, principal["member_id"], "workforce.reports", "submit")):
+            raise HTTPException(status_code=403, detail="送审需要 workforce.reports 读写权限")
+        api.require_app_scope(principal, "interfaces:draft")
+        if _resolve_department(conn, principal, page["org_unit_id"]) is None:
+            raise HTTPException(status_code=403, detail="你不在这个部门的范围内")
+        status_now = page["status"]
+        if status_now == "pending":
+            return _json_error("这个页面已经提交，正在等审核", 409)
+        if status_now == "active":
+            return _json_error("这个页面已经启用，无需再次提交", 409)
+        if status_now == "archived":
+            current = _current_version_id(conn, page["org_unit_id"], page["slug"])
+            return JSONResponse({
+                "error": "这一版已归档，不能送审。要改就改现在的版本。",
+                "current_interface_id": str(current) if current is not None else None,
+            }, status_code=409)
+        conn.execute(
+            """UPDATE oams.interfaces
+                  SET status = 'pending', review_stage = 'department', review_note = NULL,
+                      updated_at = now()
+                WHERE interface_id = %s""", (interface_id,))
+        app_name = _app_name_for(conn, principal)
+        who = principal.get("display_name") or "这个人"
+        reason = (f"通过 {app_name} 代表 {who} 提交了页面送审，等公司审"
+                  if app_name else "提交了页面送审，等公司审")
+        api.audit(conn, principal["member_id"], "interface.review_requested", "interface",
+                  interface_id, reason, {"from": status_now, "to": "pending"},
+                  metadata={"app_id": api.app_id_of(principal), "slug": page["slug"]})
+    return JSONResponse({
+        "interface_id": str(interface_id),
+        "org_unit_id": str(page["org_unit_id"]),
+        "slug": page["slug"],
+        "name": page["name"],
+        "status": "pending",
+        "review_stage": "department",
+        "version_no": page["version_no"],
+        "author_member_id": str(page["created_by"]) if page["created_by"] else None,
+        "url": f"/departments/{page['org_unit_id']}/{interface_id}",
+    })
+
+
+def _require_any_app_scope(principal, *scopes):
+    """应用票只要命中其中任意一个范围就放行（普通会话照旧按人判权）。"""
+    if api.app_id_of(principal) is None:
+        return None
+    authorization = api.live_app_authorization(principal)
+    if authorization is None:
+        raise HTTPException(status_code=403, detail="这张票的授权已被撤销或已到期")
+    allowed = authorization["scopes"] or []
+    if not any(scope in allowed for scope in scopes):
+        wanted = "或".join(f"「{api.APP_SCOPE_LABELS.get(scope, scope)}」" for scope in scopes)
+        raise HTTPException(status_code=403, detail=f"这个接入方没有被允许{wanted}")
+    return authorization
+
+
+@router.get("/v1/interfaces/{interface_id}")
+def api_get_interface(request: Request, interface_id: UUID):
+    """回读一页现在的状态：送审之后用它确认 status 真变成了 pending。
+
+    「我把页面送审了」不是证据，回读到的 status 才是——外部 AI 自报完成不算数，
+    所以给它一个不靠猜的出口。
+    """
+    principal = _api_principal(request)
+    with connection() as conn:
+        page = _page_for_app(conn, principal, interface_id)
+        _require_any_app_scope(principal, "interfaces:draft", "entries:read:dept")
+        versions = conn.execute(
+            """SELECT interface_id, version_no, status FROM oams.interfaces
+                WHERE org_unit_id = %s AND slug = %s ORDER BY version_no DESC""",
+            (page["org_unit_id"], page["slug"])).fetchall()
+    return {
+        "interface_id": str(page["interface_id"]),
+        "org_unit_id": str(page["org_unit_id"]),
+        "slug": page["slug"],
+        "name": page["name"],
+        "status": page["status"],
+        "review_stage": page["review_stage"],
+        "version_no": page["version_no"],
+        "author_member_id": str(page["created_by"]) if page["created_by"] else None,
+        "updated_at": page["updated_at"].isoformat() if page["updated_at"] else None,
+        "versions": [{"interface_id": str(row["interface_id"]), "version_no": row["version_no"],
+                      "status": row["status"]} for row in versions],
+        "url": f"/departments/{page['org_unit_id']}/{page['interface_id']}",
+    }
+
+
 def _page_for_app(conn, principal, interface_id):
     """应用票能碰的页面：必须是这个人在部门范围内看得见的某一版。"""
     page = conn.execute("SELECT * FROM oams.interfaces WHERE interface_id = %s",

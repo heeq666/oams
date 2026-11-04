@@ -52,11 +52,15 @@ Content-Type: application/json
 | --- | --- |
 | 读本部门条目 | `GET {base}/v1/interfaces/{interface_id}/entries` |
 | 往页面里填报条目 | `POST {base}/v1/interfaces/{interface_id}/entries`，体是 `{"values": {字段: 值}}` |
-| 新建草稿页面并送审 | `POST {base}/v1/interfaces`，体是 `{"slug": ..., "name": ..., "descriptor": {...}}` |
+| 新建草稿页面 | `POST {base}/v1/interfaces`，体是 `{"slug": ..., "name": ..., "descriptor": {...}}` |
+| 把草稿送审 | `POST {base}/v1/interfaces/{interface_id}/submit`，不需要请求体（只有草稿能送） |
+| 回读一页现在什么状态 | `GET {base}/v1/interfaces/{interface_id}` → `status`、`review_stage`、`versions` |
 
 `interface_id` 从哪来：用户给你，或者你先按部门问用户要哪一页——**别自己编**。
 
-**建页要能看出是哪个部门**：请求体给 `org_unit_code`，或者让 `descriptor` 顶层带 `org_unit_code`——**两种都认**，两边都写时以请求体为准。
+**先看自己能给哪个部门建页**：`GET {base}/v1/me` 的 `writable_org_units` 就是这些部门，每条带 `org_code`、`name`、`positions`（岗位码写进 descriptor 的 `position_codes`）；`writable_all` 为真表示这个人是公司级、哪个在用部门都能建。票里没有 `interfaces:draft` 时它会明说。
+
+**建页要能看出是哪个部门**：请求体给 `org_unit_code`，或者让 `descriptor` 顶层带 `org_unit_code`——**两种都认**，两边都写时以请求体为准；一条都不给会 422。
 
 报错怎么读，别猜：
 
@@ -65,6 +69,25 @@ Content-Type: application/json
 | 422 | 没说清要建哪个部门的页面… | 你和 descriptor 都没给部门，补上再发 |
 | 422 | 没有这个部门：NOPE | 部门代码写错了，要的是 `org_code`（如 `IT`）或 `org_unit_id` |
 | 403 | 你不在这个部门的范围内 | **这才是权限问题**：你这张票代表的人不在这个部门 → 请那个部门的人来点「允许」 |
+
+## 5. 有 MCP 就用这三个工具（省掉手写 HTTP）
+
+OAMS 自带 MCP 服务（`oams-interface`）。下面三个工具**不连数据库**，只是替你带着票调上面那几个接口——票还是你手上那张。
+
+配置两样：
+
+- `OAMS_BASE_URL`：站点地址，就是第 0 步问到的那个；
+- 票文件：默认 `~/.config/oams/token.json`（`OAMS_TOKEN_FILE` 可以指到别处），内容就是第 3 步拿到的那些字段。
+
+| 工具 | 干什么 |
+| --- | --- |
+| `oams_departments` | 看这张票代表谁、能给哪些部门建页、每个部门的岗位码 |
+| `oams_check_descriptor` | 本地校验描述符，返回中文问题清单：哪一条、在哪个位置、怎么改 |
+| `oams_submit_page` | 建草稿并送审一步到位；只给 `interface_id` 就是给已有草稿补送审 |
+
+顺序：`oams_departments` → 写 descriptor → `oams_check_descriptor` 到通过 → `oams_submit_page`。
+
+**它不会静默退回本地沙盒**：报「还没拿到票」就是让你回第 1 步请人点一次「允许」。沙盒里那些读模块目录、预览渲染的工具照旧可用，但它们不落库。
 
 ## 范围对照表（申请时写英文键，页面上显示中文）
 
@@ -83,11 +106,13 @@ Content-Type: application/json
 | 401 | 票无效、过期，或者用户已经断开 | 重新从第 1 步取码，请用户再点一次 |
 | 403 | 这个范围没被允许（例如只勾了读却去写） | **去请用户重新授权并勾上**，不要换个接口绕 |
 | 409 | 这个码已经换过票了 | 码一次性，重新取 |
+| 409 | 这个页面已经提交，正在等审核 | 送过了，别重送；要改等这一轮审完 |
+| 409 | 这个页面已经有一版在改或待审核 | 先让那一版走完，再建新的一版 |
 | 410 | 码过期了 | 重新取 |
 
 ## 怎么核验你干的事
 
-看**页面和接口**：`GET {base}/v1/interfaces/{interface_id}/entries` 返回 200 且有数据，才算成了；页面右上角的「待我审」列表里能看到你送审的版本，才算送出去了。
+看**页面和接口**：条目录进去了看 `GET {base}/v1/interfaces/{interface_id}/entries` 返回 200 且有数据；送审成不成看 `GET {base}/v1/interfaces/{interface_id}` 的 `status` 是不是 `pending`——**回读到的才算数**，`POST` 返回 200 不算。
 
 **不要连数据库**。这里说的不是权限问题——是**判断依据**问题：一个组织可能同时有好几套库（本机两套、测试一套），你连错一套就会得出「数据不存在」，然后把这个结论当成事实报给用户。
 

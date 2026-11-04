@@ -64,6 +64,52 @@ def ready():
     return {"status": "ready", "database": "connected"}
 
 
+def writable_org_units(conn, member_id: Any) -> tuple[list[dict[str, Any]], bool, str]:
+    """这个人的票能给哪些部门建页，返回（部门表、是否公司级、一句人话说明）。
+
+    「能建页」= 手里有 workforce.reports 的读与提交，并且这个部门在他的岗位范围
+    之内（公司级管理员则不限部门）。岗位码一并带出来：外部 AI 要拿它写 descriptor
+    的 `position_codes`，本地校验也要用它，而 `/v1/positions` 要管理权限、应用票
+    拿不到——所以它只能从这里出去。
+    """
+    can_build = (has_permission(conn, member_id, "workforce.reports", "read")
+                 and has_permission(conn, member_id, "workforce.reports", "submit"))
+    company = has_company_scope(conn, member_id)
+    if not can_build:
+        return [], False, "你缺 workforce.reports 的读与提交权限，任何部门都建不了页"
+    if company:
+        rows = conn.execute(
+            """SELECT org_unit_id, org_code, name FROM oams.org_units
+                WHERE status = 'active' ORDER BY org_code""").fetchall()
+    else:
+        ids = sorted(active_org_unit_ids(conn, member_id), key=str)
+        rows = conn.execute(
+            """SELECT org_unit_id, org_code, name FROM oams.org_units
+                WHERE status = 'active' AND org_unit_id = ANY(%s) ORDER BY org_code""",
+            (ids,)).fetchall() if ids else []
+    units = [{"org_unit_id": str(row["org_unit_id"]), "org_code": row["org_code"],
+              "name": row["name"], "positions": []} for row in rows]
+    if units:
+        positions = conn.execute(
+            """SELECT org_unit_id, position_code, title FROM oams.positions
+                WHERE status = 'active' AND org_unit_id = ANY(%s)
+                ORDER BY position_code""",
+            ([row["org_unit_id"] for row in rows],)).fetchall()
+        by_unit = {unit["org_unit_id"]: unit for unit in units}
+        for position in positions:
+            unit = by_unit.get(str(position["org_unit_id"]))
+            if unit is not None:
+                unit["positions"].append({"position_code": position["position_code"],
+                                          "title": position["title"]})
+    if not units:
+        note = "你不在任何在用的部门里，建不了页——先请管理员把岗位挂到你名下"
+    elif company:
+        note = "你是公司级管理员，哪个在用部门都能建页"
+    else:
+        note = "你只能给这些部门建页：" + "、".join(unit["org_code"] for unit in units)
+    return units, company, note
+
+
 @app.get("/v1/me")
 def me(principal: dict = Depends(current_principal)):
     with connection() as conn:
@@ -75,7 +121,23 @@ def me(principal: dict = Depends(current_principal)):
                  AND (a.ends_at IS NULL OR now() < a.ends_at) ORDER BY a.starts_at""",
             (principal["member_id"],),
         ).fetchall()
-    return {"member_id": principal["member_id"], "display_name": principal["display_name"], "assignments": assignments}
+        writable, writable_all, writable_note = writable_org_units(conn, principal["member_id"])
+        authorization = live_app_authorization(principal)
+    app_block = None
+    if authorization is not None:
+        app_block = {
+            "app_id": str(authorization["app_id"]),
+            "app_name": authorization["app_name"],
+            "authorization_id": str(authorization["authorization_id"]),
+            "scopes": list(authorization["scopes"] or []),
+            "scope_labels": {scope: APP_SCOPE_LABELS.get(scope, scope)
+                             for scope in (authorization["scopes"] or [])},
+            "valid_until": authorization["valid_until"],
+        }
+    return {"member_id": principal["member_id"], "display_name": principal["display_name"],
+            "assignments": assignments,
+            "writable_org_units": writable, "writable_all": writable_all,
+            "writable_note": writable_note, "app": app_block}
 
 
 @app.get("/v1/org-units")
