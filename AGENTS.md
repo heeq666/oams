@@ -23,6 +23,7 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 
 `skills/oams-department-interface/SKILL.md` + `docs/architecture/p0-interface-contract.md`。硬约束：容器只排版不做数据；字段必须映射标准字段（至少 `title` / `status` / `evidence`）；状态必须映射到 `planned / in_progress / blocked / done`；模块只能从 `app/oams/modules.py` 的 `MODULE_REGISTRY` 白名单（21 个 key）里选。
 验收 descriptor / 页面能不能上手时，**要按第三方开发者视角跑**：只给它 `skills/` 里的说明书和一个真 AI，让它从一句话需求写出一页。拿仓库里自己写的样例和自己造的数据当验收不算数——自己出题自己考，验不出外人卡在哪。
+- **接入方自报「已完成」不算证据**：外部 AI 只要没收到报错就当成功了——它报「已送审」，库里页面还是草稿（要人补提交才审得到）；也出现过它连错库、自己查不到数据却当成数据不存在。验收一律回页面 / 接口 / 库看实际状态，别把它的完成报告当结论；说明书里也要写明核验看页面与接口，不许直连数据库。
 
 ## 运行
 
@@ -67,6 +68,7 @@ OAMS_DATABASE_URL=... .venv/bin/python -m pytest   # 不给库地址 = 整批 db
 - 提交前跑 `pytest`；改 UI 要截图自检（1440 / 1024 / 768 三档，窄屏不许横向滚动），工具与命令见「浏览器自动化」。
 - **验收 pytest 要两种机器状态都跑，并且看 skip 数**：本机有库 → **0 skipped**，这才是真绿；故意指向不存在的库 → 允许 skip，那只证明「无库不炸」。skip 数一涨就说明有库没被用上，别拿 `0 failed` 当验收口径。
 - **对外承诺要在干净环境里验**：改 README / quickstart / skill / 测试这类外人照着做的东西，推之前要在**全新 clone + 全新空库**上原样跑一遍才算数。拿主仓的 `.venv` 加 `PYTHONPATH` 跑不算外人环境——这道闸已经抓过两次（本机显示名写进断言、全新 clone 缺 pytest 依赖）。
+- **改接入接口就同笔改 `skills/oams-connect/SKILL.md`**：请求体要三键包裹、`org_unit_code` 的取值顺序、422 与 403 的分工——这些说明书已经错过两回，不同笔改，下一个外部 AI 就照着旧版撞同一堵墙。
 - **新库上最容易出的假绿：db 用例整批静默跳过。** 在一套刚建的空库上（没跑 `db init` 或没灌种子）直接 `pytest`，会得到「全绿 + 4 秒跑完」——**592 passed / 207 skipped / 0 failed**，看起来完美，实际数据库用例**一条都没跑**。原因在 `tests/conftest.py`：schema 没建时 `:259` 直接 `pytest.skip`，种子行缺时 `:237` 直接 skip（另有 `:270` 缺 `ADMIN001` 也 skip）。所以**跑全量前先确认 `db init` + `bootstrap-admin` + 两个种子脚本都跑过**，看到 `skipped` 不是 0 先查库，别急着报绿。参考（2026-11-01 实测，同一台机器）：空库无种子 → 592 passed / 207 skipped；种子齐 → 796 passed / 3 skipped（那 3 条是「内部重写脚本不随源码发布」的声明，属正常）。
 - **跑全量有两条禁令**：**不许套 `timeout`**——本机没有这个命令，套上去整轮根本没跑，你却以为跑了；**也不许用管道取退出码**——`pytest … | tail` 的 `$?` 是 `tail` 的 0，测试全挂也报成功。成功与否**只看 pytest 自己最后那行汇总**（`N passed` / `N failed` / `N skipped`）；要存日志就重定向到文件（`pytest > /tmp/pt.txt 2>&1; echo "exit=$?"`，退出码要在同一行紧接命令取，别跨管道）。依据：2026-11-01 一次「跑过全量」两条禁令同时踩中，整轮其实没执行。
 - **同一时间只允许一个人跑全量 pytest**：两人同时跑会互相踩出假红——同一棵树、同一个库上并行跑到 1 failed / 809 passed，串行重跑是 810 passed。并行期间看到的红先当无效结果，串行重跑过再下结论。
