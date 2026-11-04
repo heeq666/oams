@@ -113,7 +113,7 @@ def wait_for_service(proc, log_path: Path) -> bool:
                 return True
         except OSError:
             time.sleep(0.25)
-    return proc.poll() is None and False
+    return False
 
 
 def service_log_tail(log_path: Path, lines: int = 20) -> str:
