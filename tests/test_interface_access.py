@@ -332,7 +332,41 @@ def test_grantable_is_empty_without_a_seat(world, conn):
 
 
 # ---------------------------------------------------------------------------
-# 六、建表是幂等的：`db init` 再跑一遍，表还在、行还在
+# 六、页头那句「谁开的」：只挑该说哪一行，不改判据
+# ---------------------------------------------------------------------------
+
+
+def test_via_picks_the_named_department_row(world, conn):
+    _clear(world)
+    _grant(world, world["ga"], FIN_PAGE, can_read=True)
+    row = security.interface_access_via(conn, world["ga_member"], world["fin"], FIN_PAGE)
+    assert row is not None and row["org_code"] == "GA"
+
+
+def test_via_prefers_the_own_seat_over_an_ancestor(world, conn):
+    """小组的人：FIN 行（祖先点名部门）也打开这页，但「谁开的」要挑他座位那一级说。"""
+    _clear(world)
+    _grant(world, world["fin"], FIN_PAGE, can_read=True)
+    _grant(world, world["team"], FIN_PAGE, can_read=True, can_write=True)
+    row = security.interface_access_via(conn, world["team_member"], world["fin"], FIN_PAGE)
+    assert row["org_code"] == "FIN_OPS" and row["can_write"] is True
+
+
+def test_via_falls_back_to_the_company_root(world, conn):
+    _clear(world)
+    _grant(world, world["company"], FIN_PAGE, can_read=True)
+    row = security.interface_access_via(conn, world["ga_member"], world["fin"], FIN_PAGE)
+    assert row is not None and row["unit_type"] == "company"
+
+
+def test_via_is_none_without_a_matching_row_or_a_seat(world, conn):
+    _clear(world)
+    assert security.interface_access_via(conn, world["ga_member"], world["fin"], FIN_PAGE) is None
+    assert security.interface_access_via(conn, world["seatless"], world["fin"], FIN_PAGE) is None
+
+
+# ---------------------------------------------------------------------------
+# 七、建表是幂等的：`db init` 再跑一遍，表还在、行还在
 # ---------------------------------------------------------------------------
 
 
