@@ -1,6 +1,6 @@
 {#- Input: a small detail table. Columns are declared by the descriptor; cells bind to fields. -#}
 {% set p = params_of(module) %}
-{% set cols = as_list(p.get('columns')) %}
+{% set cols = as_columns(p.get('columns')) %}
 {% set row_count = as_int(p.get('rows'), 1, low=1, high=5) %}
 <section class="wh-m wh-input wh-table-module{% if inline_widgets() %} wh-table-controls{% endif %}" data-type="table">
   {% if cols %}

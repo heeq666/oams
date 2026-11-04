@@ -364,6 +364,28 @@ def _as_list(value: Any) -> list:
     return list(value) if isinstance(value, (list, tuple)) else []
 
 
+def _as_columns(value: Any) -> list[dict]:
+    """Table columns, whatever shape a descriptor wrote them in.
+
+    The module registry declares `list[{key,label}]`, but an outside author who
+    wrote plain field keys is producing a shape that really happens -- and a page
+    that answers 500 teaches the reviewer nothing. A bare key becomes
+    `{key, label}` with the label taken from that field's declaration, so the
+    table still reads in the department's own words instead of bare keys.
+    """
+    columns: list[dict] = []
+    for item in _as_list(value):
+        if isinstance(item, str):
+            key = item.strip()
+            if not key:
+                continue
+            field = field_of(key) or {}
+            columns.append({"key": key, "label": _text(field.get("label")) or key})
+        elif isinstance(item, dict):
+            columns.append(item)
+    return columns
+
+
 def field_of(source: Any) -> dict | None:
     """Descriptor field behind a standard source name (or a field key itself)."""
     state = _state()
@@ -800,6 +822,7 @@ _ENV.globals.update({
     "activity_items": activity_items,
     "as_int": _as_int,
     "as_list": _as_list,
+    "as_columns": _as_columns,
     "gap_of": gap_of,
     "children_of": children_of,
     "bucket": bucket,
