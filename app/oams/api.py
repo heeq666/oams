@@ -1813,8 +1813,10 @@ def _shell_rail(path, nav, departments, dept_active, caps):
     elif head == "reviews":
         add("待审核", "/reviews", path == "/reviews")
         add("最近决定", "/reviews#decided")
-        if nav.get("departments"):
-            add("部门页面", "/interfaces")
+        # 这一条以前跳去 /interfaces（汇报中心的部门界面），于是「页面管理」里
+        # 点一个部门页面，落到的却是汇报中心——两个入口名字一样、去的地方不一样。
+        # 页面管理自己已经有「各部门页面」这一段，就在本页内跳。
+        add("各部门页面", "/reviews#catalog")
     elif head in ("settings", "admin", "setup"):
         if caps.get("settings"):
             add("部门与岗位", "/settings", path == "/settings")
