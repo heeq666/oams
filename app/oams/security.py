@@ -552,6 +552,33 @@ def _reachable_by_audience(conn, member_id: Any, owner_org_unit_id: Any, slug: s
     ).fetchone() is not None
 
 
+def interface_access_via(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> dict[str, Any] | None:
+    """这一页是靠哪一行开给这个人的——页头那句「谁开的」用它，不改判据。
+
+    能不能看/能不能填仍由 :func:`can_view_interface` / :func:`can_fill_interface` 算
+    （它们是「任一行够用就算」，公司根与点名部门可以同时命中）；这里只回答「该说哪
+    一行」，口径与那两个函数刻意对齐：同一份 :func:`interface_audience`、同一条岗位
+    祖先链。挑法是最具体的那行——本人岗位所在的部门 > 别的点名部门 > 公司根；一个都
+    没命中就返回 None（说明不是靠授权进来的）。
+    """
+    seats = active_org_unit_ids(conn, member_id)
+    if not seats:
+        return None
+    chain = _seat_chain(conn, member_id)
+    rows = [row for row in interface_audience(conn, owner_org_unit_id, slug)
+            if row["org_unit_id"] in chain]
+    if not rows:
+        return None
+    for picked in (
+        [row for row in rows if row["unit_type"] != "company" and row["org_unit_id"] in seats],
+        [row for row in rows if row["unit_type"] != "company"],
+        rows,
+    ):
+        if picked:
+            return picked[0]
+    return None
+
+
 def can_view_interface(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> bool:
     """这一页这个人能不能打开。
 
