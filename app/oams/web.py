@@ -638,20 +638,10 @@ def _access_editor(powers, org_unit_id) -> tuple[bool, str | None]:
 
 
 def _audience_text(audience) -> str:
-    """One line saying who, besides the owning department, can see or fill the page."""
+    """这一页能被谁打开（「谁能查看」那一列）。列头已经说明含义，值里不再叠「只读」这种词。"""
     if not audience:
         return "只有本部门"
-    parts = []
-    for row in audience:
-        if row["unit_type"] == "company":
-            parts.append("全公司只读" if not row["can_write"] else "全公司可填")
-            continue
-        label = row["name"]
-        if row["can_write"]:
-            label += "能填"
-        else:
-            label += "只读"
-        parts.append(label)
+    parts = ["全公司" if row["unit_type"] == "company" else row["name"] for row in audience]
     return "本部门 + " + "、".join(parts)
 
 
@@ -662,10 +652,10 @@ def _audience_payload(audience) -> list[dict[str, Any]]:
 
 
 def _fill_text(audience) -> str:
-    """One line saying who, besides the owning department, may fill the page in."""
+    """这一页能被谁编辑（「谁能编辑」那一列）：只列真有编辑权的部门。"""
     writers = [row for row in audience if row["can_write"]]
     if not writers:
-        return "仅本部门"
+        return "只有本部门"
     names = ["全公司" if row["unit_type"] == "company" else row["name"] for row in writers]
     return "本部门 + " + "、".join(names)
 
@@ -1354,7 +1344,7 @@ async def department_page_submit(request: Request, org_unit_id: UUID, interface_
             return _denied(request, "你不在这个部门的范围内。")
         if not can_fill:
             owner = _department_row(conn, page["org_unit_id"])
-            return _denied(request, f"这一页你只能看，不能填：填写由「{owner['name'] if owner else '所属部门'}」负责。")
+            return _denied(request, f"这一页你只能查看，不能编辑：这一页的内容由「{owner['name'] if owner else '所属部门'}」负责。")
         if page["status"] == "archived":
             return _archived_writer_response(org_unit_id, page, conn)
         descriptor = page["descriptor"]
@@ -1417,7 +1407,7 @@ def entry_link(request: Request, org_unit_id: UUID, interface_id: UUID, entry_id
             if not can_view:
                 return _denied(request, "你不在这个部门的范围内。")
             if not can_fill:
-                return _denied(request, "这一页你只能看，不能动它的条目：填写由所属部门负责。")
+                return _denied(request, "这一页你只能查看，不能编辑它的条目：这一页的内容由所属部门负责。")
             if page["status"] == "archived":
                 # The entry itself is still the page's entry (contract 6.4), but a
                 # write aimed at an archived version is refused like the other three
@@ -1829,10 +1819,10 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
 
 @router.get("/reviews/settings", response_class=HTMLResponse)
 def review_page_settings(request: Request, saved: str | None = None):
-    """「页面管理 · 页面设置」：这个人管得到的每一页，连它现在谁能看、谁能填。
+    """「页面管理 · 页面设置」：这个人管得到的每一页，连它现在谁能查看、谁能编辑。
 
     以前叫「各部门页面」——那说的是「有哪些页」，可这一屏真正要管的是**每页的设置**
-    （谁能看、谁能填，往后还要在这页上开权限弹窗），所以名字跟着用途走。
+    （谁能查看、谁能编辑，在这页上的权限弹窗里改），所以名字跟着用途走。
     """
     return _review_view(request, "settings", saved=saved)
 
@@ -1875,7 +1865,7 @@ def _company_root(conn):
 @router.get("/reviews/settings/{org_code}/{slug}/access", response_class=HTMLResponse)
 def page_access_dialog(request: Request, org_code: str, slug: str,
                        error: str | None = None):
-    """页面设置的权限弹窗：这一页现在谁能看、谁能填，能改成什么。
+    """页面设置的权限弹窗：这一页现在谁能查看、谁能编辑，能改成什么。
 
     只读与可写由 `_access_editor` 判（系统管理员 / 该部门的部门管理员），灰态由
     `security.grantable_org_unit_ids` 给：**前端灰只是提示，保存时服务端再按人复核**。

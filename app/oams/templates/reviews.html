@@ -5,7 +5,7 @@
   <div>
     <h1>页面管理</h1>
     {% if view == 'settings' %}
-    <p class="sub">这是你管得到的每一页，以及它现在<strong>谁能看、谁能填</strong>。点「调整权限」就能改，不用重发一版页面，也不用重新送审。</p>
+    <p class="sub">这是你管得到的每一页，以及它现在<strong>谁能查看、谁能编辑</strong>。点「调整权限」就能改，不用重发一版页面，也不用重新送审。</p>
     {% elif view == 'decided' %}
     <p class="sub">谁在什么时候签了什么、按哪个理由退回。这里是记录，只能往后加，不改写已经发生的事。</p>
     {% else %}
@@ -151,7 +151,7 @@
 <div class="card span-12">
   <div class="card-head"><div>
     <h2 style="margin:0">别处还在等</h2>
-    <p class="meta">全公司还没审完的页面。这里只读——你能签的已经在上面了；还留在这里的，要么不归你签。</p>
+    <p class="meta">全公司还没审完的页面。这里只能查看——你能签的已经在上面了；还留在这里的，要么不归你签。</p>
   </div></div>
   <table style="margin-top:12px">
     <thead><tr><th>提交时间</th><th>部门 · 页面</th><th>提交人</th><th>等谁签</th></tr></thead>
@@ -179,13 +179,13 @@
     <span class="meta">{{ catalog | length }} 页</span>
   </div>
   <p class="strip neutral" style="margin-top:8px">
-    「谁能看」「谁能填」是这一页自己的属性，点「调整权限」就能改，<strong>不用重发一版、也不用重新送审</strong>——
-    审核签的是这一版的内容，权限管的是谁进得来。本部门永远能看能填；别的部门要看就是只读，要填就能填。
+    「谁能查看」「谁能编辑」是这一页自己的属性，点「调整权限」就能改，<strong>不用重发一版、也不用重新送审</strong>——
+    审核签的是这一版的内容，权限管的是谁进得来。本部门永远可查看、可编辑；别的部门给「查看」的只能浏览，给「编辑」的才能填写。
   </p>
   {% if catalog %}
   <table style="margin-top:12px">
     <thead>
-      <tr><th>部门</th><th>页面</th><th>状态</th><th>谁能看</th><th>谁能填</th><th>条目</th><th>权限</th></tr>
+      <tr><th>部门</th><th>页面</th><th>状态</th><th>谁能查看</th><th>谁能编辑</th><th>条目</th><th>权限</th></tr>
     </thead>
     <tbody>
     {% for c in catalog %}

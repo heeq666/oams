@@ -139,7 +139,7 @@ def _script() -> None:
     settings_head = '<h2 style="margin:0">页面设置</h2>'
     decided_head = '<h2 style="margin:0">最近决定</h2>'
     check("page settings lives on its own page only",
-          status2 == 200 and settings_head in catalog and "谁能看" in catalog
+          status2 == 200 and settings_head in catalog and "谁能查看" in catalog
           and settings_head not in queue,
           (status2, settings_head in queue))
     check("the decision list lives on its own page only",
