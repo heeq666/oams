@@ -27,9 +27,9 @@ description: 按 OAMS 插件契约（descriptor v0.2）帮部门负责人制作�
    先做：让管理员确认 `org_unit_code` 那个部门、`position_codes` 里的岗位、以及将来签字的人都已经存在（产品里走部门/岗位/成员管理，或 `scripts/load_department_data.py`）。
    反例：写成 `org_unit_code: IT` 但库里没有 IT 部 —— `plugin check`（不连库）照样「OK 通过」，贴进工作台才报 `[DATA_RULE_VIOLATION] org_unit_code: unknown department 'IT'`，岗位不存在同样报 `unknown position 'IT_LEAD'`。同理，`meta.review.reviewed_by` 只有在 `oams plugin check --database` 时才连库核对工号；不带这个开关，报告里会写明这条没验。
 
-2. **部门里至少两个人：一个人写，另一个人签。**
+2. **部门里得有人能签：勾了「部门负责人」的那个人。**
    先做：提交前确认签字的人已经存在、并且有本部门的 `workforce.interfaces/review` 权限（部门审核人只能签本部门页面，公司终审另需 `review_company`）。
-   反例：部门只有你一个人 → 页面停在「部门初审」永远没人能签。作者不能签自己提交的页面，平台代签也救不了作者（那条兜底只跳过「作者以外无人」的情形，作者本人永远被拒）。
+   注意：2026-11-04 起**看权限不看作者**——同一个人写完、自己签也行；系统管理员能签任何部门任何阶段。反例只剩「部门里没有任何一个人有 `review` 权限」：页面会停在「部门初审」没人能签。要公开、进公司汇总或跨部门沿用时，还会进公司终审，那一关部门里的人签不了。
 
 3. **想让它出现在页面上的字段，必须先在 `fields` 里声明。**
    先做：每个字段给 `key` + 人话 `label`，选好 `map_to`；**没有标准列可映射的字段**（工单号、承诺完成日、照片链接）也照样声明——值会存进 `extra[字段key]`，页面按本页 `label` 显示，查件框也按它查。
