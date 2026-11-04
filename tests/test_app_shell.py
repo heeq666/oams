@@ -108,6 +108,36 @@ def _script() -> None:
     check("the progress column leads with the company overview, then departments",
           has_rail and names[:1] == ["公司总览"] and "设计部" in names[1:], names)
 
+    # 左侧栏是**二级菜单**：菜单项必须是真页面，不能是同一页里的锚点。以前三条都指
+    # /reviews 加 #decided / #catalog，而「待审核」那条正好就是那一页本身，于是另外
+    # 两条读起来像被塞进了它里面（用户原话：「为什么最近决定和各部门页面会在待审核里」）。
+    def rail_items(html):
+        aside = re.search(r'<aside class="app-rail".*?</aside>', html, re.S)
+        block = aside.group(0) if aside else ""
+        return re.findall(r'<a href="([^"]+)" class="rail-item([^"]*)"', block)
+
+    views = (("/reviews", "/reviews"), ("/reviews/catalog", "/reviews/catalog"),
+             ("/reviews/decided", "/reviews/decided"))
+    for path, own in views:
+        status, html, _ = admin_call(path)
+        items = rail_items(html)
+        hrefs = [href for href, _ in items]
+        on = [href for href, cls in items if "on" in cls]
+        check(path + " is its own page, not an anchor on the queue",
+              status == 200
+              and hrefs == ["/reviews", "/reviews/catalog", "/reviews/decided"]
+              and not any("#" in h for h in hrefs), hrefs)
+        check(path + " highlights exactly its own item", on == [own], on)
+    status, queue, _ = admin_call("/reviews")
+    status2, catalog, _ = admin_call("/reviews/catalog")
+    status3, decided, _ = admin_call("/reviews/decided")
+    check("the catalog lives on the catalog page only",
+          "各部门页面" in catalog and "id=\"catalog\"" in catalog and "id=\"catalog\"" not in queue,
+          (status2, 'id="catalog"' in queue))
+    check("the decision list lives on its own page only",
+          "id=\"decided\"" in decided and "id=\"decided\"" not in queue,
+          (status3, 'id="decided"' in queue))
+
     status, html = follow(lead_call, "/departments")
     has_rail, names, links = shell(html)
     # A reviewer who manages no department is staff: the column shows the company

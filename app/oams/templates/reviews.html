@@ -4,7 +4,13 @@
 <div class="pagehead">
   <div>
     <h1>页面管理</h1>
-    <p class="sub">上边是等你签字的页面：部门内初审在前，要进公司汇总或拿别的部门页面做底子的，初审后进公司终审。下边是本部门（公司级账号是全部部门）已上线的页面，以及每一页现在谁能看、谁能填。</p>
+    {% if view == 'catalog' %}
+    <p class="sub">这是你管得到的每一页，以及它现在<strong>谁能看、谁能填</strong>。改范围要等权限编辑上线，今天只能重发一版页面再送审。</p>
+    {% elif view == 'decided' %}
+    <p class="sub">谁在什么时候签了什么、按哪个理由退回。这里是记录，只能往后加，不改写已经发生的事。</p>
+    {% else %}
+    <p class="sub">这里列等着你签字的页面：部门内初审在前，要进公司汇总或拿别的部门页面做底子的，初审后进公司终审。</p>
+    {% endif %}
   </div>
   <span class="pill neutral">待我审 {{ pending | length }}</span>
 </div>
@@ -17,6 +23,7 @@
 {# 待审核卡占满一整行，卡内再分 8 / 4：左边是「这一版改了什么」，
    右边是决定区 —— 审核时决定按钮始终在视线内，不用滚到卡底。 #}
 <div class="grid-12">
+{% if view == 'pending' %}
 {% for p in pending %}
 {% set b = p.bundle %}
 <section class="card review-card span-12">
@@ -161,6 +168,9 @@
 </div>
 {% endif %}
 
+{% endif %}
+
+{% if view == 'catalog' %}
 <div class="card span-12" id="catalog">
   <div class="card-head">
     <h2 style="margin:0">各部门页面</h2>
@@ -201,6 +211,9 @@
   {% endif %}
 </div>
 
+{% endif %}
+
+{% if view == 'decided' %}
 <div class="card span-12" id="decided">
   <div class="card-head"><h2 style="margin:0">最近决定</h2></div>
   {% if decided %}
@@ -227,6 +240,7 @@
   <p class="empty" style="margin-top:12px">还没有审核记录。</p>
   {% endif %}
 </div>
+{% endif %}
 </div>
 
 {# 收起预览时连内容一起清掉：留着 DOM 就是留着一份旧版本的渲染，下次展开前审核人

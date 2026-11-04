@@ -1717,16 +1717,42 @@ def _activate_page(conn, principal: dict[str, Any], page: Any, note: str,
 
 @router.get("/reviews", response_class=HTMLResponse)
 def review_queue(request: Request, saved: str | None = None, error: str | None = None):
+    """「页面管理 · 待审核」：左侧栏三条里的第一条，也是这一节的落地屏。
+
+    三条是**三个页面**，不是一页里的三个锚点——左侧栏是二级菜单，菜单项得是真页面。
+    以前三条都是 `/reviews` 加锚点，而「待审核」那条正好就是页面本身，于是另外两条
+    读起来像被塞进了它里面（用户原话：「为什么最近决定和各部门页面会在待审核里」）。
+    """
+    return _review_view(request, "pending", saved=saved, error=error)
+
+
+@router.get("/reviews/catalog", response_class=HTMLResponse)
+def review_catalog(request: Request):
+    """「页面管理 · 各部门页面」：这个人管得到的每一页，连它现在谁能看、谁能填。"""
+    return _review_view(request, "catalog")
+
+
+@router.get("/reviews/decided", response_class=HTMLResponse)
+def review_decided(request: Request):
+    """「页面管理 · 最近决定」：谁在什么时候签了什么、按哪个理由退回。"""
+    return _review_view(request, "decided")
+
+
+def _review_view(request: Request, view: str, saved: str | None = None,
+                 error: str | None = None):
     """Two queues, because two people sign: the department first, the platform last.
 
     A reviewer sees what they can decide -- a department lead the first-level
     pages of their own departments, the platform what the departments passed up --
     plus, for the platform, a read-only list of everything still pending, so
     "why is this page not live yet" has an answer without anyone guessing.
+
+    `view` 只决定模板画哪一段；三段数据一次取齐（各自都是一页的量级），
+    菜单之间切换不用维护三套查询。
     """
     principal = _member(request)
     if principal is None:
-        return RedirectResponse(url="/login?next=/reviews", status_code=302)
+        return RedirectResponse(url="/login?next=" + request.url.path, status_code=302)
     with connection() as conn:
         powers = _review_powers(conn, principal)
         if not (powers["department"] or powers["company"]):
@@ -1781,6 +1807,7 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
     decided_cards = [dict(row, code_label=review_rules.rejection_label(row["review_code"]))
                      for row in decided]
     return TEMPLATES.TemplateResponse(request, "reviews.html", {
+        "view": view,
         "pending": review_cards, "others": others, "decided": decided_cards,
         "catalog": catalog, "member": principal,
         "powers": powers, "saved": saved, "error": error, "reasons": review_rules.REJECTION_CHOICES,
