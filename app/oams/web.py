@@ -42,7 +42,7 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from oams import admin_labels, api, collab, metrics, review as review_rules
+from oams import admin_labels, api, collab, metrics, review as review_rules, security
 from oams.config import settings
 from oams.db import connection
 from oams.descriptor import recorded_approval_gaps, validate_descriptor
@@ -594,6 +594,82 @@ def _resolve_department(conn, principal, org_unit_id):
            WHERE org_unit_id = %s AND status = 'active'""", (org_unit_id,)).fetchone()
 
 
+def _department_row(conn, org_unit_id):
+    """A department row for display only — no range check.
+
+    Used when somebody opens a page another department shared with them: they have
+    no business *in* that department (they cannot build pages there), but the page
+    itself is open to them, and the header still has to say whose page it is.
+    """
+    return conn.execute(
+        """SELECT org_unit_id, org_code, name FROM oams.org_units
+           WHERE org_unit_id = %s AND status = 'active'""", (org_unit_id,)).fetchone()
+
+
+def _page_access(conn, principal, page) -> tuple[bool, bool]:
+    """(能不能看, 能不能填) for one page version and one person.
+
+    Inside the department this is always (True, True) without touching the table:
+    `_resolve_department` already answered, and the department's own people keep
+    exactly the rights they have today. Outside it, the page's own audience table
+    decides (`oams.interface_access`, written by the 页面设置 权限弹窗) — no row,
+    no access. The new table therefore only ever **widens** what somebody sees;
+    it can never take today's access away.
+    """
+    if _resolve_department(conn, principal, page["org_unit_id"]) is not None:
+        return True, True
+    member_id = principal["member_id"]
+    return (security.can_view_interface(conn, member_id, page["org_unit_id"], page["slug"]),
+            security.can_fill_interface(conn, member_id, page["org_unit_id"], page["slug"]))
+
+
+def _access_editor(powers, org_unit_id) -> tuple[bool, str | None]:
+    """能不能改这一页的权限，以及不能改的那句人话。
+
+    改权限是**运营动作**，不是签字动作：系统管理员随时能改任何部门；部门管理员
+    只改自己范围里的页。这跟 `_review_refusal`（审核）刻意分开——一页可能已经上线
+    （不需要再审），但它的可见范围天天要调。
+    """
+    if powers["system_admin"]:
+        return True, None
+    if powers["department"] and org_unit_id in set(powers["units"]):
+        return True, None
+    return False, "改页面权限要系统管理员，或这一页所属部门的部门管理员。"
+
+
+def _audience_text(audience) -> str:
+    """One line saying who, besides the owning department, can see or fill the page."""
+    if not audience:
+        return "只有本部门"
+    parts = []
+    for row in audience:
+        if row["unit_type"] == "company":
+            parts.append("全公司只读" if not row["can_write"] else "全公司可填")
+            continue
+        label = row["name"]
+        if row["can_write"]:
+            label += "能填"
+        else:
+            label += "只读"
+        parts.append(label)
+    return "本部门 + " + "、".join(parts)
+
+
+def _audience_payload(audience) -> list[dict[str, Any]]:
+    """审计里记的形态：按部门码写清能看/能填，别记 id（人看审计认不出 id）。"""
+    return [{"org_code": row["org_code"], "can_read": row["can_read"],
+             "can_write": row["can_write"]} for row in audience]
+
+
+def _fill_text(audience) -> str:
+    """One line saying who, besides the owning department, may fill the page in."""
+    writers = [row for row in audience if row["can_write"]]
+    if not writers:
+        return "仅本部门"
+    names = ["全公司" if row["unit_type"] == "company" else row["name"] for row in writers]
+    return "本部门 + " + "、".join(names)
+
+
 def _entry_mode_for(status):
     """A page under review collects trial data; only an approved page feeds the company."""
     return "live" if status == "active" else "draft"
@@ -1058,7 +1134,9 @@ def page_by_slug(request: Request, org_code: str, slug: str):
             (org_code, slug)).fetchone()
         if row is None:
             return _denied(request, "这个页面不存在，或者还没有可打开的版本。")
-        if _resolve_department(conn, principal, row["org_unit_id"]) is None:
+        can_view, _ = _page_access(conn, principal,
+                                   {"org_unit_id": row["org_unit_id"], "slug": slug})
+        if not can_view:
             return _denied(request, "你不在这个部门的范围内。")
     return RedirectResponse(url=f"/departments/{row['org_unit_id']}/{row['interface_id']}",
                             status_code=303)
@@ -1104,10 +1182,14 @@ def department_lookup(request: Request, org_unit_id: UUID, interface_id: UUID,
             target += "?lookup=" + urllib.parse.quote(text.strip())
         return RedirectResponse(url=target, status_code=303)
     with connection() as conn:
-        if _resolve_department(conn, principal, org_unit_id) is None:
+        page = _page_version(conn, org_unit_id, interface_id)
+        if page is None:
+            return HTMLResponse('<p class="wh-empty">这个页面不存在或不属于该部门。</p>',
+                                status_code=404, headers={"Cache-Control": "no-store"})
+        can_view, _ = _page_access(conn, principal, page)
+        if not can_view:
             return HTMLResponse('<p class="wh-empty">你不在这个部门的范围内。</p>',
                                 status_code=403, headers={"Cache-Control": "no-store"})
-        page = _page_version(conn, org_unit_id, interface_id)
         if page is None:
             return HTMLResponse('<p class="wh-empty">这个页面不存在或不属于该部门。</p>',
                                 status_code=404, headers={"Cache-Control": "no-store"})
@@ -1141,11 +1223,18 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
     """
     with connection() as conn:
         unit = _resolve_department(conn, principal, org_unit_id)
-        if unit is None:
-            return _denied(request, "你不在这个部门的范围内。")
         page = _page_version(conn, org_unit_id, interface_id)
         if page is None:
             return _denied(request, "这个页面不存在或不属于该部门。")
+        # 部门内恒为能看能填；部门外只看页面自己的可见范围（页面设置里授权的那些部门）。
+        can_view, can_fill = _page_access(conn, principal, page)
+        if not can_view:
+            return _denied(request, "你不在这个部门的范围内。")
+        if unit is None:
+            # 别人共享给我的页：我没有这个部门的业务，只为页头显示「这是谁的页」。
+            unit = _department_row(conn, org_unit_id)
+            if unit is None:
+                return _denied(request, "这个页面不存在或不属于该部门。")
         if page["status"] == "archived":
             # Contract 6.4: the page is addressed by (org_unit_id, slug); this row
             # is only one version of it, and the entries recorded here still count
@@ -1213,6 +1302,8 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
     departments = [dict(unit=row, pages=counts.get(row["org_unit_id"], [])) for row in found]
     return TEMPLATES.TemplateResponse(request, "department_workbench.html", {
         "unit": unit, "departments": departments, "pages": pages,
+        # 只读共享：能看这一页、但填写由所属部门负责（模板据此收起表单，只留一行说明）。
+        "can_fill": can_fill,
         "current": page, "page": page, "rendered": rendered, "recent": recent,
         "preview": page["status"] != "active", "draft_mode": page["status"] != "active",
         "page_status_label": {"draft": "待提交审核", "pending": "审核中"}.get(page["status"], page["status"]),
@@ -1254,12 +1345,16 @@ async def department_page_submit(request: Request, org_unit_id: UUID, interface_
     _check_form_token(request, csrf, "oams:interface-form:v1")
     base = f"/departments/{org_unit_id}/{interface_id}"
     with connection() as conn:
-        unit = _resolve_department(conn, principal, org_unit_id)
-        if unit is None:
-            return _denied(request, "你不在这个部门的范围内。")
         page = _page_version(conn, org_unit_id, interface_id)
         if page is None:
             return _denied(request, "这个页面不存在或不属于该部门。")
+        # 能看≠能填：别的部门可以只读共享这一页，那时候表单一颗字都不该收。
+        can_view, can_fill = _page_access(conn, principal, page)
+        if not can_view:
+            return _denied(request, "你不在这个部门的范围内。")
+        if not can_fill:
+            owner = _department_row(conn, page["org_unit_id"])
+            return _denied(request, f"这一页你只能看，不能填：填写由「{owner['name'] if owner else '所属部门'}」负责。")
         if page["status"] == "archived":
             return _archived_writer_response(org_unit_id, page, conn)
         descriptor = page["descriptor"]
@@ -1318,6 +1413,11 @@ def entry_link(request: Request, org_unit_id: UUID, interface_id: UUID, entry_id
             page = _page_version(conn, org_unit_id, interface_id)
             if page is None:
                 return _denied(request, "这个页面不存在或不属于该部门。")
+            can_view, can_fill = _page_access(conn, principal, page)
+            if not can_view:
+                return _denied(request, "你不在这个部门的范围内。")
+            if not can_fill:
+                return _denied(request, "这一页你只能看，不能动它的条目：填写由所属部门负责。")
             if page["status"] == "archived":
                 # The entry itself is still the page's entry (contract 6.4), but a
                 # write aimed at an archived version is refused like the other three
@@ -1372,8 +1472,9 @@ def entry_trace(request: Request, org_unit_id: UUID, interface_id: UUID,
     except _NotPermitted:
         return JSONResponse(status_code=403, content={"available": False, "reason": "no permission"})
     with connection() as conn:
-        unit = _resolve_department(conn, principal, org_unit_id)
-        if unit is None:
+        page = _page_version(conn, org_unit_id, interface_id)
+        can_view = page is not None and _page_access(conn, principal, page)[0]
+        if not can_view:
             return JSONResponse(status_code=403, content={"available": False, "reason": "not in this department"})
         api.require_app_scope(principal, "entries:read:dept")
         data = api.rollup_entries(conn, interface_id, metric_key)
@@ -1727,19 +1828,178 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
 
 
 @router.get("/reviews/settings", response_class=HTMLResponse)
-def review_page_settings(request: Request):
+def review_page_settings(request: Request, saved: str | None = None):
     """「页面管理 · 页面设置」：这个人管得到的每一页，连它现在谁能看、谁能填。
 
     以前叫「各部门页面」——那说的是「有哪些页」，可这一屏真正要管的是**每页的设置**
     （谁能看、谁能填，往后还要在这页上开权限弹窗），所以名字跟着用途走。
     """
-    return _review_view(request, "settings")
+    return _review_view(request, "settings", saved=saved)
 
 
 @router.get("/reviews/decided", response_class=HTMLResponse)
 def review_decided(request: Request):
     """「页面管理 · 最近决定」：谁在什么时候签了什么、按哪个理由退回。"""
     return _review_view(request, "decided")
+
+
+#: 页面权限表单的令牌范围：与审核、填表的分开，三种令牌互不通用。
+PAGE_ACCESS_PURPOSE = "oams:page-access-form:v1"
+
+
+def _page_by_address(conn, org_code: str, slug: str):
+    """一页的「现在该管的那一版」。
+
+    地址是 (org_code, slug)，版本行只是外壳：权限挂在 (owner_org_unit_id, slug) 上，
+    所以改标题、重发一版都不会把授权清零。挑选规则与 `/pages/{org_code}/{slug}` 同一条。
+    """
+    return conn.execute(
+        """SELECT i.interface_id, i.org_unit_id, i.slug, i.name, i.status, i.version_no,
+                  o.org_code, o.name AS org_name
+             FROM oams.interfaces i
+             JOIN oams.org_units o ON o.org_unit_id = i.org_unit_id
+            WHERE o.org_code = %s AND i.slug = %s AND i.status <> 'archived'
+            ORDER BY (i.status = 'active') DESC, i.version_no DESC
+            LIMIT 1""",
+        (org_code, slug)).fetchone()
+
+
+def _company_root(conn):
+    """公司根节点：它就是界面上的「全公司」。"""
+    return conn.execute(
+        """SELECT org_unit_id, name FROM oams.org_units
+           WHERE unit_type = 'company' AND status = 'active'
+           ORDER BY created_at LIMIT 1""").fetchone()
+
+
+@router.get("/reviews/settings/{org_code}/{slug}/access", response_class=HTMLResponse)
+def page_access_dialog(request: Request, org_code: str, slug: str,
+                       error: str | None = None):
+    """页面设置的权限弹窗：这一页现在谁能看、谁能填，能改成什么。
+
+    只读与可写由 `_access_editor` 判（系统管理员 / 该部门的部门管理员），灰态由
+    `security.grantable_org_unit_ids` 给：**前端灰只是提示，保存时服务端再按人复核**。
+    """
+    principal = _member(request)
+    if principal is None:
+        return RedirectResponse(url="/login?next=" + request.url.path, status_code=302)
+    with connection() as conn:
+        powers = _review_powers(conn, principal)
+        page = _page_by_address(conn, org_code, slug)
+        if page is None:
+            return _denied(request, "没有这一页，或者它还没有可管理的版本。")
+        can_edit, why = _access_editor(powers, page["org_unit_id"])
+        if not can_edit:
+            return _denied(request, why)
+        audience = security.interface_audience(conn, page["org_unit_id"], slug)
+        granted = {row["org_unit_id"]: row for row in audience}
+        grantable = security.grantable_org_unit_ids(conn, principal["member_id"])
+        root = _company_root(conn)
+        units = conn.execute(
+            """SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units
+               WHERE status = 'active'
+               ORDER BY (unit_type = 'company') DESC, org_code""").fetchall()
+    choices = []
+    for unit in units:
+        is_owner = unit["org_unit_id"] == page["org_unit_id"]
+        row = granted.get(unit["org_unit_id"])
+        allowed = is_owner or grantable is None or unit["org_unit_id"] in grantable
+        choices.append({
+            "org_unit_id": unit["org_unit_id"], "org_code": unit["org_code"],
+            "name": unit["name"], "unit_type": unit["unit_type"],
+            "is_owner": is_owner, "is_company": root is not None and unit["org_unit_id"] == root["org_unit_id"],
+            "can_read": is_owner or bool(row and row["can_read"]),
+            "can_write": is_owner or bool(row and row["can_write"]),
+            "allowed": allowed,
+            "closed_reason": (None if allowed else
+                              ("只有系统管理员能把页面开给全公司" if root is not None
+                               and unit["org_unit_id"] == root["org_unit_id"]
+                               else f"你没有「{unit['name']}」的管理范围")),
+        })
+    return TEMPLATES.TemplateResponse(request, "access_dialog.html", {
+        "page": page, "choices": choices, "audience": audience,
+        "audience_text": _audience_text(audience),
+        "error": error, "csrf": _form_token(request, PAGE_ACCESS_PURPOSE),
+        "company_root": root,
+    })
+
+
+@router.post("/reviews/settings/{org_code}/{slug}/access")
+async def page_access_save(request: Request, org_code: str, slug: str, csrf: str = Form(...)):
+    """保存这一页的可见范围：本部门永远是能看能填，其余按勾选。
+
+    服务端按**这个人**复核一遍（`grantable_org_unit_ids`）——前端灰只是提示，
+    不是权限；出现越界的部门就整笔拒绝，不落库、不留半截。
+    """
+    principal = _member(request)
+    if principal is None:
+        return RedirectResponse(url="/login?next=" + request.url.path, status_code=302)
+    _check_form_token(request, csrf, PAGE_ACCESS_PURPOSE)
+    form = await request.form()
+    read_ids = {str(value) for value in form.getlist("read")}
+    write_ids = {str(value) for value in form.getlist("write")}
+    with connection() as conn:
+        powers = _review_powers(conn, principal)
+        page = _page_by_address(conn, org_code, slug)
+        if page is None:
+            return _denied(request, "没有这一页，或者它还没有可管理的版本。")
+        can_edit, why = _access_editor(powers, page["org_unit_id"])
+        if not can_edit:
+            return _denied(request, why)
+        grantable = security.grantable_org_unit_ids(conn, principal["member_id"])
+        owner_id = page["org_unit_id"]
+        wanted: list[dict[str, Any]] = []
+        for raw in sorted(write_ids | read_ids):
+            try:
+                unit_id = UUID(raw)
+            except ValueError:
+                continue
+            if unit_id == owner_id:
+                continue  # 本部门不写表：它永远能看能填
+            wanted.append({"org_unit_id": unit_id, "can_read": True,
+                           "can_write": raw in write_ids})
+        if wanted:
+            known = conn.execute(
+                """SELECT org_unit_id, name FROM oams.org_units
+                   WHERE status = 'active' AND org_unit_id = ANY(%s)""",
+                ([row["org_unit_id"] for row in wanted],)).fetchall()
+            names = {row["org_unit_id"]: row["name"] for row in known}
+            missing = [row["org_unit_id"] for row in wanted if row["org_unit_id"] not in names]
+            if missing:
+                return RedirectResponse(
+                    url=f"/reviews/settings/{org_code}/{slug}/access?error="
+                        + urllib.parse.quote("这些部门不在用，不能授权"),
+                    status_code=303)
+            if grantable is not None:
+                over = [names[row["org_unit_id"]] for row in wanted
+                        if row["org_unit_id"] not in grantable]
+                if over:
+                    return RedirectResponse(
+                        url=f"/reviews/settings/{org_code}/{slug}/access?error="
+                            + urllib.parse.quote("你没有这些部门的管理范围：" + "、".join(over)),
+                        status_code=303)
+        before = security.interface_audience(conn, owner_id, slug)
+        if grantable is not None:
+            # 管不到的部门：它本来就有权限的话原样留着。看不见不等于可以撤掉——
+            # 否则一个部门管理员保存一次，就把系统管理员给别人的授权悄悄删了。
+            keep = [{"org_unit_id": row["org_unit_id"], "can_read": row["can_read"],
+                     "can_write": row["can_write"]}
+                    for row in before if row["org_unit_id"] not in grantable]
+            wanted.extend(keep)
+        security.set_interface_audience(conn, owner_id, slug, wanted,
+                                        granted_by=principal["member_id"])
+        after = security.interface_audience(conn, owner_id, slug)
+        api.audit(conn, principal["member_id"], "interface.access_changed", "interface",
+                  page["interface_id"],
+                  f"改了「{page['name']}」的可见范围：现在{_audience_text(after)}",
+                  after={"audience": _audience_payload(after)},
+                  before={"audience": _audience_payload(before)},
+                  metadata={"owner_org_unit_id": str(owner_id), "slug": slug,
+                            "org_code": page["org_code"],
+                            "audience": _audience_payload(after)})
+    return RedirectResponse(url="/reviews/settings?saved="
+                            + urllib.parse.quote(f"「{page['name']}」的权限已保存"),
+                            status_code=303)
 
 
 def _review_view(request: Request, view: str, saved: str | None = None,
@@ -1780,12 +2040,11 @@ def _review_view(request: Request, view: str, saved: str | None = None,
                LEFT JOIN oams.workforce_members m ON m.member_id = i.reviewed_by
                WHERE i.reviewed_at IS NOT NULL
                ORDER BY i.reviewed_at DESC LIMIT 10""").fetchall()
-        # 「页面管理」的右半边：这个人能管到的每一页，连它现在谁能看谁能填。
-        # 可见范围今天只有两档（仅本部门 / 公共模板），而且**不是读权限**——
-        # 公共模板只让别的部门可以拿它当底子另建一版，不是「全公司都能看」。
-        # 表里照实写，免得管理员以为点了「公开」就等于全公司能看。
+        # 页面设置这一屏：这个人能管到的每一页，连它现在谁能看、谁能填。
+        # 谁能看/谁能填是**页面自己的属性**（`oams.interface_access`），跟 `visibility`
+        # 那个「公共模板」不是一回事——后者只表示别的部门能拿它当底子另建一版。
         catalog = conn.execute(
-            """SELECT i.interface_id, i.slug, i.name, i.status, i.version_no, i.visibility,
+            """SELECT i.interface_id, i.org_unit_id, i.slug, i.name, i.status, i.version_no, i.visibility,
                       o.name AS org_name, o.org_code,
                       (SELECT count(*) FROM oams.interface_entries e
                         WHERE e.interface_id = i.interface_id AND e.status_entry = 'active') AS entry_count
@@ -1795,6 +2054,16 @@ def _review_view(request: Request, view: str, saved: str | None = None,
                  AND (%s OR i.org_unit_id = ANY(%s))
                ORDER BY o.name, i.name""",
             (powers["system_admin"], list(powers["units"]))).fetchall()
+        # 每页现在谁能看、谁能填（`oams.interface_access` 那几行），外加「这个人能不能改」。
+        # 一次取齐：清单是一页的量级，别让模板为每行再要一次数据。
+        catalog = [dict(
+            row,
+            audience=security.interface_audience(conn, row["org_unit_id"], row["slug"]),
+        ) for row in catalog]
+        for row in catalog:
+            row["audience_text"] = _audience_text(row["audience"])
+            row["fill_text"] = _fill_text(row["audience"])
+            row["can_edit_access"], row["access_why"] = _access_editor(powers, row["org_unit_id"])
     mine = [row for row in awaiting if _review_refusal(powers, row) is None]
     others = [row for row in awaiting if powers["company"] and _review_refusal(powers, row) is not None]
     # Every pending page is read as a diff against the version it was written
@@ -3801,7 +4070,13 @@ def _page_for_app(conn, principal, interface_id):
                         (interface_id,)).fetchone()
     if page is None:
         raise HTTPException(status_code=404, detail="没有这个页面")
-    require_org_unit_access(conn, principal["member_id"], page["org_unit_id"])
+    # 部门内照旧；部门外只认页面自己共享出去的那张表（页面设置里授权的部门）。
+    if not can_access_org_unit(conn, principal["member_id"], page["org_unit_id"]):
+        if not security.can_view_interface(conn, principal["member_id"],
+                                          page["org_unit_id"], page["slug"]):
+            raise HTTPException(
+                status_code=403,
+                detail="这个部门不在你的范围内：你的岗位和被授权的部门都不含它")
     return page
 
 
@@ -3861,7 +4136,12 @@ async def api_create_entry(request: Request, interface_id: UUID):
                             (interface_id,)).fetchone()
         if page is None:
             raise HTTPException(status_code=404, detail="没有这个页面")
-        require_org_unit_access(conn, principal["member_id"], page["org_unit_id"])
+        if not can_access_org_unit(conn, principal["member_id"], page["org_unit_id"]):
+            if not security.can_fill_interface(conn, principal["member_id"],
+                                              page["org_unit_id"], page["slug"]):
+                raise HTTPException(
+                    status_code=403,
+                    detail="这一页对你只读：你的部门能看，不能填；填写由页面所属部门负责")
         if page["status"] == "archived":
             return _json_error("这一版已归档，不能再往里写；先打开这个页面现在的版本", 409)
         descriptor = page["descriptor"] or {}
