@@ -1,0 +1,58 @@
+{# 权限弹窗的内容：整块换进 <dialog id="access-sheet"> 里。
+   灰掉的部门不是「藏起来」，是勾不上并且写清为什么——藏起来只会让人来问。
+   能看/能填两颗框的名字是 read / write，值是部门 id；本部门不参与（天然能看能填）。 #}
+<form method="post" action="/reviews/settings/{{ page.org_code }}/{{ page.slug }}/access"
+      class="access-form">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="card-head">
+    <div>
+      <h3 style="margin:0">「{{ page.name }}」的可见范围</h3>
+      <p class="meta">{{ page.org_name }} · <span class="mono">{{ page.slug }}</span></p>
+    </div>
+    <span class="spacer"></span>
+    <button type="button" class="ghost"
+            onclick="document.getElementById('access-sheet').close()">取消</button>
+  </div>
+  {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+  <p class="strip neutral" style="margin-top:8px">
+    这里改的是<strong>谁能打开、谁能填</strong>，不是审核：已经上线的页不用重新送审。
+    本部门永远能看能填，不用勾；别的部门要看或要填，勾上就行。保存时服务端按你的权限再核一遍。
+  </p>
+  <table style="margin-top:12px">
+    <thead><tr><th>部门</th><th>能看</th><th>能填</th><th>说明</th></tr></thead>
+    <tbody>
+    {% for c in choices %}
+      <tr>
+        <td>
+          {{ c.name }}
+          {% if c.is_company %}<span class="pill neutral">全公司</span>{% endif %}
+          {% if c.is_owner %}<span class="pill success">本部门</span>{% endif %}
+        </td>
+        <td>
+          {% if c.is_owner %}<span class="pill success">固定能看</span>
+          {% else %}<input type="checkbox" id="read-{{ c.org_unit_id }}" name="read" value="{{ c.org_unit_id }}"
+                           {% if c.can_read %}checked {% endif %}{% if not c.allowed %}disabled {% endif %}>
+            <label for="read-{{ c.org_unit_id }}">能看</label>{% endif %}
+        </td>
+        <td>
+          {% if c.is_owner %}<span class="pill success">固定能填</span>
+          {% else %}<input type="checkbox" id="write-{{ c.org_unit_id }}" name="write" value="{{ c.org_unit_id }}"
+                           {% if c.can_write %}checked {% endif %}{% if not c.allowed %}disabled {% endif %}>
+            <label for="write-{{ c.org_unit_id }}">能填</label>{% endif %}
+        </td>
+        <td class="meta">
+          {% if c.is_owner %}这一页属于它，天然能看能填
+          {% elif c.closed_reason %}{{ c.closed_reason }}{% if c.can_read or c.can_write %}；已有授权会原样保留{% endif %}
+          {% elif c.can_write %}可看、可填
+          {% elif c.can_read %}只读
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div style="margin-top:16px; display:flex; gap:8px; align-items:center">
+    <button type="submit">保存权限</button>
+    <span class="meta">保存后立刻生效；审计里会多一条「改了可见范围」，原来的授权范围也记在里面。</span>
+  </div>
+</form>

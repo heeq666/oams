@@ -70,12 +70,22 @@
       </div>
       {% endif %}
 
+      {% if can_fill %}
       <form method="post" action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <div class="card">{{ rendered | safe }}</div>
         <p class="sub">提交后由填写的岗位负责；AI 帮你整理的文字请先核对事实。</p>
         <button type="submit">{{ '保存试填' if page.status != 'active' else '提交汇报' }}</button>
       </form>
+      {% else %}
+      {# 别的部门共享过来的人：看得到这一页，但不能往里填。别把表单画出来再拒一次，
+         直接说清「你只能看、找谁要写」——按钮点下去才被拒是更差的做法。 #}
+      <div class="card">{{ rendered | safe }}</div>
+      <p class="strip neutral" style="margin-top:12px">
+        你在这个页面是<strong>只读</strong>：能看内容、也能看条目，但不能填。
+        要往这里提数据，请联系{{ unit.name }}——这一页的权限由他们在「页面设置」里调整。
+      </p>
+      {% endif %}
 
       {% if recent %}
       <h2>最近{{ '试填' if page.status != 'active' else '汇报' }}记录</h2>

@@ -34,6 +34,11 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   h2 { font-size: 16px; margin: 24px 0 12px; }
   .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); padding: 16px; }
+  /* 权限弹窗：容器圆角走卡片档 26，内距 16；宽度夹在视口里，窄屏也不许横滚。 */
+  .access-sheet { border: 1px solid var(--line); border-radius: var(--r-card); padding: 16px;
+                  background: var(--card); color: var(--ink); width: min(880px, calc(100vw - 32px));
+                  max-height: calc(100vh - 64px); overflow: auto; }
+  .access-sheet::backdrop { background: rgba(0, 0, 0, 0.28); }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
   .metric { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); padding: 12px; }
   .metric .n { font-size: 24px; font-weight: 600; }
