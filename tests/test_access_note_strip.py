@@ -1,9 +1,11 @@
 """别人共享给我的页，页头那句「谁开的」：说部门不说人，主人自己看不到。
 
 口径（负责人 2026-11-04 定）：权限是发给部门的，人只是当时点的那只手，所以这句里
-只出现部门名，不出现姓名；只给查看就说「查看」，也给了编辑就说「查看和编辑」；公司根
-那一行说「全公司可见」；点名部门与公司根同时命中时只提更具体的那个部门；本部门的人
-（这一页的主人）即使另外还拿到别的部门授权，也不显示这句。
+只出现部门名，不出现姓名。句子先说「这是谁的页面」，再说「凭什么能进来」——因为
+`interface_access_via` 挑出来的那一行永远是读者自己那一侧的部门，写成「X 开给你」会
+变成「你自己部门给了你一个东西」，读者看不出这页其实是别人的（负责人 2026-11-04 在
+演示站上用 GA001 复现后改的句式）。点名部门与公司根同时命中时只提更具体的那个部门；
+本部门的人（这一页的主人）即使另外还拿到别的部门授权，也不显示这句。
 
 句子在服务端拼（`web._access_note`），模板只做纯文本输出；判据来自
 `security.interface_access_via`——它读的就是 `_page_access` 判可见性的那张表，不另写
@@ -32,9 +34,11 @@ OWNER = "DESIGN001"        # 设计负责人：这张页的主人
 GUEST = "MVP1001"          # 人事经理：种子里没有这张页的任何授权，靠下面造的行走进来
 
 SLUG = "design-sampling"   # 种子里设计部那张已经上线的页
-OPENED_VIEW = "人事部开给你查看"
-OPENED_EDIT = "人事部开给你查看和编辑"
-EVERYONE = "全公司可见"
+# 句子的主语是页面主人（这里是设计部），授权部门只说明「凭什么进来」。
+OWNER_NAME = "设计部"
+OPENED_VIEW = f"这是{OWNER_NAME}的页面：人事部可查看。你能到这里来，是因为这一页开给了人事部。"
+OPENED_EDIT = f"这是{OWNER_NAME}的页面：人事部可查看、可编辑。你能到这里来，是因为这一页开给了人事部。"
+EVERYONE = f"这是{OWNER_NAME}的页面：全公司可见。你能看到它，但不是这一页的主人。"
 
 
 @contextlib.contextmanager
@@ -117,7 +121,7 @@ def shared(seeded_database, monkeypatch):
 
 
 def test_the_strip_names_the_department_that_opened_the_page(shared):
-    """只给查看：说「<部门>开给你查看」，不提姓名。"""
+    """只给查看：先说主人，再说开给了谁；不提姓名。"""
     shared["clear"]()
     shared["grant"]("HR")
     response = shared["open_page"]()
@@ -126,7 +130,7 @@ def test_the_strip_names_the_department_that_opened_the_page(shared):
     assert OPENED_EDIT not in response.text
     assert EVERYONE not in response.text
     # 说部门不说人：授权人（ADMIN001）的名字不该出现在这句里。
-    assert "系统管理员开给你" not in response.text
+    assert "系统管理员" not in response.text
 
 
 def test_the_strip_says_editing_when_that_was_granted(shared):
@@ -145,7 +149,7 @@ def test_the_company_root_reads_as_everyone(shared):
     response = shared["open_page"]()
     assert response.status_code == 200, response.text
     assert EVERYONE in response.text
-    assert "开给你查看" not in response.text
+    assert "可查看" not in response.text
 
 
 def test_the_named_department_wins_over_the_company_root(shared):
@@ -166,7 +170,7 @@ def test_the_owning_department_sees_no_strip(shared):
     shared["as_"](OWNER)
     response = shared["open_page"]()
     assert response.status_code == 200, response.text
-    assert "开给你查看" not in response.text
+    assert "这是设计部的页面" not in response.text
     assert EVERYONE not in response.text
 
 
@@ -176,5 +180,5 @@ def test_a_system_admin_without_a_grant_sees_no_strip(shared):
     shared["as_"](ADMIN)
     response = shared["open_page"]()
     assert response.status_code == 200, response.text
-    assert "开给你查看" not in response.text
+    assert "可查看" not in response.text
     assert EVERYONE not in response.text
