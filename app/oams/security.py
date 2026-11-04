@@ -2,6 +2,7 @@ import hashlib
 import secrets
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -449,6 +450,184 @@ def require_org_unit_access(conn, member_id: Any, org_unit_id: Any) -> None:
         raise HTTPException(
             status_code=403,
             detail="这个部门不在你的范围内：你的岗位和被授权的部门都不含它")
+
+
+# ---------------------------------------------------------------------------
+# 页面权限（谁能看 / 谁能填）：页面自己的属性，落在 oams.interface_access
+#
+# 契约见 docs/architecture/interface-access-contract.md。三条不能破的：
+#   1. 只放宽不收紧——本部门的人先过 `can_access_org_unit` 这一条，没行也不会少权限；
+#   2. 权限挂在 `(owner_org_unit_id, slug)` 上，不挂 `interface_id`（版本行每发布
+#      一次就换一个，挂上去等于改个标题权限就清零）；
+#   3. 祖先链用一条递归 CTE 走完，不在 Python 里循环查库——页面打开是热路径。
+# ---------------------------------------------------------------------------
+
+
+def _audience_uuid(value: Any) -> Any:
+    """部门 id 可能是 UUID（库里读出来的），也可能是字符串（表单、JSON 路径参数）。
+
+    集合里存的是 UUID，`str == UUID` 恒假——不掰正，传字符串的调用方会静默得到
+    「没有权限」，而不是报错。掰不动就原样返回，让库去报真正的错。
+    """
+    if value is None or isinstance(value, uuid.UUID):
+        return value
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return value
+
+
+def _interface_exists(conn, owner_org_unit_id: Any, slug: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM oams.interfaces WHERE org_unit_id = %s AND slug = %s LIMIT 1",
+        (owner_org_unit_id, slug),
+    ).fetchone() is not None
+
+
+def _audience_chain_cte() -> str:
+    """给「我这个部门的祖先链」用的递归 CTE，起点是传入的部门 id 数组。"""
+    return """WITH RECURSIVE chain AS (
+                  SELECT org_unit_id FROM oams.org_units
+                   WHERE org_unit_id = ANY(%s::uuid[])
+                  UNION
+                  SELECT parent.parent_org_unit_id
+                    FROM oams.org_units parent
+                    JOIN chain c ON parent.org_unit_id = c.org_unit_id
+                   WHERE parent.parent_org_unit_id IS NOT NULL)"""
+
+
+def _seat_chain(conn, member_id: Any) -> set[Any]:
+    """岗位所在部门 + 它们的所有祖先（走到公司根）——一次查询，不在 Python 里爬树。"""
+    seats = active_org_unit_ids(conn, member_id)
+    if not seats:
+        return set()
+    rows = conn.execute(
+        _audience_chain_cte() + " SELECT org_unit_id FROM chain",
+        (list(seats),),
+    ).fetchall()
+    return {row["org_unit_id"] for row in rows}
+
+
+def interface_audience(conn, owner_org_unit_id: Any, slug: str) -> list[dict[str, Any]]:
+    """这一页开给了哪些部门（本部门不入表，它本来就永远能看能填）。"""
+    owner_org_unit_id = _audience_uuid(owner_org_unit_id)
+    rows = conn.execute(
+        """SELECT a.org_unit_id, u.org_code, u.name, u.unit_type,
+                  a.can_read, a.can_write, a.granted_at
+             FROM oams.interface_access a
+             JOIN oams.org_units u USING (org_unit_id)
+            WHERE a.owner_org_unit_id = %s AND a.slug = %s
+            ORDER BY u.org_code""",
+        (owner_org_unit_id, slug),
+    ).fetchall()
+    return [
+        {
+            "org_unit_id": row["org_unit_id"],
+            "org_code": row["org_code"],
+            "name": row["name"],
+            "unit_type": row["unit_type"],
+            "can_read": row["can_read"],
+            "can_write": row["can_write"],
+            "granted_at": row["granted_at"],
+        }
+        for row in rows
+    ]
+
+
+def _reachable_by_audience(conn, member_id: Any, owner_org_unit_id: Any, slug: str,
+                           column: str) -> bool:
+    """祖先链上有没有一行把这一页开给了这个人所在的部门。
+
+    `column` 只由本模块的两个判据传 `can_read` / `can_write`，不是外部输入。
+    """
+    chain = _seat_chain(conn, member_id)
+    if not chain:
+        return False
+    return conn.execute(
+        f"""SELECT 1 FROM oams.interface_access a
+             WHERE a.owner_org_unit_id = %s AND a.slug = %s AND a.{column}
+               AND a.org_unit_id = ANY(%s::uuid[])
+             LIMIT 1""",
+        (owner_org_unit_id, slug, list(chain)),
+    ).fetchone() is not None
+
+
+def can_view_interface(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> bool:
+    """这一页这个人能不能打开。
+
+    部门内（含公司级、含被授权代管）先过——这是「只放宽不收紧」的保证；过不了才看
+    页面自己开的范围。页不存在一律 False，不抛异常。
+    """
+    owner_org_unit_id = _audience_uuid(owner_org_unit_id)
+    if not _interface_exists(conn, owner_org_unit_id, slug):
+        return False
+    if can_access_org_unit(conn, member_id, owner_org_unit_id):
+        return True
+    return _reachable_by_audience(conn, member_id, owner_org_unit_id, slug, "can_read")
+
+
+def can_fill_interface(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> bool:
+    """这一页这个人能不能提条目——判据同上，但要的是「能填」那一格。"""
+    owner_org_unit_id = _audience_uuid(owner_org_unit_id)
+    if not _interface_exists(conn, owner_org_unit_id, slug):
+        return False
+    if can_access_org_unit(conn, member_id, owner_org_unit_id):
+        return True
+    return _reachable_by_audience(conn, member_id, owner_org_unit_id, slug, "can_write")
+
+
+def set_interface_audience(conn, owner_org_unit_id: Any, slug: str, rows: list[dict[str, Any]], *,
+                           granted_by: Any, note: str | None = None) -> None:
+    """整体覆盖这一页的范围：先删本页所有行，再插「至少能看」的那些。
+
+    * 同一部门写两次是覆盖不是追加（主键三段管着）；
+    * `can_write` 必然蕴含 `can_read`——表上有 CHECK，这里先把它掰正，免得把约束
+      当成调用方要读的错误；
+    * 两格都假的行不入库（「一行都没有」就是「这个部门看不到」）。
+
+    「谁能改这一页」「哪些部门允许授」由调用方（页面设置）按人复核，这里只落库。
+    """
+    owner_org_unit_id = _audience_uuid(owner_org_unit_id)
+    conn.execute(
+        "DELETE FROM oams.interface_access WHERE owner_org_unit_id = %s AND slug = %s",
+        (owner_org_unit_id, slug),
+    )
+    wanted: dict[Any, tuple[bool, bool]] = {}
+    for row in rows:
+        org_unit_id = _audience_uuid(row["org_unit_id"])
+        can_write = bool(row.get("can_write"))
+        can_read = bool(row.get("can_read")) or can_write
+        if not can_read:
+            continue
+        wanted[org_unit_id] = (can_read, can_write)
+    for org_unit_id, (can_read, can_write) in sorted(wanted.items(), key=lambda item: str(item[0])):
+        conn.execute(
+            """INSERT INTO oams.interface_access
+                   (owner_org_unit_id, slug, org_unit_id, can_read, can_write, granted_by, note)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (owner_org_unit_id, slug, org_unit_id, can_read, can_write, granted_by, note),
+        )
+
+
+def grantable_org_unit_ids(conn, member_id: Any) -> set[Any] | None:
+    """这个人改页面权限时能把范围开给哪些部门。
+
+    `None` = 公司级：任何在用部门（含公司根，那就是界面上的「全公司」）都能开。
+    `set`  = 只有他座位所在的那几个在用的部门；**不含**公司根——「开给全公司」
+          是公司级才有的动作，部门管理员给自己几个部门开范围就够了。
+    """
+    if has_company_scope(conn, member_id):
+        return None
+    seats = active_org_unit_ids(conn, member_id)
+    if not seats:
+        return set()
+    rows = conn.execute(
+        """SELECT org_unit_id FROM oams.org_units
+            WHERE status = 'active' AND unit_type <> 'company'
+              AND org_unit_id = ANY(%s::uuid[])""",
+        (list(seats),),
+    ).fetchall()
+    return {row["org_unit_id"] for row in rows}
 
 
 def revoke_session(conn, session_id: Any, member_id: Any) -> None:

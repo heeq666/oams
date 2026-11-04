@@ -166,6 +166,27 @@ CREATE TABLE IF NOT EXISTS oams.collab_threads (
 COMMENT ON TABLE oams.collab_threads IS '协作室会话：manage 部门管理群 / fill 页面汇报群 / dm 私聊';
 
 --
+-- Name: interface_access; Type: TABLE; Schema: oams; Owner: -
+--
+
+-- 页面权限：一页（所属部门 + slug）× 一个部门一行。不挂 interface_id——版本行每发布
+-- 一次就换一个，挂上去等于改个标题权限就清零。本部门永远能看能填，不写进这张表。
+CREATE TABLE IF NOT EXISTS oams.interface_access (
+    owner_org_unit_id uuid NOT NULL,
+    slug text NOT NULL,
+    org_unit_id uuid NOT NULL,
+    can_read boolean DEFAULT true NOT NULL,
+    can_write boolean DEFAULT false NOT NULL,
+    granted_by uuid,
+    granted_at timestamp with time zone DEFAULT now() NOT NULL,
+    note text,
+    CONSTRAINT interface_access_pkey PRIMARY KEY (owner_org_unit_id, slug, org_unit_id),
+    CONSTRAINT interface_access_write_implies_read CHECK (((NOT can_write) OR can_read))
+);
+
+COMMENT ON TABLE oams.interface_access IS '页面权限：哪几个部门能看/能填这一页（本部门默认能看能填，不入表）';
+
+--
 -- Name: interface_entries; Type: TABLE; Schema: oams; Owner: -
 --
 
@@ -1011,6 +1032,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS collab_threads_manage_uq ON oams.collab_thread
 --
 
 CREATE INDEX IF NOT EXISTS collab_threads_org_idx ON oams.collab_threads USING btree (org_unit_id) WHERE (status = 'active'::text);
+
+--
+-- Name: interface_access_unit_idx; Type: INDEX; Schema: oams; Owner: -
+--
+
+-- 打开页面时按「我这个部门的祖先链」找行，走这个索引。
+CREATE INDEX IF NOT EXISTS interface_access_unit_idx ON oams.interface_access USING btree (org_unit_id);
 
 --
 -- Name: interface_entries_extra_idx; Type: INDEX; Schema: oams; Owner: -
