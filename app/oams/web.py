@@ -980,6 +980,19 @@ def _page_version(conn, org_unit_id, interface_id):
         (interface_id, org_unit_id)).fetchone()
 
 
+def _is_page_author(page, principal) -> bool:
+    """这一页是不是本人建的。
+
+    送审是「我写完了」的声明，替别人说这句话，审核人就分不清该找谁问；
+    真要说的是别人，让作者自己点，或者走审核人的「退回」。
+    老数据没有 created_by（种子/迁移留下的）时不当成别人的页。
+    """
+    author = page["created_by"]
+    if author is None:
+        return True
+    return str(author) == str(principal.get("member_id"))
+
+
 def _archived_reader_response(request: Request, conn, org_unit_id, row):
     """Send a reader of an archived version to the page's current one.
 
@@ -1391,6 +1404,10 @@ def department_submit_review(request: Request, org_unit_id: UUID, interface_id: 
         if prior["status"] == "active":
             return RedirectResponse(url=base + "?error=" + urllib.parse.quote("这个页面已经启用，无需再次提交"),
                                     status_code=303)
+        if not _is_page_author(prior, principal):
+            return RedirectResponse(
+                url=base + "?error=" + urllib.parse.quote("这一页不是你建的，别替别人送审——让作者自己送"),
+                status_code=303)
         conn.execute(
             """UPDATE oams.interfaces
                   SET status = 'pending', review_stage = 'department', review_note = NULL, updated_at = now()
@@ -3585,6 +3602,8 @@ def api_submit_interface(request: Request, interface_id: UUID):
                 "error": "这一版已归档，不能送审。要改就改现在的版本。",
                 "current_interface_id": str(current) if current is not None else None,
             }, status_code=409)
+        if not _is_page_author(page, principal):
+            return _json_error("这一页不是你建的，别替别人送审——让作者自己送", 403)
         conn.execute(
             """UPDATE oams.interfaces
                   SET status = 'pending', review_stage = 'department', review_note = NULL,
