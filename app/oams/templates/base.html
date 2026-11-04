@@ -517,6 +517,12 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .pill.danger  { background: var(--danger-soft);  color: var(--blocked); }
   .pill.info    { background: var(--info-soft); color: var(--info); }
   .pill.agent   { background: var(--agent-soft); color: var(--agent); }
+  /* 表格里的胶囊按「字」对齐，不按「底」对齐：胶囊自带左右内距 8，直接放进单元格
+     会让「已启用」比表头「状态」右移 8px，一眼看着这一列没对齐（2026-11-04 用户指出
+     「状态和已启用的字没对齐」）。把胶囊整体左挪它自己的内距，胶囊里的字就落回表头
+     那条竖线；代价是胶囊底贴到单元格左沿——宁可底色齐边，也不要字错位。
+     只认单元格里的第一个元素：前面已经有字（如「本部门 已启用」）时对齐的是那行字。 */
+  td > .pill:first-child, td > .badge:first-child { margin-left: -8px; }
   .strip { padding: 8px 12px; border-radius: var(--r-control); font-size: 12px; line-height: 1.6; }
   .strip.warning { background: var(--warning-soft); color: var(--warning-ink); }
   .strip.neutral { background: var(--subtle); color: var(--muted); }
