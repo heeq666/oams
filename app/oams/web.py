@@ -1781,7 +1781,10 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
     # against, not as a whole page: that is the only part a human still has to
     # think about, and the part where a quiet re-mapping would otherwise slip by.
     with connection() as conn:
-        review_cards = [dict(row, bundle=_review_bundle(conn, row), acting=_acting_stage(powers, row))
+        review_cards = [dict(row, bundle=_review_bundle(conn, row),
+                             acting=_acting_stage(powers, row),
+                             # 签之前先试着画一遍：画不出来的页不该走到审核人手里
+                             draw_health=_draw_health(row["descriptor"]))
                         for row in mine]
     # The decision list reads a code, not prose: "what do departments keep getting
     # wrong" has to be answerable by counting, not by re-reading old notes.
@@ -1818,27 +1821,49 @@ def _preview_refusal(powers: dict[str, Any], page: Any) -> str | None:
     return _review_refusal(powers, probe)
 
 
-def _preview_degraded(exc: RenderError) -> str:
-    """What the card shows when this version cannot be drawn at all.
+def _preview_reason(exc: Exception) -> str:
+    """One sentence a reviewer can act on, without quoting the traceback.
 
     A descriptor that calls a module nobody registers any more (the platform
     indicators and their modules went away with the product hub) is a fact about
-    *that version*, not a server failure: it renders nothing, but the reviewer is
-    still owed a sentence -- which module, and what to do -- instead of a 500 that
-    htmx will not swap in. The exception text never reaches the page whole; only
-    the module name it names is quoted, and the rest goes to the log.
+    *that version*, not a server failure. The exception text never reaches the
+    page whole: only the module name it names is quoted, the rest goes to the log.
     """
     text = str(exc)
     marker = "未注册的模块类型 '"
     at = text.find(marker)
     module = text[at + len(marker):].split("'", 1)[0] if at != -1 else ""
-    reason = (f"{module} 已下线" if module else "描述符里有渲染器不认识的写法")
+    if module:
+        return f"{module} 已下线"
+    if isinstance(exc, RenderError):
+        return "描述符里有渲染器不认识的写法"
+    return f"渲染时抛了 {type(exc).__name__}，细节在服务端日志里"
+
+
+def _preview_degraded(exc: Exception) -> str:
+    """What the card shows when this version cannot be drawn at all."""
     return (
         '<div class="preview-degraded" data-degraded="1" role="status">'
         '<p class="caption">预览不可用</p>'
-        f'<p class="sub">这一版渲不出来：{html_text.escape(reason)}。'
+        f'<p class="sub">这一版渲不出来：{html_text.escape(_preview_reason(exc))}。'
         '先按差异表审，或让作者改完重发。</p>'
         '</div>')
+
+
+def _draw_health(descriptor: Any) -> dict[str, Any]:
+    """Can this version be drawn at all? Asked before the reviewer signs.
+
+    Rendering is the only honest probe: this is the same call the preview route
+    makes (`render_preview`, sample values, no department data). A page used to
+    pass validation, pass review, and then answer 500 the first time somebody
+    opened it -- the reviewer had signed a definition nobody had ever drawn.
+    """
+    try:
+        render_preview(descriptor or {})
+    except Exception as exc:  # noqa: BLE001 - any failure means "cannot draw"
+        _RENDER_LOG.warning("draw health: page would not render: %s", exc)
+        return {"ok": False, "reason": _preview_reason(exc)}
+    return {"ok": True, "reason": ""}
 
 
 def _preview_problem(request: Request, message: str, *, status_code: int):

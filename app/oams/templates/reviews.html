@@ -38,6 +38,11 @@
     </div>
     <span class="spacer"></span>
   </div>
+  {% if p.draw_health and not p.draw_health.ok %}
+  {# 体检：这一版现在根本渲不出来。签之前就得知道——一次「盲签」让坏页上线、
+     第一次打开就 500，审核人还以为是权限问题。 #}
+  <p class="strip warning" role="alert">预览打不开：{{ p.draw_health.reason }}。先别签，退回让作者改完再送。</p>
+  {% endif %}
 
   <div class="grid-12">
   <div class="span-8 diff-block">
