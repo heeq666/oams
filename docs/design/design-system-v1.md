@@ -254,6 +254,8 @@ GROUP · 浮层（在 B2）： Tooltip、 Menu（面板 200 宽、圆角 18 —�
 - **「加载更早」是替换那一行，不是重画整个消息区**：加载行自带 `id="collab-before"`、`hx-target="this"`、`hx-swap="outerHTML"`，历史消息 prepend 在它下面；`htmx:beforeSwap` 记下 `{scrollTop, scrollHeight}`，`afterSwap` 按高度差把 `scrollTop` 补回去，视线原来那条不被顶走。滚到顶自动触发（`scroll` 不冒泡，监听要挂 `capture`），全部拉完后加载行换成「已经是最早的消息了」并不可再点。
 - **开合状态挂在 `<body>` 上，不能挂在 htmx 的 swap 目标上**：`#collab-host` 是 htmx 的替换目标，htmx 会改它的 `className`（`htmx-settling`），挂在上面的 `is-open` 会被抹掉，面板升不起来 / 升起来关不掉。规则：`body.collab-open` 控制升起，脚本里用`wantOpen` 一个变量做唯一真相（`reveal()` 读它、`close()` 清它），按钮与 Esc 都只改它。
 
+- **表格里的胶囊按「字」对齐，不按「底」对齐**（2026-11-04 用户指出「状态和已启用的字没对齐」）：表头文字落在单元格内距 8 的起点，而胶囊自带左右内距 8，胶囊直接放进单元格，里面的字就比表头右移 8px，整列看着没对齐（不是没居中对齐，是**两行字不在一条竖线上**）。做法是 `td > .pill:first-child, td > .badge:first-child { margin-left: -8px }`：把胶囊整体左挪它自己的内距，胶囊里的字落回表头那条线；代价是胶囊底贴到单元格左沿——**宁可底色齐边，也不要字错位**。实测 `/reviews/settings`：表头「状态」字 x=715.5、胶囊里「已启用」字 x=715.5，差 0（改前 717.1，差 8）。只在胶囊是单元格第一个元素时生效：前面已经有字（「本部门 已启用」）时对齐的是那行字，胶囊跟它保持行内 8。**别用「表头也缩进 8」来修**——那只救这一列，下一张表又得再来一次。
+
 ### 6.1 窄档表格（≤1100px）：带控件的表拆块、只读表折行（2026-11-01 定）
 
 **先分三态，别一起改。** 拆块只挂在 `.wh-table-controls` 这一层，而它由 `modules/table.html` 的 `{% if inline_widgets() %}` 决定——`inline_widgets()` 判的是 `_state().mode in INLINE_MODES`，`INLINE_MODES = ("edit", "preview")`（`app/oams/render.py:52`）。所以：**`edit` 套、`preview` 也套、`readonly` 不套**。换句话说，「只读表不套」这句得说准：这里说的「只读表」是 **readonly 态**（`render_read_only()`，`render.py:987`）——它靠 `td` 折行本来就装得下（同一批 5 列数据实测行高 31→49、无截断），**readonly 一个字都没改**；而 **`preview` 态会套**（`render_preview()` 也走 `inline_widgets()`，审核侧的模块预览片同一条路），所以在 ≤1100 下审核预览片也是拆块排布——**那不是回归**，窄栏里拆块本来就比五列挤着好读。
