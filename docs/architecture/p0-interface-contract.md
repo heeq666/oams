@@ -255,6 +255,15 @@ export:dept
 
 **送审只有作者本人能做**（2026-11-04 定，两条出口同一口径）：工作台表单与 `POST /v1/interfaces/{id}/submit` 都校验「送审人就是这一版的作者」，否则分别回 303 `?error=…` 与 403。理由不是防谁作弊，而是**送审会把草稿冻住**（`pending` 期间不能再改）——同部门同事替你按下这一下，等于把你正在写的东西锁了。需要别人接手时走「退回」把页面还给作者，而不是替他送。作者已离职（`created_by` 为空）的历史版本放行，否则那些页面永远送不出去。
 
+**谁能签：先把两件事分开——身份类型（人 / AI 接入方）与角色（系统管理员 / 部门管理员 / 普通用户）**（2026-11-04 按老大的模型重写，`b2a3495`）。上面那条「送审只有作者本人」只约束**送审**，不约束**签**。
+
+- **系统管理员**：最高权限，**不受审核限制**。任何部门、任何阶段（部门初审与公司终审）、**自己建或自己提交的页**都能签。`_review_refusal`（`app/oams/web.py:1527`）在 `powers["system_admin"]` 为真时直接放行。
+- **部门管理员**：只能签本部门（`workforce.interfaces/review` + `page.org_unit_id in powers["units"]`），**包括自己提交的那一版**——他本来就是部门的一员，现实里主管也是签字人。别的部门要走公司层（`review_company`）。
+- **普通用户**：签不了，初审要 `workforce.interfaces/review`，终审要 `review_company`。
+- **AI 默认不能签**：接入方会话（`auth_provider` 以 `connected-app:` 开头）要**两个条件同时成立**才放行——身份里带了 `interfaces:review`（允许页上是「替你签页面审核」那一行），且它代表的那个人本人本来就够权限。缺一条回中文 403：「这是接入方的动作，审核要人自己点：…」。应用签得永远不会比这个人宽。
+- **旧判据已删**：①「作者回避」（自己提交的页不能自己签）②「部门没人签就平台兜底」（`_department_reviewers` / `_stands_in`）。前者把系统管理员挡在自己那页外面（2026-11-04 老大点不动审核页的直接原因），后者会让平台在自己没资格时替人盖章。
+- **两个出口、同一套判据**：工作台 `POST /reviews/{id}/approve|reject` 与 `POST /v1/interfaces/{id}/review`（`decision` ∈ `approve|reject`，`note` 可选），共用 `_approve_page` / `_reject_page` 与同一套审计（`interface.review_stage_passed` / `interface.rejected`），不会有「页面显示能签、点下去被拒」。
+
 
 ### 4.1 可见性与能力：文档只声明意图，批准由启用节点记录
 
