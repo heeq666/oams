@@ -4,7 +4,7 @@
 <div class="pagehead">
   <div>
     <h1>页面管理</h1>
-    {% if view == 'catalog' %}
+    {% if view == 'settings' %}
     <p class="sub">这是你管得到的每一页，以及它现在<strong>谁能看、谁能填</strong>。改范围要等权限编辑上线，今天只能重发一版页面再送审。</p>
     {% elif view == 'decided' %}
     <p class="sub">谁在什么时候签了什么、按哪个理由退回。这里是记录，只能往后加，不改写已经发生的事。</p>
@@ -147,7 +147,7 @@
 {# 平台看得到全公司在等什么，但不在这里替他按：能审谁由权限决定，
    这段只回答「这页为什么还没上线」。 #}
 {% if powers.company and others %}
-<div class="card span-12" id="elsewhere">
+<div class="card span-12">
   <div class="card-head"><div>
     <h2 style="margin:0">别处还在等</h2>
     <p class="meta">全公司还没审完的页面。这里只读——你能签的已经在上面了；还留在这里的，要么不归你签。</p>
@@ -170,10 +170,10 @@
 
 {% endif %}
 
-{% if view == 'catalog' %}
-<div class="card span-12" id="catalog">
+{% if view == 'settings' %}
+<div class="card span-12">
   <div class="card-head">
-    <h2 style="margin:0">各部门页面</h2>
+    <h2 style="margin:0">页面设置</h2>
     <span class="spacer"></span>
     <span class="meta">{{ catalog | length }} 页</span>
   </div>
@@ -214,7 +214,7 @@
 {% endif %}
 
 {% if view == 'decided' %}
-<div class="card span-12" id="decided">
+<div class="card span-12">
   <div class="card-head"><h2 style="margin:0">最近决定</h2></div>
   {% if decided %}
   <table style="margin-top:12px">

@@ -116,27 +116,35 @@ def _script() -> None:
         block = aside.group(0) if aside else ""
         return re.findall(r'<a href="([^"]+)" class="rail-item([^"]*)"', block)
 
-    views = (("/reviews", "/reviews"), ("/reviews/catalog", "/reviews/catalog"),
+    views = (("/reviews", "/reviews"), ("/reviews/settings", "/reviews/settings"),
              ("/reviews/decided", "/reviews/decided"))
     for path, own in views:
         status, html, _ = admin_call(path)
         items = rail_items(html)
         hrefs = [href for href, _ in items]
         on = [href for href, cls in items if "on" in cls]
+        _, names, _ = shell(html)
         check(path + " is its own page, not an anchor on the queue",
               status == 200
-              and hrefs == ["/reviews", "/reviews/catalog", "/reviews/decided"]
+              and hrefs == ["/reviews", "/reviews/settings", "/reviews/decided"]
               and not any("#" in h for h in hrefs), hrefs)
+        # 名字是老大定的：这一条叫「页面设置」（以前叫「各部门页面」）。
+        check(path + " names its views the way the owner asked",
+              names == ["待审核", "页面设置", "最近决定"], names)
         check(path + " highlights exactly its own item", on == [own], on)
     status, queue, _ = admin_call("/reviews")
-    status2, catalog, _ = admin_call("/reviews/catalog")
+    status2, catalog, _ = admin_call("/reviews/settings")
     status3, decided, _ = admin_call("/reviews/decided")
-    check("the catalog lives on the catalog page only",
-          "各部门页面" in catalog and "id=\"catalog\"" in catalog and "id=\"catalog\"" not in queue,
-          (status2, 'id="catalog"' in queue))
+    # 用标题判，不用「这几个字有没有出现」：待审卡里也有一句「会记进最近决定」。
+    settings_head = '<h2 style="margin:0">页面设置</h2>'
+    decided_head = '<h2 style="margin:0">最近决定</h2>'
+    check("page settings lives on its own page only",
+          status2 == 200 and settings_head in catalog and "谁能看" in catalog
+          and settings_head not in queue,
+          (status2, settings_head in queue))
     check("the decision list lives on its own page only",
-          "id=\"decided\"" in decided and "id=\"decided\"" not in queue,
-          (status3, 'id="decided"' in queue))
+          status3 == 200 and decided_head in decided and decided_head not in queue,
+          (status3, decided_head in queue))
 
     status, html = follow(lead_call, "/departments")
     has_rail, names, links = shell(html)
