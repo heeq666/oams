@@ -55,6 +55,7 @@ Content-Type: application/json
 | 新建草稿页面 | `POST {base}/v1/interfaces`，体是 `{"slug": ..., "name": ..., "descriptor": {...}}` |
 | 把草稿送审 | `POST {base}/v1/interfaces/{interface_id}/submit`，不需要请求体（只有草稿能送） |
 | 回读一页现在什么状态 | `GET {base}/v1/interfaces/{interface_id}` → `status`、`review_stage`、`versions` |
+| 替人签一版页面 | `POST {base}/v1/interfaces/{interface_id}/review`，体是 `{"decision": "approve"\|"reject", "note": "..."}`（退回必须写 note） |
 
 `interface_id` 从哪来：用户给你，或者你先按部门问用户要哪一页——**别自己编**。
 
@@ -96,8 +97,11 @@ OAMS 自带 MCP 服务（`oams-interface`）。下面三个工具**不连数据�
 | `entries:read:dept` | 读本部门的填报条目 | 只能读 |
 | `interfaces:draft` | 新建草稿页面并送审 | 只能建草稿、送审，不能直接上线 |
 | `entries:write` | 往本部门页面里填报条目 | 能写条目 |
+| `interfaces:review` | 替你签页面审核 | 替你点「通过 / 退回」 |
 
 **默认一个写权限都不给**：没勾就是没给。
+
+**审核是人的动作，两个条件同时成立才算数**：人允许时明确勾了 `interfaces:review`，**并且**这个人自己本来就有审核权（部门主管能签自己部门、系统管理员能签任何部门任何阶段）。勾了范围但这个人本人没审核权 → 403「这是接入方的动作，审核要人自己点：你本人没有审核权限」；人本来能签但他没勾这个范围 → 403「…代表你的应用没有被允许「替你签页面审核」」。系统管理员签自己建的页、自己提交的页都行——**看权限不看作者**，也别再去问「作者是谁」。
 
 ## 出错了怎么办
 

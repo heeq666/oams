@@ -140,7 +140,8 @@ class ReportRetract(BaseModel):
 
 # 范围是**动作**（能做什么），不是**数据**（能看到几个部门）：部门边界永远由人
 # 的任职决定，应用只是替这个人动手。所以这里没有「全公司」这种范围。
-APP_SCOPES = ("entries:read:dept", "interfaces:draft", "entries:write")
+APP_SCOPES = ("entries:read:dept", "interfaces:draft", "entries:write",
+              "interfaces:review")
 
 
 class AppCodeCreate(BaseModel):

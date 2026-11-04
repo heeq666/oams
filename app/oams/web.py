@@ -1488,106 +1488,71 @@ def _review_bundle(conn, row):
     return bundle
 
 
-def _department_reviewers(conn) -> dict[Any, set[Any]]:
-    """Who can sign the first level, per department -- one query, not one per page.
-
-    The queue needs this for a single question: for this page, is there anybody
-    else who could do the department's half?  When the answer is nobody the
-    platform has to be able to stand in (see `_review_refusal`); otherwise a page
-    submitted by the only reviewer of its department waits forever.
-
-    Grants carrying `effect='deny'` still count as reviewers here, although
-    `has_permission` would refuse them. A wrong "somebody else can do it" is
-    recoverable (ask a colleague); a wrong "nobody can do it" locks the page.
-    """
-    rows = conn.execute(
-        """WITH reviewer_members AS (
-               SELECT DISTINCT a.member_id
-                 FROM oams.permission_grants g
-                 JOIN oams.position_assignments a
-                   ON (g.subject_type = 'position' AND a.position_id = g.position_id)
-                   OR (g.subject_type = 'member' AND a.member_id = g.member_id)
-                WHERE g.resource = 'workforce.interfaces' AND g.action = 'review'
-                  AND g.revoked_at IS NULL AND g.scope_type = 'all'
-                  AND g.valid_from <= now()
-                  AND (g.valid_until IS NULL OR now() < g.valid_until)
-                  AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
-                  AND (a.ends_at IS NULL OR now() < a.ends_at))
-           SELECT DISTINCT r.member_id, p.org_unit_id
-             FROM reviewer_members r
-             JOIN oams.position_assignments a
-               ON a.member_id = r.member_id
-              AND a.status IN ('active', 'scheduled') AND a.starts_at <= now()
-              AND (a.ends_at IS NULL OR now() < a.ends_at)
-             JOIN oams.positions p
-               ON p.position_id = a.position_id AND p.status = 'active'""").fetchall()
-    by_unit: dict[Any, set[Any]] = {}
-    for row in rows:
-        by_unit.setdefault(row["org_unit_id"], set()).add(row["member_id"])
-    return by_unit
-
 
 #: What a member may sign off, and where -- resolved once, read everywhere.
 def _review_powers(conn, principal: dict[str, Any]) -> dict[str, Any]:
-    """Two rights, two jobs, and neither implies the other.
+    """Who this click may sign for -- resolved once, read everywhere.
 
-    `review` lets someone sign off the pages of the departments their own
-    positions sit in; `review_company` lets the platform sign off anything that
-    reached the final stage. A department reviewer's range is deliberately
-    `active_org_unit_ids` and not `administered_org_unit_ids`: administering a
-    department is a different job from reviewing its pages, and most reviewers
-    administer nothing at all.
+    三种人，三条规矩（2026-11-04 老大定的模型）：
+
+    * **系统管理员**（`workforce.grants/manage`）不受审核限制：任何部门、任何
+      阶段，包括自己建的、自己提交的页。他点不动自己那一页，是把「作者回避」
+      当成了审核规矩，而那是旧模型。
+    * **部门管理员**（`workforce.interfaces/review`）只签自己所在部门的页，但
+      **可以签自己提交的**：现实里主管就是那个签字人。
+    * **普通人**没有审核权。
+
+    审核是**人**的动作：一张接入方的票（`connected-app:`）只有在人被允许时勾了
+    `interfaces:review`、并且这个人自己本来就有审核权时才放行——应用永远不能比
+    它代表的那个人签得更多。
     """
     member_id = principal["member_id"]
-    department = has_permission(conn, member_id, "workforce.interfaces", "review")
-    company = has_permission(conn, member_id, "workforce.interfaces", "review_company")
-    units = active_org_unit_ids(conn, member_id) if department else set()
-    # Only the platform needs the roster, and only to find out that a department
-    # has nobody left to ask; a department reviewer never acts outside their own.
-    reviewers = _department_reviewers(conn) if company else {}
-    return {"member_id": member_id, "department": department, "company": company,
-            "units": units, "reviewers": reviewers}
-
-
-def _stands_in(powers: dict[str, Any], page: Any) -> bool:
-    """Whether the platform has to take the first level, nobody else being left.
-
-    The page's own author counts out on purpose: a reviewer who wrote the version
-    cannot also sign it, so they do not save the department from needing somebody
-    else -- that is the whole point of keeping authors away from their own page.
-    """
-    if not powers["company"]:
-        return False
-    others = powers["reviewers"].get(page["org_unit_id"], set())
-    return not (others - {powers["member_id"], page["updated_by"]})
+    app_id = api.app_id_of(principal)
+    app_review = False
+    if app_id is not None:
+        authorization = api.live_app_authorization(principal)
+        app_review = authorization is not None and "interfaces:review" in (
+            authorization["scopes"] or ())
+    return {
+        "member_id": member_id,
+        "system_admin": has_company_scope(conn, member_id),
+        "department": has_permission(conn, member_id, "workforce.interfaces", "review"),
+        "company": has_permission(conn, member_id, "workforce.interfaces", "review_company"),
+        "units": active_org_unit_ids(conn, member_id),
+        "app_id": app_id,
+        "app_review": app_review,
+    }
 
 
 def _review_refusal(powers: dict[str, Any], page: Any) -> str | None:
     """Why this member may not decide this page, or None when they may.
 
-    The queue asks it to decide whether to draw buttons and the two POST routes
-    ask it before writing: one rule, so a page can never show "approve" and then
-    refuse the click. Authors are refused on purpose -- a page nobody else looked
-    at is not a reviewed page.
+    The queue asks it to draw buttons and both POST routes ask it before
+    writing: one rule, so a page can never show "approve" and then refuse the
+    click.
 
-    The last branch is the platform standing in for a department that has nobody
-    left to ask. It is not a shortcut: it only opens when every other reviewer of
-    that department is the author, and the audit records that no department
-    signature happened.
+    2026-11-04 换了模型：拒签的理由不再是「作者回避」——部门主管签自己部门的
+    页、系统管理员签任何页。现在唯一被挡的是**接入方替人签**：它得既能签这个
+    范围（允许时勾了「替你签页面审核」），它代表的那个人又真的够权限。
     """
     if page["status"] != "pending":
         return "这个页面不在待审核状态"
-    if page["updated_by"] is not None and page["updated_by"] == powers["member_id"]:
-        return "自己提交的页面要由别人审"
+    if powers["app_id"] is not None:
+        if not powers["app_review"]:
+            return ("这是接入方的动作，审核要人自己点：代表你的应用没有被允许"
+                    "「替你签页面审核」")
+        if not (powers["system_admin"] or powers["department"] or powers["company"]):
+            return "这是接入方的动作，审核要人自己点：你本人没有审核权限"
+    if powers["system_admin"]:
+        return None
     if page["review_stage"] == "company":
         return None if powers["company"] else "公司终审需要 workforce.interfaces/review_company 权限"
     if powers["department"] and page["org_unit_id"] in powers["units"]:
         return None
-    if _stands_in(powers, page):
-        return None
     if powers["department"]:
         return "这个页面不在你所在部门的范围内"
     return "初审需要 workforce.interfaces/review 权限"
+
 
 
 def _cross_department(conn, page: Any) -> bool:
@@ -1608,16 +1573,17 @@ def _cross_department(conn, page: Any) -> bool:
 def _acting_stage(powers: dict[str, Any], page: Any) -> str:
     """Which signature this click actually is -- written into the audit record.
 
-    `department` and `company` are the two normal ones; `company_proxy` is the
-    platform taking a first level because the department had nobody else. The
-    record has to say so: the department never signed that version, and a later
-    reader must not be told otherwise.
+    `department` and `company` are the two normal ones. `company_proxy` is the
+    system administrator taking a department's first level without sitting in
+    that department: the record has to say so, because that department never
+    signed the version and a later reader must not be told otherwise.
     """
     if page["review_stage"] == "company":
         return "company"
     if powers["department"] and page["org_unit_id"] in powers["units"]:
         return "department"
     return "company_proxy"
+
 
 
 def _basis_pages(conn, member_id, org_unit_id: UUID) -> list[Any]:
@@ -1807,10 +1773,9 @@ def _preview_refusal(powers: dict[str, Any], page: Any) -> str | None:
     Same predicate as `approve` -- one rule, so a card can never offer a preview
     the server then refuses. Only the first branch is widened: `_review_refusal`
     requires `status = 'pending'`, while a version that already went live is a
-    page the same people are still entitled to look at. Everything else (authors
-    cannot sign their own page, a department's reviewer only sees her own
-    departments, the company stage needs `review_company`, the stand-in branch)
-    is asked unchanged, by handing the same row back with a pending status.
+    page the same people are still entitled to look at. Everything else (who may
+    sign which department and stage, and whether an app is allowed to sign for
+    somebody) is asked unchanged, by handing the same row back as pending.
     """
     if page["status"] not in PREVIEW_STATUSES:
         return "这个页面现在既不在待审核、也没有上线，没有可预览的版本"
@@ -1936,6 +1901,46 @@ def review_preview(request: Request, interface_id: UUID):
     return response
 
 
+def _approve_page(conn, principal: dict[str, Any], page: Any, note: str,
+                  acting: str) -> tuple[str | None, str | None]:
+    """这一票盖下去之后发生的事：返回（跳回列表的 saved 值，失败原因）。
+
+    部门那一级，只给自己用的页当场上线；向外/进公司汇总的页只是换了级别，等平台再签。
+    表单与 `/v1` 那条 JSON 出口共用这一个函数——同一颗按钮、同一套后果。
+    """
+    if page["review_stage"] == "company":
+        return "approved", _activate_page(conn, principal, page, note, acting=acting)
+    escalate = review_rules.needs_company_review(
+        page["descriptor"] or {}, cross_department=_cross_department(conn, page))
+    if not escalate:
+        return "approved", _activate_page(conn, principal, page, note, acting=acting)
+    conn.execute(
+        """UPDATE oams.interfaces SET review_stage = 'company', updated_at = now()
+           WHERE interface_id = %s""", (page["interface_id"],))
+    api.audit(conn, principal["member_id"], "interface.review_stage_passed", "interface",
+              page["interface_id"],
+              note.strip() or "部门一审通过，转公司审",
+              {"from": "department", "to": "company", "version_no": page["version_no"],
+               "stage": "department", "acting": acting})
+    return "passed", None
+
+
+def _reject_page(conn, principal: dict[str, Any], page: Any, note: str,
+                 code: str | None, acting: str) -> None:
+    """退回一版：页子回到草稿，并从第一级重新开始。"""
+    conn.execute(
+        """UPDATE oams.interfaces
+              SET status = 'draft', review_stage = 'department',
+                  reviewed_by = %s, reviewed_at = now(),
+                  review_note = %s, review_code = %s, updated_at = now()
+            WHERE interface_id = %s""",
+        (principal["member_id"], note.strip(), code, page["interface_id"]))
+    api.audit(conn, principal["member_id"], "interface.rejected", "interface",
+              page["interface_id"], note.strip(),
+              {"to": "draft", "review_code": code,
+               "from_stage": page["review_stage"], "acting": acting})
+
+
 @router.post("/reviews/{interface_id}/approve")
 def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
                    note: str = Form(default="")):
@@ -1968,26 +1973,10 @@ def review_approve(request: Request, interface_id: UUID, csrf: str = Form(...),
         if refusal is not None:
             return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(refusal), status_code=303)
         acting = _acting_stage(powers, page)
-        if page["review_stage"] == "company":
-            failed = _activate_page(conn, principal, page, note, acting=acting)
-            if failed:
-                return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(failed), status_code=303)
-            return RedirectResponse(url="/reviews?saved=approved", status_code=303)
-        escalate = review_rules.needs_company_review(
-            page["descriptor"] or {}, cross_department=_cross_department(conn, page))
-        if not escalate:
-            failed = _activate_page(conn, principal, page, note, acting=acting)
-            if failed:
-                return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(failed), status_code=303)
-            return RedirectResponse(url="/reviews?saved=approved", status_code=303)
-        conn.execute(
-            """UPDATE oams.interfaces SET review_stage = 'company', updated_at = now()
-               WHERE interface_id = %s""", (interface_id,))
-        api.audit(conn, principal["member_id"], "interface.review_stage_passed", "interface", interface_id,
-                  note.strip() or "部门一审通过，转公司审",
-                  {"from": "department", "to": "company", "version_no": page["version_no"],
-                   "stage": "department", "acting": acting})
-    return RedirectResponse(url="/reviews?saved=passed", status_code=303)
+        saved, failed = _approve_page(conn, principal, page, note, acting)
+        if failed:
+            return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(failed), status_code=303)
+    return RedirectResponse(url=f"/reviews?saved={saved}", status_code=303)
 
 
 @router.post("/reviews/{interface_id}/reject")
@@ -2020,17 +2009,7 @@ def review_reject(request: Request, interface_id: UUID, csrf: str = Form(...),
             return RedirectResponse(url="/reviews?error=" + urllib.parse.quote(refusal), status_code=303)
         # A returned page starts over at the first level: whatever the company said
         # about it, the department's own lead reviews the fix first.
-        conn.execute(
-            """UPDATE oams.interfaces
-                  SET status = 'draft', review_stage = 'department',
-                      reviewed_by = %s, reviewed_at = now(),
-                      review_note = %s, review_code = %s, updated_at = now()
-                WHERE interface_id = %s""",
-            (principal["member_id"], note.strip(), code, interface_id))
-        api.audit(conn, principal["member_id"], "interface.rejected", "interface", interface_id,
-                  note.strip(), {"to": "draft", "review_code": code,
-                                 "from_stage": page["review_stage"],
-                                 "acting": _acting_stage(powers, page)})
+        _reject_page(conn, principal, page, note, code, _acting_stage(powers, page))
     return RedirectResponse(url="/reviews?saved=rejected", status_code=303)
 
 
@@ -3602,7 +3581,8 @@ def api_submit_interface(request: Request, interface_id: UUID):
     """应用把一张草稿页送审：和工作台「提交送审」同一条规则，出口换成 JSON。
 
     送审本身不认作者（工作台表单也不认）：部门里任何一个有填报权的人都能把草稿
-    送上去。真正把作者挡在外面的是审核那一侧——作者不能签自己的页。
+    送上去。审核那一侧同样不看作者：部门主管签自己部门交的页（包括自己交的），
+    系统管理员签任何页。
     """
     principal = _api_principal(request)
     with connection() as conn:
@@ -3650,6 +3630,66 @@ def api_submit_interface(request: Request, interface_id: UUID):
         "review_stage": "department",
         "version_no": page["version_no"],
         "author_member_id": str(page["created_by"]) if page["created_by"] else None,
+        "url": f"/departments/{page['org_unit_id']}/{interface_id}",
+    })
+
+
+@router.post("/v1/interfaces/{interface_id}/review")
+async def api_review_interface(request: Request, interface_id: UUID):
+    """接入方替人签一版页面：和工作台那两颗按钮同一条判据，出口换成 JSON。
+
+    审核是**人**的动作，所以这张票要有 `interfaces:review`（人在允许时勾的那一项），
+    并且它代表的那个人本来就够审核权——应用签得不会比这个人多。谁签哪一级由
+    `_review_refusal` 一个函数说了算，这里不另立规矩。
+    """
+    principal = _api_principal(request)
+    try:
+        payload = await request.json()
+    except Exception:
+        return _json_error("请求体必须是 JSON", 400)
+    if not isinstance(payload, dict):
+        return _json_error("请求体必须是 JSON 对象", 400)
+    decision = str(payload.get("decision") or "").strip().lower()
+    note = str(payload.get("note") or "").strip()
+    reason_code = str(payload.get("reason_code") or "").strip() or None
+    if decision not in ("approve", "reject"):
+        return _json_error("decision 只能是 approve 或 reject")
+    if decision == "reject" and not note:
+        return _json_error("退回必须写明原因")
+    if reason_code is not None and not review_rules.is_rejection_code(reason_code):
+        return _json_error("未知的退回原因类型")
+    api.require_app_scope(principal, "interfaces:review")
+    with connection() as conn:
+        powers = _review_powers(conn, principal)
+        page = conn.execute(
+            """SELECT interface_id, org_unit_id, name, slug, status, version_no, descriptor,
+                      review_stage, updated_by, based_on
+               FROM oams.interfaces WHERE interface_id = %s FOR UPDATE""",
+            (interface_id,)).fetchone()
+        if page is None:
+            raise HTTPException(status_code=404, detail="没有这个页面")
+        refusal = _review_refusal(powers, page)
+        if refusal is not None:
+            raise HTTPException(status_code=403, detail=refusal)
+        acting = _acting_stage(powers, page)
+        if decision == "reject":
+            _reject_page(conn, principal, page, note, reason_code, acting)
+            saved = None
+        else:
+            saved, failed = _approve_page(conn, principal, page, note, acting)
+            if failed:
+                return _json_error(failed, 409)
+        refreshed = conn.execute(
+            """SELECT status, review_stage, version_no FROM oams.interfaces
+                WHERE interface_id = %s""", (interface_id,)).fetchone()
+    return JSONResponse({
+        "interface_id": str(interface_id),
+        "decision": decision,
+        "saved": saved,
+        "status": refreshed["status"],
+        "review_stage": refreshed["review_stage"],
+        "version_no": refreshed["version_no"],
+        "acting": acting,
         "url": f"/departments/{page['org_unit_id']}/{interface_id}",
     })
 

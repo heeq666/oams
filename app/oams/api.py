@@ -1915,6 +1915,7 @@ APP_SCOPE_LABELS = {
     "entries:read:dept": "读本部门的填报条目",
     "interfaces:draft": "新建草稿页面并送审",
     "entries:write": "往本部门页面里填报条目",
+    "interfaces:review": "替你签页面审核",
 }
 
 
