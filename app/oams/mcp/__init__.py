@@ -6,6 +6,7 @@ Public surface (what other code may import):
     audit         -- audit entry shape and the memory store used by tests
     store         -- plugin versions, status machine, draft store
     tools         -- tool specs + ToolRegistry (all rules live here)
+    live          -- three tools that call a running site over HTTP with a ticket
     server        -- thin MCP stdio adapter over ToolRegistry
 
 The split exists so the rules can be tested, and audited, without a transport:
@@ -43,6 +44,13 @@ from oams.mcp.store import (
     StoreError,
     VersionFrozen,
 )
+from oams.mcp.live import (
+    LIVE_TOOL_SPECS,
+    LIVE_TOOLS_BY_NAME,
+    LiveApiError,
+    LiveConfigError,
+    build_live_registry,
+)
 from oams.mcp.tools import (
     TOOL_SPECS,
     TOOLS_BY_NAME,
@@ -61,6 +69,7 @@ __all__ = [
     "MemoryAuditStore", "PluginVersion", "STATUS_ACTIVE", "STATUS_ARCHIVED",
     "STATUS_DRAFT", "STATUS_PENDING", "StoreError", "TOOL_SPECS",
     "TOOLS_BY_NAME", "ToolContext", "ToolRegistry", "ToolResult", "ToolSpec",
-    "VersionFrozen", "build_registry", "ensure_human", "issue_agent_capability",
-    "issue_human_capability",
+    "LIVE_TOOL_SPECS", "LIVE_TOOLS_BY_NAME", "LiveApiError", "LiveConfigError",
+    "VersionFrozen", "build_live_registry", "build_registry", "ensure_human",
+    "issue_agent_capability", "issue_human_capability",
 ]

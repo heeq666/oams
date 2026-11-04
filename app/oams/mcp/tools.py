@@ -986,19 +986,25 @@ class ToolRegistry:
        tool call cannot terminate the stdio session.
     """
 
-    def __init__(self, context: ToolContext | None = None) -> None:
+    def __init__(self, context: ToolContext | None = None,
+                 specs: tuple[ToolSpec, ...] | None = None) -> None:
         self.context = context or ToolContext()
+        #: 默认就是沙盒那 12 个工具；`live.py` 的三个（走 HTTP 调真站点）由
+        #: `build_live_registry` 传进来，不塞进 TOOL_SPECS——它们不需要沙盒的
+        #: 能力票，守卫在站点那一侧。
+        self._specs = tuple(specs) if specs is not None else TOOL_SPECS
+        self._by_name = {spec.name: spec for spec in self._specs}
 
     # -- discovery -----------------------------------------------------------
     @property
     def specs(self) -> tuple[ToolSpec, ...]:
-        return TOOL_SPECS
+        return self._specs
 
     def schema_list(self) -> list[dict[str, Any]]:
-        return [spec.to_sdk_dict() for spec in TOOL_SPECS]
+        return [spec.to_sdk_dict() for spec in self._specs]
 
     def get(self, name: str) -> ToolSpec | None:
-        return TOOLS_BY_NAME.get(name)
+        return self._by_name.get(name)
 
     # -- invocation ----------------------------------------------------------
     def call(self, name: str, arguments: dict[str, Any] | None = None,
@@ -1016,7 +1022,9 @@ class ToolRegistry:
         version_no = arguments.get("version_no")
 
         try:
-            capability.require(spec.capability)
+            # 空 capability = 这个工具不归沙盒能力票管（走 HTTP 的三个就是）。
+            if spec.capability:
+                capability.require(spec.capability)
         except CapabilityDenied as error:
             self._audit(name, capability, plugin_id=plugin_id, version_no=version_no,
                         ok=False, error_code=ERR_CAPABILITY_DENIED, detail=str(error))
@@ -1060,12 +1068,19 @@ class ToolRegistry:
 def build_registry(store: Any = None, audit: AuditStore | None = None,
                    capability: Capability | None = None,
                    known_org_unit_codes: set[str] | None = None,
-                   known_position_codes: set[str] | None = None) -> ToolRegistry:
-    """Construct a registry; the server calls this once per process."""
+                   known_position_codes: set[str] | None = None,
+                   extra_specs: tuple[ToolSpec, ...] = ()) -> ToolRegistry:
+    """Construct a registry; the server calls this once per process.
+
+    `extra_specs` is how `live.py`'s three HTTP tools join the same registry: they
+    need the same discovery/invocation surface (schema list, refusal shape, audit
+    line) but not the in-memory store. Default is empty, so the sandbox contract
+    -- 12 tools, callable without a network -- stays exactly as it was.
+    """
     return ToolRegistry(ToolContext(
         store=store if store is not None else MemoryDraftStore(),
         audit=audit if audit is not None else MemoryAuditStore(),
         capability=capability,
         known_org_unit_codes=known_org_unit_codes,
         known_position_codes=known_position_codes,
-    ))
+    ), specs=TOOL_SPECS + tuple(extra_specs))
