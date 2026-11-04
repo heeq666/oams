@@ -46,6 +46,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -88,16 +89,42 @@ class Api:
                 return exc.code, raw
 
 
-def wait_for_service(proc) -> bool:
+def port_busy() -> bool:
+    """端口上已经有人在听吗——包括上一次没退干净的加载器。"""
+    try:
+        with socket.create_connection(("127.0.0.1", PORT), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def wait_for_service(proc, log_path: Path) -> bool:
+    """等**我们自己起的**那个服务。
+
+    只看「端口有人在听」是不够的：上一轮的加载器还占着端口时，新子进程会立刻
+    死在 bind 上，而端口照样有人应答——那样就会拿新库的票去问旧库的服务，
+    部门被写进别人的库还不报错。所以每轮先看子进程还在不在。
+    """
     for _ in range(80):
+        if proc.poll() is not None:
+            return False
         try:
             with socket.create_connection(("127.0.0.1", PORT), timeout=1):
                 return True
         except OSError:
-            if proc.poll() is not None:
-                return False
             time.sleep(0.25)
-    return False
+    return proc.poll() is None and False
+
+
+def service_log_tail(log_path: Path, lines: int = 20) -> str:
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+    if not text:
+        return ""
+    tail = text.splitlines()[-lines:]
+    return "\n--- 服务端输出（最后 %d 行）---\n%s" % (len(tail), "\n".join(tail))
 
 
 def find(api: Api, path: str, key: str, value: str):
@@ -327,6 +354,10 @@ def main() -> None:
     if not admin_id:
         raise SystemExit("OAMS_ADMIN_MEMBER_ID is required to mint a session token")
 
+    if port_busy():
+        raise SystemExit(
+            f"{PORT} 被占用，可能是上一轮的加载器；停掉它，或 OAMS_LOADER_PORT 换一个")
+
     sys.path.insert(0, str(ROOT / "app"))
     from oams.security import issue_session
 
@@ -342,22 +373,37 @@ def main() -> None:
         child_env.pop("OAMS_DATABASE_URL", None)
     else:
         child_env["OAMS_DATABASE_URL"] = service_url
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "oams.api:app", "--host", "127.0.0.1", "--port", str(PORT)],
-        cwd=str(ROOT), env=child_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
-        if not wait_for_service(proc):
-            raise SystemExit("API service did not start")
-        load(Api(token), issue_session, spec, args.apply)
-        # Revoke before the service goes away: the loader's session should not
-        # outlive the run.
-        Api(token).call("POST", "/v1/sessions/current/revoke")
-    finally:
-        proc.terminate()
+    log_path = Path(tempfile.gettempdir()) / f"oams-loader-{PORT}.log"
+    with log_path.open("wb") as errlog:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "oams.api:app", "--host", "127.0.0.1",
+             "--port", str(PORT)],
+            cwd=str(ROOT), env=child_env, stdout=subprocess.DEVNULL, stderr=errlog)
         try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+            if not wait_for_service(proc, log_path):
+                raise SystemExit(
+                    f"起服务失败（127.0.0.1:{PORT}）：子进程已退出（exit {proc.returncode}）。"
+                    + service_log_tail(log_path))
+            # 票是给**这个库**签的：换到别的库上一定 401。这一句是最硬的证明——
+            # 端口上答话的确实是刚起的那个服务，而不是上一轮遗留的进程。
+            status, me = Api(token).call("GET", "/v1/me")
+            if status != 200:
+                raise SystemExit(
+                    f"票不可用：GET /v1/me 返回 {status}。这张票是给本库签的，"
+                    f"127.0.0.1:{PORT} 上那个服务连的不是这个库——先确认端口上是谁"
+                    "（可能是上一轮遗留的加载器），停掉它，或用 OAMS_LOADER_PORT 换一个。"
+                    + service_log_tail(log_path))
+            print(f"/v1/me 200 —— {BASE} 上的服务连的就是这个库", flush=True)
+            load(Api(token), issue_session, spec, args.apply)
+            # Revoke before the service goes away: the loader's session should not
+            # outlive the run.
+            Api(token).call("POST", "/v1/sessions/current/revoke")
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
     created = len([line for line in planned if line.startswith("[create]")])
     reused = len([line for line in planned if line.startswith("[exists]")])
