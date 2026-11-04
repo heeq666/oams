@@ -556,10 +556,12 @@ def test_a_person_outside_the_department_still_gets_the_403(world):
                VALUES ('OUTSIDER1', '外部门的人', 'active')
                RETURNING member_id)
            INSERT INTO oams.permission_grants
-                  (subject_type, member_id, resource, action, scope_type, valid_until, reason,
-                   approved_by, approved_at)
-           SELECT 'member', baru.member_id, 'workforce.reports', action, 'all',
-                  now() + interval '30 days', '用例：只给填报权限，不给公司级范围',
+                  (subject_type, member_id, resource, action, scope_type, scope_org_unit_id,
+                   valid_until, reason, approved_by, approved_at)
+           SELECT 'member', baru.member_id, 'workforce.reports', action, 'org_unit',
+                  (SELECT org_unit_id FROM oams.org_units WHERE org_code = 'COMPANY'),
+                  now() + interval '30 days',
+                  '用例：有填报权限，但范围是公司本级、不是 GA 部门',
                   baru.member_id, now()
              FROM baru, (VALUES ('read'), ('submit')) AS wanted(action)
            RETURNING member_id""",
