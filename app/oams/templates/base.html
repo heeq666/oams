@@ -859,7 +859,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   <nav class="bar-nav" aria-label="主导航">
     {% if caps.progress %}<a href="/progress"{% if path.startswith('/progress') %} class="on"{% endif %}>进度中心</a>{% endif %}
     {% if caps.progress %}<a href="/interfaces/board"{% if path.startswith('/interfaces') %} class="on"{% endif %}>汇报中心</a>{% endif %}
-    {% if caps.review %}<a href="/reviews"{% if path.startswith('/reviews') %} class="on"{% endif %}>页面审核</a>{% endif %}
+    {% if caps.review %}<a href="/reviews"{% if path.startswith('/reviews') %} class="on"{% endif %}>页面管理</a>{% endif %}
     {% if caps.admin %}<a href="/settings"{% if path.startswith('/settings') or path.startswith('/admin') or path.startswith('/setup') %} class="on"{% endif %}>设置</a>{% endif %}
   </nav>
   <div class="who">

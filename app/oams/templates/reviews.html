@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}页面审核 · OAMS{% endblock %}
+{% block title %}页面管理 · OAMS{% endblock %}
 {% block content %}
 <div class="pagehead">
   <div>
-    <h1>页面审核</h1>
-    <p class="sub">部门提交的页面先在部门内初审。只给本部门用的，初审通过就启用；要进公司汇总、对外公开、或用了别的部门的页面做底子的，初审后进入公司终审。</p>
+    <h1>页面管理</h1>
+    <p class="sub">上边是等你签字的页面：部门内初审在前，要进公司汇总或拿别的部门页面做底子的，初审后进公司终审。下边是本部门（公司级账号是全部部门）已上线的页面，以及每一页现在谁能看、谁能填。</p>
   </div>
   <span class="pill neutral">待我审 {{ pending | length }}</span>
 </div>
@@ -160,6 +160,46 @@
   </table>
 </div>
 {% endif %}
+
+<div class="card span-12" id="catalog">
+  <div class="card-head">
+    <h2 style="margin:0">各部门页面</h2>
+    <span class="spacer"></span>
+    <span class="meta">{{ catalog | length }} 页</span>
+  </div>
+  {# 可见范围今天只有两档，且**都不等于「全公司能看」**：公共模板只让别的部门
+     在建页时拿它当底子另建一版。照实写，管理员才不会以为点了公开就放开了读。 #}
+  <p class="strip neutral" style="margin-top:8px">
+    可见范围现在只有两档：「仅本部门」＝只有本部门的人能打开、能填；「公共模板」＝别的部门可以在建页时拿它当底子另建一版，
+    <strong>但别人仍然打不开这一页、也填不了</strong>。改范围要等权限编辑上线，今天只能重发一版页面再送审。
+  </p>
+  {% if catalog %}
+  <table style="margin-top:12px">
+    <thead>
+      <tr><th>部门</th><th>页面</th><th>状态</th><th>可见范围</th><th>谁能看</th><th>谁能填</th><th>条目</th></tr>
+    </thead>
+    <tbody>
+    {% for c in catalog %}
+      <tr>
+        <td>{{ c.org_name }}</td>
+        <td>{{ c.name }}{% if c.status == 'active' %}<div class="crumb-meta mono">{{ c.slug }} · v{{ c.version_no }}</div>{% endif %}</td>
+        <td>
+          {% if c.status == 'active' %}<span class="pill success">已启用</span>
+          {% elif c.status == 'pending' %}<span class="pill warning">待审</span>
+          {% else %}<span class="pill neutral">草稿</span>{% endif %}
+        </td>
+        <td>{% if c.visibility == 'public' %}公共模板{% else %}仅本部门{% endif %}</td>
+        <td>本部门{% if powers.system_admin %} · 你（公司级）{% endif %}</td>
+        <td>本部门</td>
+        <td class="mono">{{ c.entry_count }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty" style="margin-top:12px">你可以管的部门里还没有页面。</p>
+  {% endif %}
+</div>
 
 <div class="card span-12" id="decided">
   <div class="card-head"><h2 style="margin:0">最近决定</h2></div>

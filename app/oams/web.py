@@ -50,7 +50,9 @@ from oams.render import RenderError, render_interface, render_preview, render_re
 from oams.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, WorkItemCreate)
 from oams.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_SYSTEM,
-                              active_org_unit_ids, admin_level, administered_org_unit_ids,
+                              accessible_org_unit_ids, active_org_unit_ids, admin_level,
+                              administered_org_unit_ids,
+                              can_access_org_unit,
                               dev_autologin_target, dev_identities, dev_principal, has_company_scope,
                               has_permission, issue_session, principal_from_request,
                               principal_for_token, require_org_unit_access, revoke_session)
@@ -554,7 +556,7 @@ def _visible_departments(conn, member_id):
         return conn.execute(
             """SELECT org_unit_id, org_code, name FROM oams.org_units
                WHERE status = 'active' AND unit_type <> 'company' ORDER BY name""").fetchall()
-    scoped = list(active_org_unit_ids(conn, member_id))
+    scoped = list(accessible_org_unit_ids(conn, member_id))
     if not scoped:
         return []
     return conn.execute(
@@ -580,10 +582,13 @@ def _department_pages(conn, org_unit_id):
 
 
 def _resolve_department(conn, principal, org_unit_id):
-    """Return the department row, or None when this member has no business there."""
-    if not has_company_scope(conn, principal["member_id"]):
-        if org_unit_id not in active_org_unit_ids(conn, principal["member_id"]):
-            return None
+    """Return the department row, or None when this member has no business there.
+
+    范围只有一个判据：`security.can_access_org_unit`（岗位所在的部门 ∪ 被授权管的
+    那几个部门；全公司范围等于全部）。建页与看页都走这里，别在路由里另写一套。
+    """
+    if not can_access_org_unit(conn, principal["member_id"], org_unit_id):
+        return None
     return conn.execute(
         """SELECT org_unit_id, org_code, name FROM oams.org_units
            WHERE org_unit_id = %s AND status = 'active'""", (org_unit_id,)).fetchone()
@@ -1518,7 +1523,11 @@ def _review_powers(conn, principal: dict[str, Any]) -> dict[str, Any]:
         "system_admin": has_company_scope(conn, member_id),
         "department": has_permission(conn, member_id, "workforce.interfaces", "review"),
         "company": has_permission(conn, member_id, "workforce.interfaces", "review_company"),
-        "units": active_org_unit_ids(conn, member_id),
+        "units": accessible_org_unit_ids(conn, member_id),
+        # 「管得到」与「坐在这」是两件事：前者含被授权代管的部门，后者只看岗位任职。
+        # 归属（department / company_proxy）只认后者——公司级账号替一个没有 eigene
+        # 主管的部门按下去了，记录里必须写「代签」，不能写成那个部门自己签的。
+        "seat_units": active_org_unit_ids(conn, member_id),
         "app_id": app_id,
         "app_review": app_review,
     }
@@ -1580,7 +1589,7 @@ def _acting_stage(powers: dict[str, Any], page: Any) -> str:
     """
     if page["review_stage"] == "company":
         return "company"
-    if powers["department"] and page["org_unit_id"] in powers["units"]:
+    if powers["department"] and page["org_unit_id"] in powers["seat_units"]:
         return "department"
     return "company_proxy"
 
@@ -1741,6 +1750,21 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
                LEFT JOIN oams.workforce_members m ON m.member_id = i.reviewed_by
                WHERE i.reviewed_at IS NOT NULL
                ORDER BY i.reviewed_at DESC LIMIT 10""").fetchall()
+        # 「页面管理」的右半边：这个人能管到的每一页，连它现在谁能看谁能填。
+        # 可见范围今天只有两档（仅本部门 / 公共模板），而且**不是读权限**——
+        # 公共模板只让别的部门可以拿它当底子另建一版，不是「全公司都能看」。
+        # 表里照实写，免得管理员以为点了「公开」就等于全公司能看。
+        catalog = conn.execute(
+            """SELECT i.interface_id, i.slug, i.name, i.status, i.version_no, i.visibility,
+                      o.name AS org_name, o.org_code,
+                      (SELECT count(*) FROM oams.interface_entries e
+                        WHERE e.interface_id = i.interface_id AND e.status_entry = 'active') AS entry_count
+               FROM oams.interfaces i
+               JOIN oams.org_units o USING (org_unit_id)
+               WHERE i.status IN ('active', 'pending')
+                 AND (%s OR i.org_unit_id = ANY(%s))
+               ORDER BY o.name, i.name""",
+            (powers["system_admin"], list(powers["units"]))).fetchall()
     mine = [row for row in awaiting if _review_refusal(powers, row) is None]
     others = [row for row in awaiting if powers["company"] and _review_refusal(powers, row) is not None]
     # Every pending page is read as a diff against the version it was written
@@ -1757,7 +1781,8 @@ def review_queue(request: Request, saved: str | None = None, error: str | None =
     decided_cards = [dict(row, code_label=review_rules.rejection_label(row["review_code"]))
                      for row in decided]
     return TEMPLATES.TemplateResponse(request, "reviews.html", {
-        "pending": review_cards, "others": others, "decided": decided_cards, "member": principal,
+        "pending": review_cards, "others": others, "decided": decided_cards,
+        "catalog": catalog, "member": principal,
         "powers": powers, "saved": saved, "error": error, "reasons": review_rules.REJECTION_CHOICES,
         "csrf": _form_token(request, "oams:review-form:v1")})
 

@@ -101,7 +101,7 @@ def _script() -> None:
     check("the settings column lists its own views",
           has_rail and names == ["部门与岗位", "岗位目录", "工作项管理",
                                  "审计记录", "试用与开关"], names)
-    check("admin top bar keeps globals", links == ["进度中心", "汇报中心", "页面审核", "设置"], links)
+    check("admin top bar keeps globals", links == ["进度中心", "汇报中心", "页面管理", "设置"], links)
 
     status, html, _ = admin_call("/progress")
     has_rail, names, links = shell(html)
@@ -115,7 +115,7 @@ def _script() -> None:
     check("staff column shows the company overview and their own department",
           has_rail and names == ["公司总览", "设计部"], names)
     check("staff top bar keeps the pages they may read",
-          links == ["进度中心", "汇报中心", "页面审核"], links)
+          links == ["进度中心", "汇报中心", "页面管理"], links)
     check("department tabs are inside the content area, not the sidebar",
           'class="page-tabs"' in html and names.count("设计部") == 1, names)
 
