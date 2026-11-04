@@ -263,7 +263,7 @@ def _diff_basic(old: Mapping, new: Mapping) -> list[dict]:
         changes.append(_change(kind="position_changed", area=AREA_SCOPE, severity=SEVERITY_MEDIUM,
                                path="position_codes", label="可用岗位",
                                before=old.get("position_codes"), after=new.get("position_codes"),
-                               why="岗位决定谁能填这一页，范围变大要确认是有意为之。"))
+                               why="岗位决定谁能编辑这一页，范围变大要确认是有意为之。"))
     old_visibility = _visibility(old)
     new_visibility = _visibility(new)
     if _text(old_visibility) != _text(new_visibility):
