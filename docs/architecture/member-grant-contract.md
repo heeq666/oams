@@ -29,6 +29,17 @@
 （`effective_grants` 的 `company_only` 与 `org_unit_id` 两条分支）。另外三种今天能写进库、
 却永远不会生效——**这一屏不提供它们**，也不拿它们做下拉项。写进去一条不生效的授权，比报错更坏。
 
+**`all` 也不在这一屏发**，理由不是「危险」，是它**在这个位置不生效**：
+`security.accessible_org_unit_ids` 只在「这个人**没有岗位座位**」时，才把 `all` 摊成
+全部在用部门（`app/oams/security.py:396` 那两条边界的第一条）。一个有岗位的人拿到 `all`：
+`has_permission` 过得了门，`can_access_org_unit` 的 range 一点没变——勾了「全公司」还是只能
+进自己那几个部门。界面第一版给系统管理员留了这个勾选框（`5072381`），2026-11-05 撤掉：
+**兑现不了的选项比没有更坏**。全公司范围属于系统管理员，而系统管理员今天只能在建库初始化时用
+`oams bootstrap-admin` 建（`app/oams/cli.py:33-77`：它在公司根节点上建一个岗位、给这个岗位发
+全套 `scope_type='all'` 授权）。界面上**没有任何一条路**能造出这种账号：`/setup` 第 3 步建成员
+必须选一个岗位（`app/oams/templates/setup.html:76` 那个 `required`），而岗位一定挂在某个部门上，
+所以从界面建出来的人**永远有座位**，`all` 对他就是上面说的那种不生效。
+
 同样，`subject_type` 只有 `member` 和 `position` 两档，它们的期限规则不一样（见下）：
 
 - **成员档**（`subject_type='member'`）：临时例外，**必须填到期时间**。
@@ -70,12 +81,12 @@
 所以一个只持**窄授权**（比如只在财务部有 `workforce.grants:manage`）的人也能进来，
 并且能发别的部门的授权。这是 `api.py` 里那份 `SCOPE WARNING` 注释说的同一件事。
 
-所以本屏的 POST 自己复核一遍，两道：
-
-1. 目标部门必须在该成员自己的 `accessible_org_unit_ids` 里；
-2. `scope_type='all'`（全公司）**只许系统管理员**（`has_company_scope`）发。
-
+所以本屏的 POST 自己复核一遍：**目标部门必须在该成员自己的 `accessible_org_unit_ids` 里**。
 越界的整笔拒绝，不落库、不留半截（照 `page_access_save` 的做法）。前端灰只是提示，不是权限。
+
+上面还有一条「`all` 只许系统管理员发」，写在第一版里，2026-11-05 撤掉改成**这一屏干脆不发 `all`**
+（见第二节）：留一个「只许系统管理员勾」的选项，勾下去仍然不生效，等于用权限校验掩盖了一个不生效的功能。
+现在 `all` 在 POST 里直接拒，并说明全公司范围靠 `oams bootstrap-admin` 在初始化时建。
 
 ## 五、界面口径
 

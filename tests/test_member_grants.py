@@ -276,3 +276,40 @@ def test_a_manager_without_the_grant_is_turned_away(room):
     posted = room["grant"](units=[room["hr"]])
     assert posted.status_code == 403, posted.text
     assert room["rows"]() == []
+
+
+def test_the_screen_offers_no_company_wide_option_and_refuses_one(room):
+    """「全公司」不在这屏发：对有岗位的人它不生效，选项留着就是骗人（2026-11-05 撤）。
+
+    撤的理由是**兑现不了**，不是危险：`security.accessible_org_unit_ids` 只在没有岗位
+    座位的人身上把 `all` 摊成全部在用部门。给一个有座位的人发 `all`，权限判据过得了门，
+    range 一点没变——勾了「全公司」还是只能进自己那几个部门。
+    """
+    room["as_"](PLATFORM)
+    room["wipe"]()
+
+    shown = room["page"]()
+    assert shown.status_code == 200
+    assert 'name="company_wide"' not in shown.text
+    assert "全公司（包含以后新建的部门）" not in shown.text
+
+    # 硬塞一个进去：整笔拒绝，库里不落行，而且要说清全公司到底怎么办
+    forced = room["grant"](units=[room["hr"]], company=True)
+    assert forced.status_code == 303, forced.text
+    location = _location(forced)
+    assert "code=scope" in location, location
+    assert "bootstrap-admin" in location
+    assert room["rows"]() == []
+    assert room["audits"]("grant.created") == []
+
+
+def test_a_grant_naming_no_department_is_refused(room):
+    """一个部门都不勾：只发原因不发范围，不能落一条没有范围的授权。"""
+    room["as_"](PLATFORM)
+    room["wipe"]()
+
+    refused = room["grant"](units=[])
+    assert refused.status_code == 303
+    assert "code=scope" in _location(refused)
+    assert room["rows"]() == []
+
