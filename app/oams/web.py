@@ -93,8 +93,11 @@ TEMPLATES.env.filters["badge"] = _badge_count
 # renders board.visible_cards, which api already filtered with the same function.
 TEMPLATES.env.globals["in_layer"] = api.layer_matches
 # The badge in the shell reads this per render, so a test can flip the setting
-# without reloading the module.
-TEMPLATES.env.globals["dev_mode"] = lambda: dev_autologin_target() is not None
+# without reloading the module. It takes the request because the shortcut is
+# refused for callers from another machine: a badge that said "免登录" on a page
+# that actually showed the login form would be lying about the one thing it exists
+# to report.
+TEMPLATES.env.globals["dev_mode"] = lambda request=None: dev_autologin_target(request) is not None
 # Who the badge may switch to, and the cookie it remembers the choice in. Both are
 # empty/no-op while the shortcut is off, so the login screen never leaks a roster.
 TEMPLATES.env.globals["dev_identities"] = dev_identities

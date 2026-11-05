@@ -820,7 +820,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
 {# Design stage says the login screen is off. Saying so on every page is the cheap
    insurance against shipping that state: nobody can look at the app and not know
    why it never asked who they are. #}
-{% if dev_mode() %}
+{% if dev_mode(request) %}
 <div class="dev-switch">
   {# 触发器是按钮，面板挂在 body 末尾：data-wh-popover 由 static/wh-popover.js 接。 #}
   <button type="button" class="dev-badge" id="dev-switch" data-wh-popover
@@ -936,7 +936,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   </form>
 </div>
 {% endif %}
-{% if dev_mode() %}
+{% if dev_mode(request) %}
 {# 角标贴着屏幕底边，面板只能朝上长：data-wh-side 交给载体去摆。 #}
 <div class="wh-popover dev-menu" id="dev-menu" role="menu" hidden data-wh-side="above" data-wh-gap="8">
   <p class="dev-menu-head">切换身份看这一页（仅开发开关打开时出现）</p>

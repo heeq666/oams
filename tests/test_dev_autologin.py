@@ -132,6 +132,24 @@ def test_switching_the_shortcut_off_needs_no_bind_change(monkeypatch):
     assert_dev_autologin_is_local()
 
 
+def test_the_badge_does_not_claim_a_shortcut_that_was_refused(monkeypatch):
+    """角标必须和这个人实际拿到的身份一致。
+
+    请求被拒时页面显示的是登录表单；这时候还挂「开发模式 · 免登录」就是在最该说
+    实话的地方说假话——它会让人以为自己是管理员，下一步操作却全是 401。
+    """
+    from oams import api as _api  # noqa: F401  先载入 api，否则单 import web 会撞环形导入
+    from oams.web import TEMPLATES
+
+    dev_mode = TEMPLATES.env.globals["dev_mode"]
+    monkeypatch.setattr(settings, "dev_autologin", "ADMIN001", raising=False)
+    monkeypatch.setattr(settings, "bind_host", "127.0.0.1", raising=False)
+    assert dev_mode(_request(client=("127.0.0.1", 5011))) is True
+    assert dev_mode(_request(client=("198.51.100.10", 5011))) is False
+    # 不传 request 时仍按设置说话：模板里的每一处调用都带 request，这里是兜底语义。
+    assert dev_mode() is True
+
+
 # ---------------------------------------------------------------------------
 # Parsing: the flag is a single well-defined string, not a fuzzy boolean
 # ---------------------------------------------------------------------------
