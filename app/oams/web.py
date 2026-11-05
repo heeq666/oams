@@ -551,17 +551,35 @@ def _read_entry_form(fields, status_map, form):
 
 
 def _visible_departments(conn, member_id):
-    """Departments this member may work in: their own, or all for company scope."""
+    """左侧栏能进的部门：自己的，加上**有页面开给我的**那些部门。
+
+    第二类是为了「页面设置里勾了给行政部查看，行政部的左栏就该出现这个部门」：
+    页面授权是按部门的，所以被开的那个部门里的人应当能在导航里看见它、点进去看到
+    开给自己的那几页。这类部门只给看那些页，不给建页、不给签审——那一层仍由
+    `can_access_org_unit` 判（`_resolve_department`）。
+    """
     if has_company_scope(conn, member_id):
         return conn.execute(
             """SELECT org_unit_id, org_code, name FROM oams.org_units
                WHERE status = 'active' AND unit_type <> 'company' ORDER BY name""").fetchall()
-    scoped = list(accessible_org_unit_ids(conn, member_id))
+    scoped = set(accessible_org_unit_ids(conn, member_id))
+    scoped |= security.shared_org_unit_ids(conn, member_id)
     if not scoped:
         return []
     return conn.execute(
         """SELECT org_unit_id, org_code, name FROM oams.org_units
-           WHERE status = 'active' AND org_unit_id = ANY(%s) ORDER BY name""", (scoped,)).fetchall()
+           WHERE status = 'active' AND org_unit_id = ANY(%s) ORDER BY name""",
+        (list(scoped),)).fetchall()
+
+
+def _pages_for_reader(conn, principal, org_unit_id):
+    """这一屏该列哪些页：本部门列全部（含草稿），被共享进来的只列开给我的那几页。"""
+    if _resolve_department(conn, principal, org_unit_id) is not None:
+        return _department_pages(conn, org_unit_id)
+    member_id = principal["member_id"]
+    return [row for row in _department_pages(conn, org_unit_id)
+            if row["status"] == "active"
+            and security.can_view_interface(conn, member_id, org_unit_id, row["slug"])]
 
 
 def _department_pages(conn, org_unit_id):
@@ -937,16 +955,26 @@ def department_workbench(request: Request, org_unit_id: UUID, saved: str | None 
     with connection() as conn:
         unit = _resolve_department(conn, principal, org_unit_id)
         if unit is None:
-            return _denied(request, "你不在这个部门的范围内。")
+            # 不是这个部门的人，但那里有页面开给了自己：让他进来，只看开给的那几页。
+            shared = _pages_for_reader(conn, principal, org_unit_id)
+            if not shared:
+                return _denied(request, "你不在这个部门的范围内。")
+            unit = _department_row(conn, org_unit_id)
+            if unit is None:
+                return _denied(request, "你不在这个部门的范围内。")
+            return RedirectResponse(
+                url=f"/pages/{unit['org_code']}/{shared[0]['slug']}", status_code=302)
         pages = _department_pages(conn, org_unit_id)
         found = _visible_departments(conn, principal["member_id"])
-        counts = {row["org_unit_id"]: _department_pages(conn, row["org_unit_id"]) for row in found}
+        counts = {row["org_unit_id"]: _pages_for_reader(conn, principal, row["org_unit_id"])
+                  for row in found}
     departments = [dict(unit=row, pages=counts.get(row["org_unit_id"], [])) for row in found]
     live = next((p for p in pages if p["status"] == "active"), pages[0] if pages else None)
     if live is not None:
         return RedirectResponse(url=f"/departments/{org_unit_id}/{live['interface_id']}", status_code=302)
     return TEMPLATES.TemplateResponse(request, "department_workbench.html", {
         "unit": unit, "departments": departments, "pages": pages,
+        "can_build": True, "can_fill": True,
         "current": None, "page": None, "preview": False,
         "member": _member(request), "saved": saved, "error": error,
         "csrf": _form_token(request, "oams:interface-form:v1")})
@@ -973,7 +1001,8 @@ def department_new_page(request: Request, org_unit_id: UUID, saved: str | None =
             (org_unit_id,)).fetchall()
         pages = _department_pages(conn, org_unit_id)
         found = _visible_departments(conn, principal["member_id"])
-        counts = {row["org_unit_id"]: _department_pages(conn, row["org_unit_id"]) for row in found}
+        counts = {row["org_unit_id"]: _pages_for_reader(conn, principal, row["org_unit_id"])
+                  for row in found}
         bases = _basis_pages(conn, principal["member_id"], org_unit_id)
     departments = [dict(unit=row, pages=counts.get(row["org_unit_id"], [])) for row in found]
     return TEMPLATES.TemplateResponse(request, "department_new_page.html", {
@@ -1288,6 +1317,7 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         can_view, can_fill = _page_access(conn, principal, page)
         if not can_view:
             return _denied(request, "你不在这个部门的范围内。")
+        unit_owned = unit is not None
         if unit is None:
             # 别人共享给我的页：我没有这个部门的业务，只为页头显示「这是谁的页」。
             unit = _department_row(conn, org_unit_id)
@@ -1331,9 +1361,10 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
             conn, principal["member_id"], "workforce.work_items", "manage")
         link_items, link_positions = _entry_link_targets(
             conn, org_unit_id, company_scope, can_manage_work_items)
-        pages = _department_pages(conn, org_unit_id)
+        pages = _pages_for_reader(conn, principal, org_unit_id)
         found = _visible_departments(conn, principal["member_id"])
-        counts = {row["org_unit_id"]: _department_pages(conn, row["org_unit_id"]) for row in found}
+        counts = {row["org_unit_id"]: _pages_for_reader(conn, principal, row["org_unit_id"])
+                  for row in found}
         latest = conn.execute(
             """SELECT * FROM oams.interface_entries
                WHERE interface_id = %s AND status_entry = 'active' AND entry_mode = %s
@@ -1369,6 +1400,9 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         "unit": unit, "departments": departments, "pages": pages,
         # 只读共享：能看这一页、但填写由所属部门负责（模板据此收起表单，只留一行说明）。
         "can_fill": can_fill,
+        # 被共享进来的部门：能看开给的那几页，但不给建页入口（那边建页仍要
+        # `can_access_org_unit`）。模板据这一个开关决定画不画「＋ 新页面」。
+        "can_build": unit_owned,
         # 靠授权跨部门进来时的一句话「谁开的」；本部门与系统管理员看自己的页时是 None。
         "access_note": access_note,
         "current": page, "page": page, "rendered": rendered, "recent": recent,

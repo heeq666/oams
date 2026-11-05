@@ -18,6 +18,7 @@ from oams.schemas import (APP_SCOPES, AppCodeCreate, AppRevokeRequest, AppTokenR
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
                              WorkItemCreate, WorkItemUpdate)
 from oams.security import (accessible_org_unit_ids, active_org_unit_ids,
+                              shared_org_unit_ids,
                               has_all_scope_grant, current_principal,
                               has_company_scope, has_permission, issue_session, principal_for_token,
                               principal_from_request, require_org_unit_access,
@@ -1875,12 +1876,16 @@ async def attach_browser_principal(request, call_next):
                         """SELECT org_unit_id, name FROM oams.org_units
                            WHERE status = 'active' AND unit_type <> 'company' ORDER BY name""").fetchall()
                 else:
-                    scoped = list(active_org_unit_ids(conn, member_id))
+                    # 自己的部门 + 有页面开给我的部门。第二类只在被勾了「查看/编辑」
+                    # 之后才出现，这样「页面设置里给行政部开了查看」在行政部的左栏
+                    # 里真的看得见、进得去，不用背网址。
+                    scoped = set(active_org_unit_ids(conn, member_id))
+                    scoped |= shared_org_unit_ids(conn, member_id)
                     if scoped:
                         request.state.dept_rail = conn.execute(
                             """SELECT org_unit_id, name FROM oams.org_units
                                WHERE status = 'active' AND org_unit_id = ANY(%s) ORDER BY name""",
-                            (scoped,)).fetchall()
+                            (list(scoped),)).fetchall()
             caps = {
                 "settings": has_permission(conn, member_id, "workforce.grants", "manage"),
                 "audit": has_permission(conn, member_id, "workforce.audit", "read"),

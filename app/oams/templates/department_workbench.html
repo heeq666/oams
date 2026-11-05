@@ -15,7 +15,8 @@
       {% elif p.status != 'active' %}<span class="badge vacant">待提交</span>{% endif %}
     </a>
   {% endfor %}
-  <a class="page-tab add" href="/departments/{{ unit.org_unit_id }}/new">＋ 新页面</a>
+  {# 只在这是自己的部门时给建页入口：被共享进来的人能看到页，但在这里建不了页。 #}
+  {% if can_build %}<a class="page-tab add" href="/departments/{{ unit.org_unit_id }}/new">＋ 新页面</a>{% endif %}
 </nav>
 {% endif %}
 
