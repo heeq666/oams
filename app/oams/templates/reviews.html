@@ -5,11 +5,11 @@
   <div>
     <h1>页面管理</h1>
     {% if view == 'settings' %}
-    <p class="sub">这是你管得到的每一页，以及它现在<strong>谁能查看、谁能编辑</strong>。点「调整权限」就能改，不用重发一版页面，也不用重新送审。</p>
+    <p class="sub">你能管的每一页。<strong>谁能查看、谁能编辑</strong>在这张表里，点「调整权限」改。</p>
     {% elif view == 'decided' %}
-    <p class="sub">谁在什么时候签了什么、按哪个理由退回。这里是记录，只能往后加，不改写已经发生的事。</p>
+    <p class="sub">已经签过的页面：谁签的、按什么理由退回。</p>
     {% else %}
-    <p class="sub">这里列等着你签字的页面：部门内初审在前，要进公司汇总或拿别的部门页面做底子的，初审后进公司终审。</p>
+    <p class="sub">等着你签字的页面。</p>
     {% endif %}
   </div>
   <span class="pill neutral">待我审 {{ pending | length }}</span>
@@ -62,7 +62,7 @@
     </p>
 
     {% if b.first_version %}
-      <p class="strip neutral">首版：没有可对比的在线版本，请按整页审核——重点看字段有没有接到标准字段、状态词认不认得。</p>
+      <p class="strip neutral">首版：没有可对比的在线版本，请按整页审核。</p>
     {% elif b.changes %}
       {% if b.summary.high %}
       <p class="strip warning">标着「需注意」的改动，通过后会立刻改变公司数字的含义，历史数据不会重算。</p>
@@ -82,7 +82,7 @@
       {% endfor %}
       {% if b.reference_version %}<p class="meta" style="margin-top:12px">对比的是提交时在线的 v{{ b.reference_version }}。</p>{% endif %}
     {% else %}
-      <p class="strip neutral">与在线版本没有差异：这一版没有改动任何字段、状态词、指标或可见范围。</p>
+      <p class="strip neutral">与在线版本没有差异。</p>
     {% endif %}
   </div>
 
@@ -91,11 +91,11 @@
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <div class="caption">通过</div>
       {% if p.review_stage == 'company' %}
-      <div class="hint">通过后这一版立刻对外，备注写进审计记录。</div>
+      <div class="hint">通过后这一版立刻对外。</div>
       {% elif p.acting == 'company_proxy' %}
-      <div class="hint">这个部门没有别人能审这一页（唯一的审核人就是提交者），这一票由平台代签，记录里会写明是代审。</div>
+      <div class="hint">这个部门只有提交者自己，这一票由平台代签，记录里会写明是代审。</div>
       {% else %}
-      <div class="hint">初审通过后立刻启用；这一版要进公司汇总或对外公开的，会自动转到公司终审。</div>
+      <div class="hint">初审通过后立刻启用；要进公司汇总的自动转公司终审。</div>
       {% endif %}
       <div class="controls">
         <input id="note-a-{{ p.interface_id }}" name="note" maxlength="500"
@@ -106,7 +106,7 @@
     <form method="post" action="/reviews/{{ p.interface_id }}/reject">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <div class="caption">退回</div>
-      <div class="hint">必须选一个原因类型，会记进最近决定，便于回头统计。</div>
+      <div class="hint">选一个原因类型。</div>
       <div class="controls">
         <select id="code-r-{{ p.interface_id }}" name="reason_code" required aria-label="退回原因类型">
           <option value="">选择原因类型…</option>
@@ -151,7 +151,7 @@
 <div class="card span-12">
   <div class="card-head"><div>
     <h2 style="margin:0">别处还在等</h2>
-    <p class="meta">全公司还没审完的页面。这里只能查看——你能签的已经在上面了；还留在这里的，要么不归你签。</p>
+    <p class="meta">全公司的待审页面，只能查看。</p>
   </div></div>
   <table style="margin-top:12px">
     <thead><tr><th>提交时间</th><th>部门 · 页面</th><th>提交人</th><th>等谁签</th></tr></thead>
@@ -179,8 +179,7 @@
     <span class="meta">{{ catalog | length }} 页</span>
   </div>
   <p class="strip neutral" style="margin-top:8px">
-    「谁能查看」「谁能编辑」是这一页自己的属性，点「调整权限」就能改，<strong>不用重发一版、也不用重新送审</strong>——
-    审核签的是这一版的内容，权限管的是谁进得来。本部门永远可查看、可编辑；别的部门给「查看」的只能浏览，给「编辑」的才能填写。
+    权限改动立刻生效，<strong>不用重发一版、也不用重新送审</strong>。本部门永远可查看、可编辑。
   </p>
   {% if catalog %}
   <table style="margin-top:12px">
@@ -191,7 +190,7 @@
     {% for c in catalog %}
       <tr>
         <td>{{ c.org_name }}</td>
-        <td><span>{{ c.name }}</span>{% if c.visibility == 'public' %} <span class="pill neutral">公共模板</span>{% endif %}{% if c.status == 'active' %}<div class="crumb-meta mono">{{ c.slug }} · v{{ c.version_no }}</div>{% endif %}</td>
+        <td><span>{{ c.name }}</span>{% if c.visibility == 'public' %} <span class="pill neutral">公共模板</span>{% endif %}{% if c.status == 'active' %}<div class="crumb-meta">v{{ c.version_no }}</div>{% endif %}</td>
         <td>
           {% if c.status == 'active' %}<span class="pill success">已启用</span>
           {% elif c.status == 'pending' %}<span class="pill warning">待审</span>
