@@ -72,6 +72,16 @@
 `api.revoke_grant` 把 `revoked_at` 置为 `now()`，**不删行**。删行等于把审计里那条
 `grant.created` 的指向对象也一起消灭了。
 
+两条容易踩的：
+
+- **收回与到期都是立刻生效**，不用等下次登录、也没有缓存要在中间失效（判据每次现查库）。
+  到期不需要谁去点收回，时间过了就不再算数。
+- **「能进哪些部门」不分能力**：`accessible_org_unit_ids` 把这个人所有未收回、未到期的
+  授权行一起算。只收回 `workforce.reports/submit` 而不收 `read`，他照样进得了那个部门，
+  只是不能填——表现为「收回了他还能建页面」，看着像收回没生效（2026-11-05 写用例时踩到）。
+- **deny 优先**：同一部门上 allow 与 deny 同时有效时 deny 赢，`granted_org_unit_ids` 算的是
+  `allowed - denied`。要临时停掉一个人不必删原来的 allow，补一条 deny 盖过去，审计里两条都在。
+
 ## 四、谁有权发（本屏在路由层复核，不改底层）
 
 进得来这一屏：`workforce.grants/manage`。
