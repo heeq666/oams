@@ -17,7 +17,8 @@ from oams.schemas import (APP_SCOPES, AppCodeCreate, AppRevokeRequest, AppTokenR
                              AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
                              WorkItemCreate, WorkItemUpdate)
-from oams.security import (accessible_org_unit_ids, active_org_unit_ids, can_view_interface,
+from oams.security import (accessible_org_unit_ids, active_org_unit_ids, can_access_org_unit,
+                              can_view_interface, interface_access_via,
                               has_all_scope_grant, current_principal,
                               has_company_scope, has_permission, issue_session, principal_for_token,
                               principal_from_request, require_org_unit_access,
@@ -1780,13 +1781,26 @@ app.include_router(web_router)
 
 
 def _shared_pages(conn, member_id):
-    """别的部门开给我看的页——左侧栏「开给你的页」那几条。
+    """别的部门**专门开给这个人**的页——左侧栏「开给你的页」那几条。
 
-    判据只有 `security.can_view_interface`（跟真正打开那一页时同一个函数），候选是
-    「已经上线、且不属于我能进的部门」的那些页。这个数在一组织里是个位数，逐页问
-    比在 SQL 里重写一遍祖先链更安全：重写一份就是两份判据，迟早给出两个答案。
+    判据不是「能不能看」，而是「是不是靠页面授权进来的」，用
+    `security.interface_access_via`：它只在 `oams.interface_access` 里真有那一行、
+    且那一行落在本人的岗位链上时才返回非 None。
+
+    这里踩过一个坑：第一版用的是 `can_view_interface`，而它对**公司级**的人恒为
+    True（`can_access_org_unit` 里公司级直接放行）——于是系统管理员的左栏列出了
+    全公司所有部门的页，标题还写着「开给你的页」，等于说别的部门把这些页开给了他，
+    其实一行授权都没有。公司级的人本来就哪都能进，这一栏对他应该是空的；这一栏
+    只服务「进不去，但被单独放行」的人。
+
+    候选只取「不属于我能进的部门」的页，一组织里是个位数，逐页问比在 SQL 里重写
+    一遍祖先链更安全：重写一份就是两份判据，迟早给出两个答案。
     """
-    mine = set(active_org_unit_ids(conn, member_id))
+    if has_company_scope(conn, member_id):
+        # 公司级的人本来哪都能进，这一栏对他没有信息量；列出来只会让他以为
+        # 这些页是别人专门开给他的。
+        return []
+    mine = accessible_org_unit_ids(conn, member_id)
     rows = conn.execute(
         """SELECT i.org_unit_id, i.slug, i.name, i.status, o.name AS org_name,
                   o.org_code AS org_code
@@ -1795,7 +1809,10 @@ def _shared_pages(conn, member_id):
             ORDER BY o.name, i.name""").fetchall()
     return [row for row in rows
             if row["org_unit_id"] not in mine
-            and can_view_interface(conn, member_id, row["org_unit_id"], row["slug"])]
+            # 两个条件都要：真能打开（否则点进去 403，比不列更糟），且真的是靠
+            # 页面授权进来的（「只给了可作参考」的行不算，那一格不蕴含能查看）。
+            and can_view_interface(conn, member_id, row["org_unit_id"], row["slug"])
+            and interface_access_via(conn, member_id, row["org_unit_id"], row["slug"]) is not None]
 
 
 def _shell_rail(path, nav, departments, dept_active, caps, shared_pages=()):
