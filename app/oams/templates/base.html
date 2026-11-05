@@ -903,7 +903,11 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   {% if rails %}
   <aside class="app-rail" aria-label="本节导航">
     {% for item in rails %}
+      {% if item.head %}
+      <div class="rail-head" style="margin-top:12px">{{ item.label }}</div>
+      {% else %}
       <a href="{{ item.href }}" class="rail-item{% if item.on %} on{% endif %}"{% if item.on %} aria-current="page"{% endif %}><span class="mark" aria-hidden="true"></span>{{ item.label }}</a>
+      {% endif %}
     {% endfor %}
   </aside>
   {% endif %}

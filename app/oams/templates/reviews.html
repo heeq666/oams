@@ -185,7 +185,7 @@
   {% if catalog %}
   <table style="margin-top:12px">
     <thead>
-      <tr><th>部门</th><th>页面</th><th>状态</th><th>谁能查看</th><th>谁能编辑</th><th>条目</th><th>权限</th></tr>
+      <tr><th>部门</th><th>页面</th><th>状态</th><th>谁能查看</th><th>谁能编辑</th><th>谁能参考</th><th>条目</th><th>权限</th></tr>
     </thead>
     <tbody>
     {% for c in catalog %}
@@ -199,6 +199,7 @@
         </td>
         <td>{{ c.audience_text }}</td>
         <td>{{ c.fill_text }}</td>
+        <td>{{ c.base_text }}</td>
         <td class="mono">{{ c.entry_count }}</td>
         <td>
           {% if c.can_edit_access %}

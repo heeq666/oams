@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS oams.interface_access (
     org_unit_id uuid NOT NULL,
     can_read  boolean DEFAULT true  NOT NULL,
     can_write boolean DEFAULT false NOT NULL,
+    can_base  boolean DEFAULT false NOT NULL,   -- 可作参考：能拿它当模板另建一版
     granted_by uuid,
     granted_at timestamp with time zone DEFAULT now() NOT NULL,
     note text,
@@ -35,6 +36,9 @@ CREATE INDEX IF NOT EXISTS interface_access_unit_idx ON oams.interface_access (o
 ```
 
 - 主键三段：**一页 × 一个部门一行**，重复保存是覆盖不是追加。
+- **三格独立，不是三档**：`can_read` 看内容、`can_write` 提条目、`can_base` 拿页面定义当
+  模板（`based_on`）。`can_write ⇒ can_read` 有 CHECK；**`can_base` 不蕴含任何一格**——
+  参考的是「这一页长什么样」，不是里面的数据，给参考权不等于让人读到条目。
 - 不指向 `interfaces.interface_id` —— 理由见上（版本行会换）。
 - `db init` 幂等：`CREATE ... IF NOT EXISTS` 直接进 `schema.sql`，不写迁移脚本。
 
@@ -47,6 +51,9 @@ CREATE INDEX IF NOT EXISTS interface_access_unit_idx ON oams.interface_access (o
   行为）**或** 存在一行满足 `row.org_unit_id ∈ ⋃chain(d), d ∈ seat(M)` 且 `row.can_read`。
 - **能填** `can_fill_interface` = `can_access_org_unit(M, O)`
   **或** 存在一行满足同上且 `row.can_write`。
+- **能参考** `can_base_interface` = `can_access_org_unit(M, O)`
+  **或** 存在一行满足同上且 `row.can_base`。它**不**让 `can_view_interface` 变真：
+  拿到参考权的人能在建页页的「基于哪个页面」里选到这一页，但打不开它、也看不到条目。
 - `can_access_org_unit` 仍是**部门级**判据（能不能进这个部门、能不能在这个部门建页），
   页面权限**不改它**；页面级判据只回答「这一页能不能打开 / 能不能提条目」。
 - 部门内的人不会因为没行而失去权限——`can_access_org_unit` 那一条先过（这是「只放宽」的
@@ -56,10 +63,11 @@ CREATE INDEX IF NOT EXISTS interface_access_unit_idx ON oams.interface_access (o
 
 ```python
 def interface_audience(conn, owner_org_unit_id, slug) -> list[dict]
-    # [{org_unit_id, org_code, name, unit_type, can_read, can_write, granted_at}]
+    # [{org_unit_id, org_code, name, unit_type, can_read, can_write, can_base, granted_at}]
 
 def can_view_interface(conn, member_id, owner_org_unit_id, slug) -> bool
 def can_fill_interface(conn, member_id, owner_org_unit_id, slug) -> bool
+def can_base_interface(conn, member_id, owner_org_unit_id, slug) -> bool
 
 def set_interface_audience(conn, owner_org_unit_id, slug, rows, *, granted_by, note=None) -> None
     # rows = [{"org_unit_id": UUID, "can_read": bool, "can_write": bool}]，整体覆盖

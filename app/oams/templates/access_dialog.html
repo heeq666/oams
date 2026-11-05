@@ -15,11 +15,11 @@
   </div>
   {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
   <p class="strip neutral" style="margin-top:8px">
-    这里改的是<strong>谁能查看、谁能编辑</strong>，不是审核：已经上线的页不用重新送审。
-    本部门永远可查看、可编辑，不用勾；别的部门要查看或要编辑，勾上就行。保存时服务端按你的权限再核一遍。
+    这里改的是<strong>谁能查看、谁能编辑、谁能参考</strong>，不是审核：已经上线的页不用重新送审。
+    本部门三样都永远有，不用勾；别的部门要哪一样就勾哪一样。保存时服务端按你的权限再核一遍。
   </p>
   <table style="margin-top:12px">
-    <thead><tr><th>部门</th><th>查看</th><th>编辑</th><th>说明</th></tr></thead>
+    <thead><tr><th>部门</th><th>查看</th><th>编辑</th><th>可作参考</th><th>说明</th></tr></thead>
     <tbody>
     {% for c in choices %}
       <tr>
@@ -42,13 +42,15 @@
                            {% if c.can_write %}checked {% endif %}{% if not c.allowed %}disabled {% endif %}>
             <label for="write-{{ c.org_unit_id }}">可编辑</label>{% endif %}
         </td>
-        <td class="meta">
-          {% if c.is_owner %}这一页属于它，天然可查看、可编辑
-          {% elif c.closed_reason %}{{ c.closed_reason }}{% if c.can_read or c.can_write %}；已有授权会原样保留{% endif %}
-          {% elif c.can_write %}可看、可填
-          {% elif c.can_read %}只能查看
-          {% else %}—{% endif %}
+        <td>
+          {% if c.is_owner %}<span class="pill success">固定可参考</span>
+          {% else %}<input type="checkbox" id="base-{{ c.org_unit_id }}" name="base" value="{{ c.org_unit_id }}"
+                           {% if c.can_base %}checked {% endif %}{% if not c.allowed %}disabled {% endif %}>
+            <label for="base-{{ c.org_unit_id }}">可参考</label>{% endif %}
         </td>
+        {# 说明列那句话由 _access_summary 拼好（三格独立，勾了哪一个写哪一个），
+           模板只管显示——句子逻辑别在模板里再写一遍。 #}
+        <td class="meta">{{ c.summary }}</td>
       </tr>
     {% endfor %}
     </tbody>

@@ -132,18 +132,19 @@ def conn(world):
         yield connection
 
 
-def _grant(world, department, slug, *, can_read=True, can_write=False, note=None):
+def _grant(world, department, slug, *, can_read=True, can_write=False, can_base=False, note=None):
     """直接落一行（不经过 set_interface_audience），用来单独验解析。"""
     import psycopg
 
     with psycopg.connect(world["url"], autocommit=True) as connection:
         connection.execute(
             """INSERT INTO oams.interface_access
-                   (owner_org_unit_id, slug, org_unit_id, can_read, can_write, note)
-               VALUES (%s, %s, %s, %s, %s, %s)
+                   (owner_org_unit_id, slug, org_unit_id, can_read, can_write, can_base, note)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (owner_org_unit_id, slug, org_unit_id)
-               DO UPDATE SET can_read = EXCLUDED.can_read, can_write = EXCLUDED.can_write""",
-            (world["fin"], slug, department, can_read, can_write, note))
+               DO UPDATE SET can_read = EXCLUDED.can_read, can_write = EXCLUDED.can_write,
+                             can_base = EXCLUDED.can_base""",
+            (world["fin"], slug, department, can_read, can_write, can_base, note))
 
 
 def _clear(world, slug=FIN_PAGE):
@@ -230,6 +231,87 @@ def test_a_department_row_also_reaches_the_team_below_it(world, conn):
     assert security.can_fill_interface(conn, world["team_member"], world["fin"], FIN_PAGE) is True
 
 
+# ---------------------------------------------------------------------------
+# 三之二、「可作参考」第三格：三格独立，参考权不蕴含能看
+# ---------------------------------------------------------------------------
+
+
+def test_a_base_only_row_lets_them_copy_the_page_but_not_read_it(world, conn):
+    """只勾参考是合法组合：能拿这一页当模板，但打不开它、也读不到条目。
+
+    这条同时钉住两件事——`can_base_interface` 认得这一行，而
+    `can_view_interface` / `can_fill_interface` **不会**因为它变成真。
+    """
+    _clear(world)
+    _grant(world, world["ga"], FIN_PAGE, can_read=False, can_write=False, can_base=True)
+    assert security.can_base_interface(conn, world["ga_member"], world["fin"], FIN_PAGE) is True
+    assert security.can_view_interface(conn, world["ga_member"], world["fin"], FIN_PAGE) is False
+    assert security.can_fill_interface(conn, world["ga_member"], world["fin"], FIN_PAGE) is False
+
+
+def test_a_base_row_does_not_leak_into_the_read_column(world, conn):
+    """`interface_audience` 要如实带出三格：只给参考时，读/写都是假。"""
+    _clear(world)
+    _grant(world, world["ga"], FIN_PAGE, can_read=False, can_write=False, can_base=True)
+    row = security.interface_audience(conn, world["fin"], FIN_PAGE)[0]
+    assert (row["can_read"], row["can_write"], row["can_base"]) == (False, False, True)
+
+
+def test_the_owning_department_can_always_use_its_own_page_as_a_base(world, conn):
+    """本部门恒真：没有行也能参考，跟能看能填同一个来源（dash 只放宽不收紧）。"""
+    _clear(world)
+    assert security.can_base_interface(conn, world["fin_member"], world["fin"], FIN_PAGE) is True
+    assert security.can_base_interface(conn, world["admin_member"], world["fin"], FIN_PAGE) is True
+
+
+def test_a_base_row_follows_the_ancestor_chain(world, conn):
+    """给公司根发参考权，链上所有人都能参考；给兄弟部门发，另一个人拿不到。"""
+    _clear(world)
+    _grant(world, world["company"], FIN_PAGE, can_read=False, can_write=False, can_base=True)
+    assert security.can_base_interface(conn, world["ga_member"], world["fin"], FIN_PAGE) is True
+    assert security.can_base_interface(conn, world["team_member"], world["fin"], FIN_PAGE) is True
+
+    _clear(world)
+    _grant(world, world["ga"], FIN_PAGE, can_read=False, can_write=False, can_base=True)
+    assert security.can_base_interface(conn, world["team_member"], world["fin"], FIN_PAGE) is False
+
+
+def test_saving_three_flags_covers_them_all(world, conn):
+    """一次保存是整笔覆盖：漏传 `can_base` 就是撤回参考权，不是「保持原样」。"""
+    _clear(world)
+    ga = uuid.UUID(world["ga"])
+    security.set_interface_audience(
+        conn, world["fin"], FIN_PAGE,
+        [{"org_unit_id": ga, "can_read": True, "can_write": False, "can_base": True}],
+        granted_by=uuid.UUID(world["admin_member"]))
+    row = security.interface_audience(conn, world["fin"], FIN_PAGE)[0]
+    assert (row["can_read"], row["can_write"], row["can_base"]) == (True, False, True)
+
+    security.set_interface_audience(
+        conn, world["fin"], FIN_PAGE,
+        [{"org_unit_id": ga, "can_read": True, "can_write": False}],
+        granted_by=uuid.UUID(world["admin_member"]))
+    row = security.interface_audience(conn, world["fin"], FIN_PAGE)[0]
+    assert row["can_base"] is False
+    assert security.can_base_interface(conn, world["ga_member"], world["fin"], FIN_PAGE) is False
+
+
+def test_a_row_with_only_the_base_flag_is_stored(world, conn):
+    """三格全假才不落库。原来看 `can_read` 一个，会把「只给参考」的行悄悄丢掉。"""
+    _clear(world)
+    security.set_interface_audience(
+        conn, world["fin"], FIN_PAGE,
+        [{"org_unit_id": uuid.UUID(world["ga"]), "can_read": False, "can_write": False,
+          "can_base": True}],
+        granted_by=uuid.UUID(world["admin_member"]))
+    rows = security.interface_audience(conn, world["fin"], FIN_PAGE)
+    assert [(row["org_code"], row["can_read"], row["can_base"]) for row in rows] == [("GA", False, True)]
+
+
+def test_a_page_that_does_not_exist_has_no_base_right_either(world, conn):
+    assert security.can_base_interface(conn, world["fin_member"], world["fin"], "no-such-page") is False
+
+
 def test_a_member_without_a_seat_reaches_nothing(world, conn):
     _clear(world)
     _grant(world, world["ga"], FIN_PAGE)
@@ -248,7 +330,7 @@ def test_audience_returns_codes_flags_and_units(world, conn):
     assert len(audience) == 1
     row = audience[0]
     assert set(row) == {"org_unit_id", "org_code", "name", "unit_type",
-                        "can_read", "can_write", "granted_at"}
+                        "can_read", "can_write", "can_base", "granted_at"}
     assert row["org_code"] == "GA"
     assert row["name"] == "行政部"
     assert row["unit_type"] == "department"

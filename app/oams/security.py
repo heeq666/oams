@@ -513,7 +513,7 @@ def interface_audience(conn, owner_org_unit_id: Any, slug: str) -> list[dict[str
     owner_org_unit_id = _audience_uuid(owner_org_unit_id)
     rows = conn.execute(
         """SELECT a.org_unit_id, u.org_code, u.name, u.unit_type,
-                  a.can_read, a.can_write, a.granted_at
+                  a.can_read, a.can_write, a.can_base, a.granted_at
              FROM oams.interface_access a
              JOIN oams.org_units u USING (org_unit_id)
             WHERE a.owner_org_unit_id = %s AND a.slug = %s
@@ -528,6 +528,7 @@ def interface_audience(conn, owner_org_unit_id: Any, slug: str) -> list[dict[str
             "unit_type": row["unit_type"],
             "can_read": row["can_read"],
             "can_write": row["can_write"],
+            "can_base": row["can_base"],
             "granted_at": row["granted_at"],
         }
         for row in rows
@@ -603,6 +604,21 @@ def can_fill_interface(conn, member_id: Any, owner_org_unit_id: Any, slug: str) 
     return _reachable_by_audience(conn, member_id, owner_org_unit_id, slug, "can_write")
 
 
+def can_base_interface(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> bool:
+    """这一页这个人能不能拿它当模板另建一版（权限弹窗第三格「可作参考」）。
+
+    与 :func:`can_view_interface` 同形状，但**绝不能让它顺手变成「能看」**：参考的是
+    页面定义（字段、模块、版式），不是条目里的内容。给一个部门参考权而没给查看权，
+    是合法组合——他要照着做一页自己的，而不是来读别人的数据。
+    """
+    owner_org_unit_id = _audience_uuid(owner_org_unit_id)
+    if not _interface_exists(conn, owner_org_unit_id, slug):
+        return False
+    if can_access_org_unit(conn, member_id, owner_org_unit_id):
+        return True
+    return _reachable_by_audience(conn, member_id, owner_org_unit_id, slug, "can_base")
+
+
 def set_interface_audience(conn, owner_org_unit_id: Any, slug: str, rows: list[dict[str, Any]], *,
                            granted_by: Any, note: str | None = None) -> None:
     """整体覆盖这一页的范围：先删本页所有行，再插「至少能看」的那些。
@@ -619,20 +635,25 @@ def set_interface_audience(conn, owner_org_unit_id: Any, slug: str, rows: list[d
         "DELETE FROM oams.interface_access WHERE owner_org_unit_id = %s AND slug = %s",
         (owner_org_unit_id, slug),
     )
-    wanted: dict[Any, tuple[bool, bool]] = {}
+    wanted: dict[Any, tuple[bool, bool, bool]] = {}
     for row in rows:
         org_unit_id = _audience_uuid(row["org_unit_id"])
         can_write = bool(row.get("can_write"))
         can_read = bool(row.get("can_read")) or can_write
-        if not can_read:
+        can_base = bool(row.get("can_base"))
+        # 三格全假的行不入库（「一行都没有」就是「这个部门什么权利都没有」）。
+        # 「能参考但看不到」是合法组合，所以这一条不能只看 can_read。
+        if not (can_read or can_base):
             continue
-        wanted[org_unit_id] = (can_read, can_write)
-    for org_unit_id, (can_read, can_write) in sorted(wanted.items(), key=lambda item: str(item[0])):
+        wanted[org_unit_id] = (can_read, can_write, can_base)
+    for org_unit_id, (can_read, can_write, can_base) in sorted(wanted.items(), key=lambda item: str(item[0])):
         conn.execute(
             """INSERT INTO oams.interface_access
-                   (owner_org_unit_id, slug, org_unit_id, can_read, can_write, granted_by, note)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-            (owner_org_unit_id, slug, org_unit_id, can_read, can_write, granted_by, note),
+                   (owner_org_unit_id, slug, org_unit_id, can_read, can_write, can_base,
+                    granted_by, note)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (owner_org_unit_id, slug, org_unit_id, can_read, can_write, can_base,
+             granted_by, note),
         )
 
 
