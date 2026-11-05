@@ -89,9 +89,23 @@ def world(db_ready):
             admin_id = conn.execute(
                 "SELECT member_id FROM oams.workforce_members WHERE employee_code = %s",
                 (ADMIN,)).fetchone()["member_id"]
+            # 另一个人：在 FIN 有正式任职（有座位），本身没有任何授权行。
+            # 用来钉「有座位的人拿到 all 也不会多进一个部门」。
+            seated = conn.execute(
+                """INSERT INTO oams.workforce_members (employee_code, display_name, employment_status)
+                   VALUES (%s, '坐了岗位的人', 'active') RETURNING member_id""",
+                ("SEATED01",)).fetchone()
+            conn.execute(
+                """INSERT INTO oams.position_assignments
+                       (member_id, position_id, assignment_type, status, starts_at, reason)
+                   SELECT %s, p.position_id, 'primary', 'active', now() - interval '1 day',
+                          '本来就在这个部门上班'
+                     FROM oams.positions p WHERE p.position_code = 'FIN_LEAD'""",
+                (seated["member_id"],))
         with suite.serve(url) as base:
             yield {"url": url, "base": base, "units": units,
-                   "member_id": member_id, "admin_member_id": str(admin_id)}
+                   "member_id": member_id, "admin_member_id": str(admin_id),
+                   "seated_member_id": str(seated["member_id"])}
     finally:
         suite._drop_database(db_ready, name)
 
@@ -231,6 +245,146 @@ def test_the_same_person_cannot_build_in_a_department_they_were_not_given(world)
     status, payload = _build(world, _token(world["member_id"]), "IT", "scope-it-page")
     assert status == 403
     assert "你不在这个部门的范围内" in json.dumps(payload, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# 三、三条到期与收回的规矩（此前一条用例都没有）
+# ---------------------------------------------------------------------------
+
+
+def test_a_deny_cancels_the_allow_on_the_same_department(world) -> None:
+    """同一部门上 allow 与 deny 同时有效：deny 赢。
+
+    这是「临时收权」的做法——不删原来的 allow，补一条 deny 盖过它，审计里两条都在。
+    以前全仓测试没有一条 deny（`git grep deny tests/` 空），这条路径改坏了没人会发现。
+    """
+    from oams.security import accessible_org_unit_ids, has_permission
+
+    member = world["member_id"]
+    ga = world["units"]["GA"]
+    assert has_permission_ga(world) is True
+    _sql(world, """INSERT INTO oams.permission_grants
+                       (subject_type, member_id, resource, action, scope_type, scope_org_unit_id,
+                        effect, reason, valid_until)
+                   VALUES ('member', %s, 'workforce.reports', 'submit', 'org_unit', %s,
+                           'deny', '临时停掉他的提交权', now() + interval '1 day')""",
+         (member, ga))
+    try:
+        with _conn(world) as conn:
+            assert has_permission(conn, member, "workforce.reports", "submit",
+                                  org_unit_id=ga) is False
+            # FIN 上没有被 deny，原来那条照样有效
+            assert has_permission(conn, member, "workforce.reports", "submit",
+                                  org_unit_id=world["units"]["FIN"]) is True
+            # 进部门的范围也跟着收窄：GA 不再出现在他能进的列表里
+            assert ga not in {str(item) for item in accessible_org_unit_ids(conn, member)}
+    finally:
+        _sql(world, """DELETE FROM oams.permission_grants
+                        WHERE member_id = %s AND effect = 'deny'""", (member,))
+
+
+def test_a_revoked_grant_stops_working_at_once(world) -> None:
+    """收回之后立刻失效——不是等下次登录，也不是等缓存过期。
+
+    注意要连同 `read` 一起收回：能进哪些部门是**不分 resource 的**（`accessible_org_unit_ids`
+    把这个人所有授权行一起算），只收回 `submit` 他照样进得了 FIN，只是不能填。
+    """
+    from oams.security import has_permission
+
+    member = world["member_id"]
+    fin = world["units"]["FIN"]
+    assert has_permission_fin(world) is True
+    _sql(world, """UPDATE oams.permission_grants SET revoked_at = now()
+                    WHERE member_id = %s AND resource = 'workforce.reports'
+                      AND scope_org_unit_id = %s""", (member, fin))
+    try:
+        with _conn(world) as conn:
+            assert has_permission(conn, member, "workforce.reports", "submit",
+                                  org_unit_id=fin) is False
+        # 真接口同样立刻拒：判据不是只在函数里对
+        status, payload = _build(world, _token(member), "FIN", "scope-fin-after-revoke")
+        assert status == 403, payload
+    finally:
+        _sql(world, """UPDATE oams.permission_grants SET revoked_at = NULL
+                        WHERE member_id = %s AND resource = 'workforce.reports'
+                          AND scope_org_unit_id = %s""", (member, fin))
+
+
+def test_an_expired_grant_stops_working_without_anybody_touching_it(world) -> None:
+    """到期就失效，不需要谁去点收回。
+
+    做法不是往后改日期（那要等真的过期），是把 `valid_until` 挪到过去——判据是
+    `now() < valid_until`，与「时间已经把这条抛在后面」是同一件事。同样要 `read`
+    和 `submit` 一起改，理由同上一条。
+    """
+    from oams.security import has_permission
+
+    member = world["member_id"]
+    fin = world["units"]["FIN"]
+    _sql(world, """UPDATE oams.permission_grants
+                      SET valid_from = now() - interval '2 days',
+                          valid_until = now() - interval '1 day'
+                    WHERE member_id = %s AND resource = 'workforce.reports'
+                      AND scope_org_unit_id = %s""", (member, fin))
+    try:
+        with _conn(world) as conn:
+            assert has_permission(conn, member, "workforce.reports", "submit",
+                                  org_unit_id=fin) is False
+        status, payload = _build(world, _token(member), "FIN", "scope-fin-after-expiry")
+        assert status == 403, payload
+    finally:
+        _sql(world, """UPDATE oams.permission_grants
+                          SET valid_from = now(),
+                              valid_until = now() + interval '30 days'
+                        WHERE member_id = %s AND resource = 'workforce.reports'
+                          AND scope_org_unit_id = %s""", (member, fin))
+
+
+def test_a_company_grant_does_not_widen_somebody_who_has_a_position(world) -> None:
+    """有岗位的人拿到 `all`，能进的部门一个都不多出来。
+
+    这不是 bug，是 `accessible_org_unit_ids` 的第一条边界（`app/oams/security.py:396`）：
+    `all` 只在**没有岗位座位**的人身上才摊成全部在用部门，否则设计部负责人拿到一条全公司
+    授权就会看见行政部的页。钉住它是因为「成员与权限」那屏第一版给了这个勾选框
+    （`5072381`），勾了却不生效——界面骗人比没有这个功能更坏，2026-11-05 已撤掉。
+    """
+    from oams.security import accessible_org_unit_ids, all_department_ids, can_access_org_unit
+
+    seated = world["seated_member_id"]
+    it = world["units"]["IT"]
+    with _conn(world) as conn:
+        assert can_access_org_unit(conn, seated, it) is False
+        before = {str(item) for item in accessible_org_unit_ids(conn, seated)}
+    _sql(world, """INSERT INTO oams.permission_grants
+                       (subject_type, member_id, resource, action, scope_type, reason, valid_until)
+                   VALUES ('member', %s, 'workforce.reports', 'submit', 'all',
+                           '给这个人开全公司（探针）', now() + interval '1 day')""",
+         (seated,))
+    try:
+        with _conn(world) as conn:
+            after = {str(item) for item in accessible_org_unit_ids(conn, seated)}
+            assert after == before, "有岗位的人拿到 all，能进的部门不该变"
+            assert can_access_org_unit(conn, seated, it) is False
+            assert len(all_department_ids(conn)) > len(before)
+    finally:
+        _sql(world, """DELETE FROM oams.permission_grants
+                        WHERE member_id = %s AND scope_type = 'all'""", (seated,))
+
+
+def has_permission_ga(world) -> bool:
+    from oams.security import has_permission
+
+    with _conn(world) as conn:
+        return has_permission(conn, world["member_id"], "workforce.reports", "submit",
+                              org_unit_id=world["units"]["GA"])
+
+
+def has_permission_fin(world) -> bool:
+    from oams.security import has_permission
+
+    with _conn(world) as conn:
+        return has_permission(conn, world["member_id"], "workforce.reports", "submit",
+                              org_unit_id=world["units"]["FIN"])
 
 
 def test_a_page_can_be_read_only_inside_the_granted_departments(world) -> None:
