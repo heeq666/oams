@@ -47,7 +47,7 @@ def _script() -> None:
         return re.findall(r'name="csrf" value="([^"]+)"', html)
     admin = client(admin_id)
     status, page, _ = request(admin, '/setup')
-    assert status == 200 and '试用设置' in page, (status, page[:400])
+    assert status == 200 and '组织与成员' in page, (status, page[:400])
     print('PASS setup page opens for administrator')
     status, _, headers = request(admin, '/setup/org-units', 'POST',
         {'csrf': tokens(page)[0], 'org_code': org_code, 'name': '试点部门' + suffix,
