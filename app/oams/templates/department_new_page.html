@@ -44,9 +44,9 @@
       <p class="sub" style="margin:0">选别的部门的页面，等于说「这页是照着它们做的」。这种页子部门审完还要公司再终审一次；本部门自己的上一版会自动接上，不用在这里选。</p>
     </div>
     {% endif %}
-    <div class="field"><label for="descriptor_text">页面描述（JSON）</label>
+    <div class="field"><label for="descriptor_text">页面描述</label>
       <textarea id="descriptor_text" name="descriptor_text" rows="16" required
-        placeholder='粘贴 AI 产出的界面描述。字段必须映射到标准字段，状态词要能对上标准状态，否则会被拒绝并告诉你原因。'></textarea>
+        placeholder='粘贴 AI 产出的页面描述。对不上的地方保存时会告诉你原因。'></textarea>
     </div>
   </section>
   <button type="submit">保存并预览</button>
