@@ -1872,6 +1872,10 @@ def _shell_rail(path, nav, departments, dept_active, caps, shared_pages=()):
             add("审计记录", "/admin/audit", path == "/admin/audit")
         if caps.get("setup"):
             add("组织与成员", "/setup", path == "/setup")
+        # 「成员与权限」和「组织与成员」是两件事，别一起收：前者点名给几个人开几个
+        # 部门，只认 grants/manage；后者才是建号建岗（要四个权限全齐）。
+        if caps.get("settings"):
+            add("成员与权限", "/admin/grants", path.startswith("/admin/grants"))
     return items
 
 

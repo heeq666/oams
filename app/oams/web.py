@@ -3284,6 +3284,309 @@ def admin_create_position(request: Request,
     return RedirectResponse(url="/admin/positions?created=1", status_code=303)
 
 
+#: 「成员与权限」这一屏能发的两件事。要加项就加在这里，别把字面量散落进模板。
+MEMBER_GRANT_CAPABILITIES: tuple[tuple[str, str, str], ...] = (
+    ("workforce.reports", "submit", "在这几个部门提交汇报、建页面"),
+    ("workforce.interfaces", "review", "审这几个部门的页面"),
+)
+MEMBER_GRANT_PURPOSE = "oams:grants-form:v1"
+MEMBER_GRANT_REVOKE_PURPOSE = "oams:grant-revoke-form:v1"
+MEMBER_GRANT_DEFAULT_DAYS = 90
+
+#: 这一屏与清单共用的授权行字段（成员、岗位、部门名都连出来，省得模板各查一遍）。
+_MEMBER_GRANT_SELECT = """
+    g.grant_id, g.subject_type, g.resource, g.action, g.scope_type, g.scope_org_unit_id,
+    g.valid_from, g.valid_until, g.revoked_at, g.reason,
+    m.display_name AS member_name, m.employee_code,
+    p.title AS position_title, p.position_code,
+    po.name AS position_org_name,
+    u.name AS org_name
+      FROM oams.permission_grants g
+      LEFT JOIN oams.workforce_members m ON m.member_id = g.member_id
+      LEFT JOIN oams.positions p ON p.position_id = g.position_id
+      LEFT JOIN oams.org_units po ON po.org_unit_id = p.org_unit_id
+      LEFT JOIN oams.org_units u ON u.org_unit_id = g.scope_org_unit_id
+"""
+
+
+def _member_grant_capability(resource: str, action: str) -> str | None:
+    """这一屏能发的那两件事的中文说明；不是那两件事就返回 None。"""
+    for known_resource, known_action, label in MEMBER_GRANT_CAPABILITIES:
+        if (known_resource, known_action) == (resource, action):
+            return label
+    return None
+
+
+def _reachable_departments(conn, member_id: Any) -> set[Any]:
+    """这个人的可及部门：界面拿它写「他现在能进哪些」，发授权时拿它判越界。
+
+    不能只取 `accessible_org_unit_ids`：公司级管理员既没有座位、也没有一条能被那个
+    函数认出来的窄授权时，它给的是空集，而 `can_access_org_unit` 对他直接放行。两处
+    口径不一致，界面上就会把该发的授权判成越界——所以这里补上「公司级 = 全部在用部门」。
+    """
+    units = security.accessible_org_unit_ids(conn, member_id)
+    if security.has_company_scope(conn, member_id):
+        units = units | security.all_department_ids(conn)
+    return units
+
+
+def _member_grant_rows(conn, where: str) -> list[dict[str, Any]]:
+    """清单用的授权行，已经压成模板要的几列（谁、什么事、哪个部门、被点名还是岗位）。"""
+    pairs = " OR ".join("(g.resource = %s AND g.action = %s)" for _ in MEMBER_GRANT_CAPABILITIES)
+    params = [value for resource, action, _label in MEMBER_GRANT_CAPABILITIES
+              for value in (resource, action)]
+    rows = conn.execute(
+        f"SELECT {_MEMBER_GRANT_SELECT} WHERE ({pairs}) AND {where}"
+        " ORDER BY m.display_name NULLS LAST, p.title NULLS LAST, g.valid_until NULLS LAST",
+        params).fetchall()
+    shaped = []
+    for row in rows:
+        if row["subject_type"] == "member":
+            who, source = row["member_name"] or "（已删除的成员）", "被点名"
+        else:
+            # 岗位档是长期安排，它的范围靠岗位所在的部门来解释（授权行本身写 all 是
+            # 历史原因，部门边界在路由层收窄，见 _grant_pilot_department_lead 的注释）。
+            who = row["position_title"] or "（已删除的岗位）"
+            source = "岗位"
+        scope = "全公司" if row["scope_type"] == "all" else (row["org_name"] or "（已删除的部门）")
+        shaped.append(dict(row, who=who, source=source, scope=scope,
+                           capability=_member_grant_capability(row["resource"], row["action"])
+                           or f'{row["resource"]}/{row["action"]}'))
+    return shaped
+
+
+@router.get("/admin/grants", response_class=HTMLResponse)
+def admin_grants(request: Request, saved: str | None = None, error: str | None = None):
+    """「成员与权限」：点名给某个人几个部门，不给系统配置。
+
+    读的就是授权表本身，不另造聚合接口（契约 docs/architecture/member-grant-contract.md）：
+    要给人看的是「这一行是什么、谁给的、什么时候到期、为什么给」，压成一句话就反查不回去了。
+    """
+    try:
+        principal = _require(request, "workforce.grants", "manage")
+    except _NotSignedIn:
+        return RedirectResponse(url="/login?next=/admin/grants", status_code=302)
+    except _NotPermitted:
+        return _denied(request, "「成员与权限」需要 workforce.grants/manage 权限。")
+    with connection() as conn:
+        members = conn.execute(
+            """SELECT member_id, employee_code, display_name FROM oams.workforce_members
+                WHERE employment_status = 'active' ORDER BY display_name""").fetchall()
+        units = conn.execute(
+            """SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units
+                WHERE status = 'active' ORDER BY name""").fetchall()
+        names = {row["org_unit_id"]: row["name"] for row in units}
+        grantable = _reachable_departments(conn, principal["member_id"])
+        can_company = security.has_company_scope(conn, principal["member_id"])
+        active_rows = _member_grant_rows(
+            conn, "g.revoked_at IS NULL AND g.valid_from <= now()"
+                  " AND (g.valid_until IS NULL OR now() < g.valid_until)")
+        retired_rows = _member_grant_rows(
+            conn, "(g.revoked_at IS NOT NULL OR g.valid_until <= now() OR g.valid_from > now())")
+        # 「这个人现在到底能进哪些部门」只有 security 那一处算得对；模板不许自己把
+        # 座位和授权行加一遍——两套算法迟早有一处算漏，界面上就写着「他能进财务部」
+        # 而点进去 403。
+        reach = {}
+        for row in members:
+            reached = _reachable_departments(conn, row["member_id"])
+            reach[row["member_id"]] = "、".join(
+                names.get(unit, "？") for unit in sorted(reached, key=lambda item: names.get(item, ""))
+            ) or "还没有范围"
+        member_rows = [dict(row, reach=reach[row["member_id"]]) for row in members]
+    for row in active_rows + retired_rows:
+        row["revocable"] = row["subject_type"] == "member" and (
+            can_company or (row["scope_type"] == "org_unit"
+                            and row["scope_org_unit_id"] in grantable))
+    default_until = (datetime.now(timezone.utc).astimezone(DISPLAY_TZ).date()
+                     + timedelta(days=MEMBER_GRANT_DEFAULT_DAYS)).isoformat()
+    return TEMPLATES.TemplateResponse(request, "member_grants.html", {
+        "member": _member(request),
+        "members": member_rows,
+        "org_units": [row for row in units if row["unit_type"] != "company"],
+        "capabilities": [{"value": f"{resource}|{action}", "label": label}
+                         for resource, action, label in MEMBER_GRANT_CAPABILITIES],
+        "active_rows": active_rows, "retired_rows": retired_rows,
+        "grantable": grantable, "can_company": can_company,
+        "default_until": default_until, "default_days": MEMBER_GRANT_DEFAULT_DAYS,
+        "saved": saved, "error": error,
+        "csrf": _form_token(request, MEMBER_GRANT_PURPOSE),
+        "csrf_revoke": _form_token(request, MEMBER_GRANT_REVOKE_PURPOSE),
+    })
+
+
+def _grant_until_from(date_text: str) -> datetime | None:
+    """把表单上的「到期日」读成本地时区当天最后一刻。
+
+    按日而不是按到点：勾一个日期，人想的是「这一天还能用」。写 00:00 会让当天一到就
+    失效，跟肉眼看到的日子差一天。
+    """
+    try:
+        day = datetime.strptime(date_text.strip(), "%Y-%m-%d").date()
+    except (ValueError, AttributeError):
+        return None
+    return datetime(day.year, day.month, day.day, 23, 59, 59, tzinfo=DISPLAY_TZ)
+
+
+@router.post("/admin/grants")
+async def admin_create_grant(request: Request):
+    """发授权：勾几个部门就写几行（一行一个部门），到期自动失效。
+
+    底层那道门是宽的（`require_permission` 不传部门，见 api.py 的 SCOPE WARNING），
+    所以这里按**发的人**复核两遍：目标部门得在他自己范围内，`all` 只许系统管理员。
+    越界整笔拒绝，库里一行都不落。
+    """
+    form = await request.form()
+    back = "/admin/grants"
+    try:
+        principal = _require(request, "workforce.grants", "manage")
+    except _NotSignedIn:
+        return RedirectResponse(url="/login?next=/admin/grants", status_code=302)
+    except _NotPermitted:
+        return _denied(request, "发授权需要 workforce.grants/manage 权限。")
+    _check_form_token(request, str(form.get("csrf") or ""), MEMBER_GRANT_PURPOSE)
+
+    def refuse(code: str, message: str):
+        return RedirectResponse(url=f"{back}?error={urllib.parse.quote(message)}&code={code}",
+                                status_code=303)
+
+    raw_capability = str(form.get("capability") or "").strip()
+    if "|" not in raw_capability:
+        return refuse("capability", "要选一件事：提交汇报，还是审页面。")
+    resource, action = raw_capability.split("|", 1)
+    if _member_grant_capability(resource, action) is None:
+        return refuse("capability", "这一屏只发「提交汇报」和「审页面」两件事。")
+    reason = str(form.get("reason") or "").strip()
+    if not reason:
+        return refuse("reason", "请写一句原因：这句话是以后判断这条授权为什么给的唯一依据。")
+    valid_until = _grant_until_from(str(form.get("valid_until") or ""))
+    if valid_until is None:
+        return refuse("date", "到期日要填成 2026-12-31 这样的一天。")
+    try:
+        target_member = UUID(str(form.get("member_id") or ""))
+    except (ValueError, TypeError):
+        return refuse("member", "要选一个成员。")
+    company_wide = str(form.get("company_wide") or "").lower() in ("1", "true", "on", "yes")
+    wanted: list[UUID] = []
+    for raw in form.getlist("org_unit_id"):
+        try:
+            wanted.append(UUID(str(raw)))
+        except (ValueError, TypeError):
+            return refuse("scope", "部门没选对，刷新这一页重来。")
+    if not wanted and not company_wide:
+        return refuse("scope", "至少选一个部门；要给全公司，用系统管理员勾「全公司」。")
+    if valid_until <= datetime.now(timezone.utc):
+        return refuse("date", "到期日要在今天之后。")
+
+    with connection() as conn:
+        target = conn.execute(
+            """SELECT member_id, display_name, employment_status FROM oams.workforce_members
+                WHERE member_id = %s""", (target_member,)).fetchone()
+        if target is None:
+            return refuse("member", "这个成员不存在。")
+        if target["employment_status"] != "active":
+            return refuse("member", f'{target["display_name"]} 已经不在职，不能给他在职授权。')
+        if company_wide and not security.has_company_scope(conn, principal["member_id"]):
+            return _denied(request, "只有系统管理员能把授权开到全公司。")
+        grantable = _reachable_departments(conn, principal["member_id"])
+        known = conn.execute(
+            """SELECT org_unit_id, name, unit_type, status FROM oams.org_units
+                WHERE org_unit_id = ANY(%s)""", (wanted,)).fetchall() if wanted else []
+        by_id = {row["org_unit_id"]: row for row in known}
+        for unit_id in wanted:
+            row = by_id.get(unit_id)
+            if row is None or row["status"] != "active" or row["unit_type"] == "company":
+                return refuse("scope", "这些部门里有不在用的，不能授权。")
+        over = [by_id[unit_id]["name"] for unit_id in wanted if unit_id not in grantable]
+        if over:
+            return _denied(request, "你没有这些部门的管理范围：" + "、".join(over))
+
+        # 同一个人、同一件事、同一个部门，只许一行有效授权：两行到期时间不一样，
+        # 谁也说不清哪行算数。所以不覆盖，直接拒，并把已有的那一行指出来。
+        targets = ([("all", None)] if company_wide else []) + [("org_unit", unit_id) for unit_id in wanted]
+        for scope_type, scope_unit in targets:
+            # 只看「没收回、还没到期」：**故意不看 valid_from**。将来才生效的那行
+            # 一样是「这个人已经有一条了」，两行同时挂着仍然说不清哪行算数；
+            # 而且这条判据和插入在同一个事务里，`now()` 是事务开始时刻，
+            # 刚插入那行的 valid_from 比它晚，带上这句就会漏掉自己刚写的那行。
+            if scope_type == "all":
+                clash = conn.execute(
+                    """SELECT valid_until FROM oams.permission_grants
+                        WHERE subject_type = 'member' AND member_id = %s
+                          AND resource = %s AND action = %s AND scope_type = 'all'
+                          AND revoked_at IS NULL
+                          AND (valid_until IS NULL OR now() < valid_until)""",
+                    (target_member, resource, action)).fetchone()
+                where_text = "全公司"
+            else:
+                clash = conn.execute(
+                    """SELECT valid_until FROM oams.permission_grants
+                        WHERE subject_type = 'member' AND member_id = %s
+                          AND resource = %s AND action = %s AND scope_type = 'org_unit'
+                          AND scope_org_unit_id = %s AND revoked_at IS NULL
+                          AND (valid_until IS NULL OR now() < valid_until)""",
+                    (target_member, resource, action, scope_unit)).fetchone()
+                where_text = by_id[scope_unit]["name"]
+            if clash is not None:
+                until_text = (clash["valid_until"].astimezone(DISPLAY_TZ).strftime("%Y-%m-%d")
+                              if clash["valid_until"] else "无期限")
+                return refuse(
+                    "duplicate",
+                    f'{target["display_name"]} 在「{where_text}」已经有这一条了（到期 {until_text}）。'
+                    "要改日期就先收回那条，再发新的——两行同时有效，就说不清哪行算数。")
+
+        now = datetime.now(timezone.utc)
+        for scope_type, scope_unit in targets:
+            api.insert_grant(conn, GrantCreate(
+                subject_type="member", member_id=target_member,
+                resource=resource, action=action,
+                scope_type=scope_type, scope_org_unit_id=scope_unit,
+                valid_from=now, valid_until=valid_until, reason=reason),
+                principal["member_id"])
+    return RedirectResponse(url=f"{back}?saved={len(targets)}", status_code=303)
+
+
+@router.post("/admin/grants/{grant_id}/revoke")
+async def admin_revoke_grant(request: Request, grant_id: UUID):
+    """收授权：只置 `revoked_at`，不删行——删行会把审计里那条 `grant.created` 的指向也抹掉。"""
+    form = await request.form()
+    back = "/admin/grants"
+    try:
+        principal = _require(request, "workforce.grants", "manage")
+    except _NotSignedIn:
+        return RedirectResponse(url="/login?next=/admin/grants", status_code=302)
+    except _NotPermitted:
+        return _denied(request, "收回授权需要 workforce.grants/manage 权限。")
+    _check_form_token(request, str(form.get("csrf") or ""), MEMBER_GRANT_REVOKE_PURPOSE)
+    reason = str(form.get("reason") or "").strip()
+    if not reason:
+        return RedirectResponse(
+            url=f"{back}?error={urllib.parse.quote('收回也要写一句原因，审计里会带上它。')}",
+            status_code=303)
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT grant_id, subject_type, member_id, position_id, resource, action,
+                      scope_type, scope_org_unit_id, revoked_at,
+                      (valid_from <= now() AND (valid_until IS NULL OR now() < valid_until)) AS in_window,
+                      (SELECT name FROM oams.org_units WHERE org_unit_id = p.scope_org_unit_id) AS org_name
+                 FROM oams.permission_grants p WHERE grant_id = %s""", (grant_id,)).fetchone()
+        if row is None or row["revoked_at"] is not None:
+            return RedirectResponse(
+                url=f"{back}?error={urllib.parse.quote('这条授权已经收回过了，刷新看看。')}",
+                status_code=303)
+        if row["subject_type"] != "member":
+            return RedirectResponse(
+                url=f"{back}?error=" + urllib.parse.quote(
+                    "这是岗位档的长期安排，不在这里收。要撤，去「组织与成员」改那个岗位。"),
+                status_code=303)
+        if row["scope_type"] == "all":
+            if not security.has_company_scope(conn, principal["member_id"]):
+                return _denied(request, "全公司范围的授权只有系统管理员能收。")
+        elif row["scope_org_unit_id"] not in _reachable_departments(conn, principal["member_id"]):
+            return _denied(request, f'「{row["org_name"] or "这个部门"}」不在你的范围内，收不了这条授权。')
+        api.revoke_grant(grant_id, reason, {"member_id": principal["member_id"]})
+    return RedirectResponse(url=f"{back}?saved=0", status_code=303)
+
+
 @router.get("/admin/audit", response_class=HTMLResponse)
 def admin_audit(request: Request, limit: int = Query(default=100, ge=1, le=500)):
     try:
