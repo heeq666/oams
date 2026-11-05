@@ -230,7 +230,6 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   .app-frame.no-rail { grid-template-columns: minmax(0, 1fr); }
   .app-rail { height: 100%; overflow-y: auto; box-sizing: border-box;
               background: var(--card); border-right: 1px solid var(--line); padding: 16px 12px; }
-  .app-rail .rail-head { font-size: 12px; color: var(--muted); padding: 4px 8px 8px; letter-spacing: .04em; }
   .app-rail .rail-item { display: block; padding: 8px 12px; border-radius: var(--r-small); color: var(--ink);
                          text-decoration: none; font-size: 14px; }
   /* No fill on hover or on the current row: the marker below carries the state,
@@ -253,7 +252,6 @@ body { margin: 0; background: var(--bg); color: var(--ink);
     .app-frame { display: block; overflow: visible; }
     .app-rail { height: auto; overflow: visible; display: flex; flex-wrap: wrap;
                 gap: 4px; border-right: none; border-bottom: 1px solid var(--line); padding: 12px 12px; }
-    .app-rail .rail-head { width: 100%; padding-bottom: 0; }
     .app-frame > main { height: auto; overflow: visible; padding: 16px 16px 48px; }
   }
 
@@ -903,11 +901,7 @@ body { margin: 0; background: var(--bg); color: var(--ink);
   {% if rails %}
   <aside class="app-rail" aria-label="本节导航">
     {% for item in rails %}
-      {% if item.head %}
-      <div class="rail-head" style="margin-top:12px">{{ item.label }}</div>
-      {% else %}
       <a href="{{ item.href }}" class="rail-item{% if item.on %} on{% endif %}"{% if item.on %} aria-current="page"{% endif %}><span class="mark" aria-hidden="true"></span>{{ item.label }}</a>
-      {% endif %}
     {% endfor %}
   </aside>
   {% endif %}
