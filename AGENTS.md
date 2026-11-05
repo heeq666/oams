@@ -4,7 +4,7 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 
 ## 做界面（UI / 样式 / 组件）之前必读
 
-1. `docs/design/design-system-v1.md` —— **界面唯一口径**：颜色/圆角/间距/字号令牌、三层结构（骨架层 / 组件层 / 模块层）与 38 个组件组 + 14 个模块组件的节点 id、八条硬规则、验收清单。
+1. `docs/design/design-system-v1.md` —— **界面唯一口径**：颜色/圆角/间距/字号令牌、三层结构（骨架层 / 组件层 / 模块层）与 38 个组件组 + 14 个模块组件的节点 id、九条硬规则、验收清单。
 2. `docs/design/tokens.json` —— 令牌机器可读镜像（85 项）。
 3. **界面规范以 `docs/design/design-system-v1.md` 为唯一口径，本文即真源**（组件与视觉都按它）；内部画布（Figma 那类本地文件）不在本仓，画布规则与归档问界面。改规范先改这份文档，再改代码。
 4. `docs/design/brand-assets.md` —— 品牌标志：开源版用的中性标、9 张回归图、以及怎么换回内部版。
