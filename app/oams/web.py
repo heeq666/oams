@@ -2985,7 +2985,7 @@ def setup(request: Request, saved: str | None = None, error: str | None = None,
     except _NotSignedIn:
         return RedirectResponse(url="/login?next=/setup", status_code=302)
     except _NotPermitted:
-        return _denied(request, "试用设置需要组织、成员、岗位、任职和授权管理权限。")
+        return _denied(request, "组织与成员需要组织、成员、岗位、任职和授权管理权限。")
     with connection() as conn:
         org_units = conn.execute(
             """SELECT org_unit_id, org_code, name, unit_type FROM oams.org_units

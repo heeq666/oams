@@ -1854,7 +1854,7 @@ def _shell_rail(path, nav, departments, dept_active, caps, shared_pages=()):
         if caps.get("audit"):
             add("审计记录", "/admin/audit", path == "/admin/audit")
         if caps.get("setup"):
-            add("试用与开关", "/setup", path == "/setup")
+            add("组织与成员", "/setup", path == "/setup")
     return items
 
 
