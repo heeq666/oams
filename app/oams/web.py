@@ -3432,8 +3432,8 @@ async def admin_create_grant(request: Request):
     """发授权：勾几个部门就写几行（一行一个部门），到期自动失效。
 
     底层那道门是宽的（`require_permission` 不传部门，见 api.py 的 SCOPE WARNING），
-    所以这里按**发的人**复核两遍：目标部门得在他自己范围内，`all` 只许系统管理员。
-    越界整笔拒绝，库里一行都不落。
+    所以这里按**发的人**自己复核：目标部门得在他自己范围内，越界整笔拒绝，库里一行
+    都不落。`all` 在这一屏干脆不发（见下面那段注释），所以没有第二道要复核。
     """
     form = await request.form()
     back = "/admin/grants"
