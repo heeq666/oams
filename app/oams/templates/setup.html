@@ -25,7 +25,7 @@
 {% elif error %}<div class="flash error">填写内容不完整或格式不对，请检查名称、代码和所属部门。</div>
 {% endif %}
 
-<section class="card">
+<section class="card" id="org">
   <h2 style="margin-top:0">1. 建部门</h2>
   <form method="post" action="/setup/org-units" class="form-row">
     <input type="hidden" name="csrf" value="{{ csrf_org }}">
@@ -49,7 +49,7 @@
   </form>
 </section>
 
-<section class="card">
+<section class="card" id="position">
   <h2 style="margin-top:0">2. 建岗位</h2>
   <p class="sub">工作项和权限挂在岗位上，不挂在人上。换人时工作自动跟着岗位走。</p>
   <form method="post" action="/setup/positions" class="form-row">
@@ -65,7 +65,7 @@
   </form>
 </section>
 
-<section class="card">
+<section class="card" id="member">
   <h2 style="margin-top:0">3. 建成员并分配岗位</h2>
   <p class="sub">这一步会同时完成：建立在职成员、分配到所选岗位、授予该岗位的汇报权限，并生成一次性的登录链接。勾上那项「部门负责人」，他还能审本部门提交的页面。</p>
   <form method="post" action="/setup/pilot" class="form-row">

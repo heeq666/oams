@@ -521,7 +521,7 @@ def _read_entry_form(fields, status_map, form):
         if map_to == "status":
             mapped = status_map.get(raw)
             if mapped is None:
-                return {}, {}, "状态「" + raw + "」未映射，请联系本部门界面维护者补充映射"
+                return {}, {}, "状态「" + raw + "」未映射，请联系本部门页面维护者补充映射"
             standard["status"] = mapped
             # 部门词原样也留一份：`status` 列存标准态（汇总与四态靠它），而回填下拉框
             # 需要的是「待取」这种本部门自己的词，标准态对不上任何选项。见
@@ -2464,7 +2464,7 @@ def interfaces(request: Request, saved: str | None = None, error: str | None = N
     except _NotSignedIn:
         return RedirectResponse(url="/login?next=/interfaces", status_code=302)
     except _NotPermitted:
-        return _denied(request, "查看部门界面需要 workforce.reports/read 权限。")
+        return _denied(request, "查看部门页面需要 workforce.reports/read 权限。")
     with connection() as conn:
         company_scope = has_company_scope(conn, principal["member_id"])
         scoped = list(active_org_unit_ids(conn, principal["member_id"]))
@@ -2500,9 +2500,13 @@ def interfaces(request: Request, saved: str | None = None, error: str | None = N
                   and security.can_view_interface(conn, principal["member_id"],
                                                   row["org_unit_id"], row["slug"])]
         rows = list(rows) + shared
+        # 建页入口挂在「部门页面」这一屏上，所以这一屏得知道自己能不能建：与
+        # /setup/interfaces 用同一条判据（workforce.work_items/manage），别在模板里另判。
+        can_build = has_permission(conn, principal["member_id"],
+                                   "workforce.work_items", "manage")
     return TEMPLATES.TemplateResponse(request, "interfaces.html", {
         "interfaces": rows, "mine": mine, "member": _member(request),
-        "saved": saved, "error": error})
+        "saved": saved, "error": error, "can_build": can_build})
 
 
 
@@ -2563,7 +2567,7 @@ def interface_fill(request: Request, interface_id: UUID, saved: str | None = Non
     except _NotSignedIn:
         return RedirectResponse(url="/login?next=/interfaces", status_code=302)
     except _NotPermitted:
-        return _denied(request, "填写部门界面需要 workforce.reports/read 与 submit 权限。")
+        return _denied(request, "填写部门页面需要 workforce.reports/read 与 submit 权限。")
     with connection() as conn:
         company_scope = has_company_scope(conn, principal["member_id"])
         scoped = list(active_org_unit_ids(conn, principal["member_id"]))
@@ -2573,7 +2577,7 @@ def interface_fill(request: Request, interface_id: UUID, saved: str | None = Non
                WHERE i.interface_id = %s AND i.status = 'active'
                  AND (%s OR i.org_unit_id = ANY(%s))""", (interface_id, company_scope, scoped)).fetchone()
         if row is None:
-            return _denied(request, "找不到这个部门界面，或你不在该部门范围内。")
+            return _denied(request, "找不到这个部门页面，或你不在该部门范围内。")
         mode = _entry_mode_for(row["status"])
         if lookup is not None and request.headers.get("HX-Request"):
             # 填报表单页也画查件框（同一个 render_interface(edit)），模板里
@@ -2642,7 +2646,7 @@ async def interface_submit(request: Request, interface_id: UUID, csrf: str = For
     except _NotSignedIn:
         return RedirectResponse(url="/login?next=/interfaces", status_code=302)
     except _NotPermitted:
-        return _denied(request, "填写部门界面需要 workforce.reports/read 与 submit 权限。")
+        return _denied(request, "填写部门页面需要 workforce.reports/read 与 submit 权限。")
     api.require_app_scope(principal, "entries:write")
     _check_form_token(request, csrf, "oams:interface-form:v1")
     with connection() as conn:
@@ -2654,7 +2658,7 @@ async def interface_submit(request: Request, interface_id: UUID, csrf: str = For
                WHERE i.interface_id = %s AND i.status = 'active'
                  AND (%s OR i.org_unit_id = ANY(%s))""", (interface_id, company_scope, scoped)).fetchone()
         if row is None:
-            return _denied(request, "找不到这个部门界面，或你不在该部门范围内。")
+            return _denied(request, "找不到这个部门页面，或你不在该部门范围内。")
         descriptor = row["descriptor"]
         fields = [f for f in descriptor.get("fields", []) if isinstance(f, dict) and f.get("key")]
         form = await request.form()
@@ -2693,7 +2697,7 @@ def setup_interfaces(request: Request, saved: str | None = None, error: str | No
     except _NotSignedIn:
         return RedirectResponse(url="/login?next=/setup/interfaces", status_code=302)
     except _NotPermitted:
-        return _denied(request, "建立部门界面需要 workforce.work_items/manage 权限。")
+        return _denied(request, "建立部门页面需要 workforce.work_items/manage 权限。")
     with connection() as conn:
         company_scope = has_company_scope(conn, principal["member_id"])
         scoped = list(active_org_unit_ids(conn, principal["member_id"]))
@@ -2724,7 +2728,7 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
     except _NotSignedIn:
         return RedirectResponse(url="/login?next=/setup/interfaces", status_code=302)
     except _NotPermitted:
-        return _denied(request, "建立部门界面需要 workforce.work_items/manage 权限。")
+        return _denied(request, "建立部门页面需要 workforce.work_items/manage 权限。")
     _check_form_token(request, csrf, "oams:interface-setup-form:v1")
     try:
         descriptor = json.loads(descriptor_text)
@@ -2784,7 +2788,7 @@ def setup_create_interface(request: Request, csrf: str = Form(...), org_unit_id:
              principal["member_id"], principal["member_id"],
              signer_id, review.get("reviewed_at") or None)).fetchone()
         api.audit(conn, principal["member_id"], "interface.created", "interface", row["interface_id"],
-                  f"在界面制作页新建了页面草稿「{name.strip()}」",
+                  f"在新建页面里建了页面草稿「{name.strip()}」",
                   {"slug": slug.strip(), "version_no": row["version_no"]})
     return RedirectResponse(url="/setup/interfaces?saved=1", status_code=303)
 

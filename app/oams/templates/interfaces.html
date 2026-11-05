@@ -1,19 +1,26 @@
 {% extends "base.html" %}
-{% block title %}部门界面 · OAMS{% endblock %}
+{% block title %}部门页面 · OAMS{% endblock %}
 {% block content %}
-<h1>部门界面</h1>
-<p class="sub">这些界面由各部门用 AI 按公司规则制作。数据会自动汇进公司进度中心。</p>
+<div class="pagehead">
+  <div>
+    <h1>部门页面</h1>
+    <p class="sub">这些页面由各部门用 AI 按公司规则制作。数据会自动汇进公司进度中心。</p>
+  </div>
+  {# 建页是这一页上的动作，所以入口长在这里，而不是在左栏另占一格：
+     左栏放的是「点开就能直接看到的那几屏」，动手的动作属于它所在的那一屏。 #}
+  {% if can_build %}<a class="btn" href="/setup/interfaces">＋ 新建页面</a>{% endif %}
+</div>
 
 {% if saved %}<div class="flash">已提交。管理层在进度中心可以看到这次汇报。</div>{% endif %}
 {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
 {% if interfaces %}
 <table>
-  <thead><tr><th>界面</th><th>部门</th><th>责任岗位</th><th>可见范围</th><th>版本</th><th>已提交</th><th></th></tr></thead>
+  <thead><tr><th>页面</th><th>部门</th><th>责任岗位</th><th>可见范围</th><th>版本</th><th>已提交</th><th></th></tr></thead>
   <tbody>
   {% for i in interfaces %}
     <tr>
-      <td><span>{{ i.name }}</span>{% if i.interface_id not in mine %} <span class="pill neutral">别的部门开给你的</span>{% endif %}<div class="meta mono">{{ i.slug }}</div></td>
+      <td><span>{{ i.name }}</span>{% if i.interface_id not in mine %} <span class="pill neutral">别的部门开给你的</span>{% endif %}</td>
       <td>{{ i.org_name }}</td>
       <td>{{ i.position_title or '—' }}</td>
       <td>{{ '全公司公共模板' if i.visibility == 'public' else '仅本部门' }}</td>
@@ -25,6 +32,6 @@
   </tbody>
 </table>
 {% else %}
-<p class="empty">你所在的部门还没有启用任何界面。请让部门负责人用 AI 按公司规则制作一个，或由管理员在「界面制作」页导入描述。</p>
+<p class="empty">你所在的部门还没有启用任何页面。请让部门负责人用 AI 按公司规则制作一个，或由管理员点「新建页面」导入描述。</p>
 {% endif %}
 {% endblock %}
