@@ -320,6 +320,32 @@ def has_permission(conn, member_id: Any, resource: str, action: str, *,
     return not any(grant["effect"] == "deny" for grant in grants)
 
 
+def shared_org_unit_ids(conn, member_id: Any) -> set[Any]:
+    """哪些部门**有页面开给了我**——左侧栏把部门列出来时要用。
+
+    与 `can_view_interface` 同源：同一条岗位祖先链、同一张
+    `oams.interface_access`，读或写任一为真就算（公司根那一行也算，那是「全公司可见」）。
+    只认 `active` 的页：草稿、待审页不是「开给你的东西」，列进导航等于让人白点一次。
+
+    注意这不是「我能进这个部门」——那个判据是 `can_access_org_unit`。这里回答的是
+    「那里有我的东西可看」，两件事分开，别拿它去放行建页或签审。
+    """
+    seats = active_org_unit_ids(conn, member_id)
+    if not seats:
+        return set()
+    rows = conn.execute(
+        _audience_chain_cte() + """
+        SELECT DISTINCT i.org_unit_id
+          FROM oams.interfaces i
+          JOIN oams.interface_access a
+            ON a.owner_org_unit_id = i.org_unit_id AND a.slug = i.slug
+         WHERE i.status = 'active' AND (a.can_read OR a.can_write)
+           AND a.org_unit_id IN (SELECT org_unit_id FROM chain)""",
+        (list(seats),),
+    ).fetchall()
+    return {row["org_unit_id"] for row in rows}
+
+
 def active_org_unit_ids(conn, member_id: Any) -> set[Any]:
     """Departments reached through the member's currently effective positions."""
     rows = conn.execute(

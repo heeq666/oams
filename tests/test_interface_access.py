@@ -23,7 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
 import conftest as suite  # noqa: E402  pytest 会把 tests/ 放进 sys.path
 
-from oams import security  # noqa: E402
+import oams.api  # noqa: E402,F401  先导 api：它负责把 web 的 router 挂上，反过来会循环
+from oams import security, web  # noqa: E402
 
 pytestmark = pytest.mark.db
 
@@ -445,6 +446,74 @@ def test_via_is_none_without_a_matching_row_or_a_seat(world, conn):
     _clear(world)
     assert security.interface_access_via(conn, world["ga_member"], world["fin"], FIN_PAGE) is None
     assert security.interface_access_via(conn, world["seatless"], world["fin"], FIN_PAGE) is None
+
+
+# ---------------------------------------------------------------------------
+# 六之二、左栏列出「有页面开给我的部门」：列部门，不是另起一节列页面
+#
+# 负责人 2026-11-05：页面设置里勾了给行政部查看，行政部的左栏就该出现这个部门，
+# 点进去看到开给自己的那几页。这里钉住四条边界。
+# ---------------------------------------------------------------------------
+
+
+def test_a_shared_department_shows_up_in_the_rail(world, conn):
+    """被开了查看的部门要出现在左栏；没开的部门一个都不许冒出来。"""
+    fin = uuid.UUID(world["fin"])   # 库里读出来是 UUID，world 里存的是字符串
+    _clear(world)
+    assert fin not in security.shared_org_unit_ids(conn, world["ga_member"])
+    _grant(world, world["ga"], FIN_PAGE, can_read=True)
+    assert fin in security.shared_org_unit_ids(conn, world["ga_member"])
+    # 同一个世界里的别人不受影响。
+    assert fin not in security.shared_org_unit_ids(conn, world["team_member"])
+
+
+def test_a_read_only_row_counts_and_a_base_only_row_does_not(world, conn):
+    """「可作参考」不算开给你看：那一格不蕴含能查看，左栏不该因此多出一个部门。"""
+    fin = uuid.UUID(world["fin"])
+    _clear(world)
+    _grant(world, world["ga"], FIN_PAGE, can_read=False, can_write=False, can_base=True)
+    assert fin not in security.shared_org_unit_ids(conn, world["ga_member"])
+    _grant(world, world["ga"], FIN_PAGE, can_read=True)
+    assert fin in security.shared_org_unit_ids(conn, world["ga_member"])
+
+
+def test_an_unaudienced_draft_page_does_not_open_a_department(world, conn):
+    """只认已上线的页：草稿、待审页不是「开给你的东西」，列进导航等于让人白点。"""
+    import psycopg
+
+    _clear(world)
+    _grant(world, world["ga"], FIN_PAGE, can_read=True)
+    with psycopg.connect(world["url"], autocommit=True) as connection:
+        connection.execute("UPDATE oams.interfaces SET status = 'draft' WHERE slug = %s",
+                           (FIN_PAGE,))
+    try:
+        assert uuid.UUID(world["fin"]) not in security.shared_org_unit_ids(
+            conn, world["ga_member"])
+    finally:
+        with psycopg.connect(world["url"], autocommit=True) as connection:
+            connection.execute("UPDATE oams.interfaces SET status = 'active' WHERE slug = %s",
+                               (FIN_PAGE,))
+
+
+def test_a_guest_sees_only_the_pages_opened_to_them(world, conn):
+    """进了被共享的部门，只列开给自己的那几页——不是这个部门的所有页。"""
+    _clear(world)
+    _grant(world, world["ga"], FIN_PAGE, can_read=True)
+    guest = {"member_id": world["ga_member"]}
+    slugs = [row["slug"] for row in
+             web._pages_for_reader(conn, guest, world["fin"])]
+    assert slugs == [FIN_PAGE], slugs
+    # 本部门的人照旧看得到全部（含没开给别人的那一页）。
+    owner = {"member_id": world["fin_member"]}
+    assert {row["slug"] for row in web._pages_for_reader(conn, owner, world["fin"])} == {
+        FIN_PAGE, FIN_PAGE_TWO}
+
+
+def test_a_seatless_member_gets_no_shared_department(world, conn):
+    """没有岗位就没有祖先链：发给部门的行落不到他身上。"""
+    _clear(world)
+    _grant(world, world["ga"], FIN_PAGE, can_read=True)
+    assert security.shared_org_unit_ids(conn, world["seatless"]) == set()
 
 
 # ---------------------------------------------------------------------------
