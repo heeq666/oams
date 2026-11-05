@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}成员与权限 · OAMS{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h1>成员与权限</h1>
+    <p class="sub">点名给某几个人开几个部门：能进这几个部门提交汇报、建页面，或者审这几个部门的页面。
+      到期自动失效，收回不用删行，审计里都留着。</p>
+  </div>
+</div>
+
+{% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+{% if saved == '0' %}<div class="flash" role="status">已收回。</div>
+{% elif saved %}<div class="flash" role="status">已发出 {{ saved }} 条授权。</div>{% endif %}
+
+<!-- 上半：发授权 -->
+<section class="card" style="margin-bottom:16px">
+  <h2>发一条授权</h2>
+  <p class="meta" style="margin:8px 0 16px">
+    一条授权只写一个部门；要开几个部门就发几条。同一个人在同一件事、同一个部门上只能有一条有效的，
+    要改日期先收回原来那条。
+  </p>
+  <form method="post" action="/admin/grants">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="form-row">
+      <div class="field" style="min-width:220px">
+        <label for="member_id">给谁</label>
+        <select id="member_id" name="member_id" required>
+          <option value="">选一个人</option>
+          {% for m in members %}
+          <option value="{{ m.member_id }}">{{ m.display_name }}（{{ m.employee_code }}）</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field" style="min-width:260px">
+        <label for="capability">能做什么</label>
+        <select id="capability" name="capability" required>
+          {% for c in capabilities %}<option value="{{ c.value }}">{{ c.label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="valid_until">用到哪天</label>
+        <input type="date" id="valid_until" name="valid_until" value="{{ default_until }}" required>
+        <span class="meta">默认 {{ default_days }} 天；那天结束时失效。</span>
+      </div>
+    </div>
+
+    <div class="field" style="margin:12px 0">
+      <label>哪个部门</label>
+      {% if org_units %}
+      <div class="row" style="gap:16px;align-items:flex-start">
+        {% for u in org_units %}
+        <span class="check" style="display:inline-flex;align-items:center;gap:8px">
+          {# 只列你范围内能发的部门：列出来却点不动，等于让人猜为什么不行。
+             真正拦的是服务端那一遍（越界整笔拒绝），这里只是不制造死路。 #}
+          <input type="checkbox" id="u-{{ u.org_unit_id }}" name="org_unit_id" value="{{ u.org_unit_id }}"
+                 {% if u.org_unit_id not in grantable %}disabled{% endif %}>
+          <label for="u-{{ u.org_unit_id }}">{{ u.name }}{% if u.org_unit_id not in grantable %}
+            <span class="meta">（不在你的范围）</span>{% endif %}</label>
+        </span>
+        {% endfor %}
+      </div>
+      {% else %}<span class="empty">还没有部门，先去「组织与成员」建一个。</span>{% endif %}
+      {% if can_company %}
+      <span class="check" style="display:inline-flex;align-items:center;gap:8px;margin-top:12px">
+        <input type="checkbox" id="company_wide" name="company_wide" value="1">
+        <label for="company_wide">全公司（包含以后新建的部门）</label>
+      </span>
+      {% endif %}
+    </div>
+
+    <div class="field" style="margin-bottom:16px">
+      <label for="reason">为什么给</label>
+      <input id="reason" name="reason" required maxlength="200" style="max-width:680px"
+             placeholder="例：接手供应商结算，需要看财务部的页面">
+      <span class="meta">这句话会进审计。半年后有人问「这条权限是谁批的、为什么」，答案就是它。</span>
+    </div>
+    <button type="submit">发出去</button>
+  </form>
+</section>
+
+<!-- 下半：现在的清单 -->
+<section class="card" style="margin-bottom:16px">
+  <h2>现在有效的授权</h2>
+  {% if active_rows %}
+  <table style="margin-top:12px">
+    <thead><tr><th>谁</th><th>来源</th><th>能做什么</th><th>哪个部门</th><th>用到</th><th>为什么</th><th></th></tr></thead>
+    <tbody>
+    {% for g in active_rows %}
+      <tr>
+        <td><span>{{ g.who }}</span></td>
+        <td><span class="pill {{ 'neutral' if g.source == '被点名' else 'info' }}">{{ g.source }}</span></td>
+        <td>{{ g.capability }}</td>
+        <td>{{ g.scope }}</td>
+        <td class="mono">{{ g.valid_until | dt("%Y-%m-%d") }}</td>
+        <td class="meta">{{ g.reason }}</td>
+        <td>
+          {% if g.revocable %}
+          <form method="post" action="/admin/grants/{{ g.grant_id }}/revoke" class="inline"
+                onsubmit="return confirm('收回这条授权？');">
+            <input type="hidden" name="csrf" value="{{ csrf_revoke }}">
+            <input type="hidden" name="reason" value="在「成员与权限」页收回">
+            <button type="submit" class="btn ghost">收回</button>
+          </form>
+          {% else %}<span class="meta">不在你的范围</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty" style="margin-top:12px">还没有点名授权。上面发一条试试。</p>
+  {% endif %}
+</section>
+
+{% if retired_rows %}
+<section class="card">
+  <h2>已失效（{{ retired_rows | length }}）</h2>
+  <p class="meta" style="margin:8px 0 12px">到期或已收回的。行不删，审计能一路对回去。</p>
+  <table>
+    <thead><tr><th>谁</th><th>来源</th><th>能做什么</th><th>哪个部门</th><th>用到</th><th>状态</th></tr></thead>
+    <tbody>
+    {% for g in retired_rows %}
+      <tr>
+        <td><span>{{ g.who }}</span></td>
+        <td><span class="pill neutral">{{ g.source }}</span></td>
+        <td>{{ g.capability }}</td>
+        <td>{{ g.scope }}</td>
+        <td class="mono">{{ g.valid_until | dt("%Y-%m-%d") }}</td>
+        <td>{% if g.revoked_at %}<span class="pill warning">已收回</span>
+            {% else %}<span class="pill neutral">已到期</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<!-- 每个人的可及范围：算在服务端（security 那一处），模板不自己加 -->
+<section class="card" style="margin-top:16px">
+  <h2>每个人现在能进哪些部门</h2>
+  <p class="meta" style="margin:8px 0 12px">岗位给的部门加上这里点名给的，去掉被明确拒绝的。</p>
+  <table>
+    <thead><tr><th>成员</th><th>工号</th><th>能进的部门</th></tr></thead>
+    <tbody>
+    {% for m in members %}
+      <tr>
+        <td><span>{{ m.display_name }}</span></td>
+        <td class="mono">{{ m.employee_code }}</td>
+        <td class="meta">{{ m.reach }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3" class="empty">还没有成员。</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
