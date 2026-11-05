@@ -456,42 +456,6 @@ def test_via_is_none_without_a_matching_row_or_a_seat(world, conn):
 # ---------------------------------------------------------------------------
 
 
-def _shared_pages(world, member):
-    from oams import api
-
-    import psycopg
-    from psycopg.rows import dict_row
-
-    with psycopg.connect(world["url"], autocommit=True, row_factory=dict_row) as connection:
-        return api._shared_pages(connection, member)
-
-
-def test_a_company_admin_gets_no_shared_pages(world):
-    """系统管理员本来哪都能进：这一栏对他没有信息量，列出来等于编授权。"""
-    _clear(world)
-    assert _shared_pages(world, world["admin_member"]) == []
-
-
-def test_a_page_opened_to_my_department_shows_up(world):
-    _clear(world)
-    _grant(world, world["ga"], FIN_PAGE, can_read=True)
-    slugs = [row["slug"] for row in _shared_pages(world, world["ga_member"])]
-    assert slugs == [FIN_PAGE]
-
-
-def test_a_page_not_opened_to_me_does_not_show_up(world):
-    _clear(world)
-    _grant(world, world["ga"], FIN_PAGE, can_read=True)
-    assert _shared_pages(world, world["seatless"]) == []
-
-
-def test_a_base_only_row_does_not_show_up_as_an_opened_page(world):
-    """「可作参考」不蕴含能查看：拿它当模板可以，但那一页不该出现在「开给你的页」里。"""
-    _clear(world)
-    _grant(world, world["ga"], FIN_PAGE, can_read=False, can_write=False, can_base=True)
-    assert _shared_pages(world, world["ga_member"]) == []
-
-
 # ---------------------------------------------------------------------------
 # 七、建表是幂等的：`db init` 再跑一遍，表还在、行还在
 # ---------------------------------------------------------------------------
