@@ -13,7 +13,7 @@
   {% for r in rows %}
     <tr>
       <td>{{ r.org_name }}<div class="meta">{{ r.name }}{% if r.position_title %} · {{ r.position_title }}{% endif %}</div></td>
-      <td>{{ r.title or '—' }}{% if r.needs_decision %} <span class="badge decision">待决策</span>{% endif %}</td>
+      <td><span>{{ r.title or '—' }}</span>{% if r.needs_decision %} <span class="badge decision">待决策</span>{% endif %}</td>
       <td>{% if r.status %}<span class="badge {% if r.status == 'blocked' %}blocked{% endif %}">{{ status_labels.get(r.status, r.status) }}</span>{% else %}—{% endif %}</td>
       <td>{{ r.blocked_reason or '—' }}</td>
       <td>{% if r.progress_value is not none %}{{ r.progress_value }}%{% else %}—{% endif %}</td>

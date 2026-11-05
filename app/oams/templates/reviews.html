@@ -159,7 +159,7 @@
     {% for o in others %}
       <tr>
         <td class="mono">{{ o.updated_at | dt }}</td>
-        <td>{{ o.org_name }} · {{ o.name }} <span class="pill neutral">v{{ o.version_no }}</span></td>
+        <td><span>{{ o.org_name }} · {{ o.name }}</span> <span class="pill neutral">v{{ o.version_no }}</span></td>
         <td>{{ o.author or '—' }}</td>
         <td>{% if o.review_stage == 'company' %}公司终审{% else %}部门初审{% endif %}</td>
       </tr>
@@ -191,7 +191,7 @@
     {% for c in catalog %}
       <tr>
         <td>{{ c.org_name }}</td>
-        <td>{{ c.name }}{% if c.visibility == 'public' %} <span class="pill neutral">公共模板</span>{% endif %}{% if c.status == 'active' %}<div class="crumb-meta mono">{{ c.slug }} · v{{ c.version_no }}</div>{% endif %}</td>
+        <td><span>{{ c.name }}</span>{% if c.visibility == 'public' %} <span class="pill neutral">公共模板</span>{% endif %}{% if c.status == 'active' %}<div class="crumb-meta mono">{{ c.slug }} · v{{ c.version_no }}</div>{% endif %}</td>
         <td>
           {% if c.status == 'active' %}<span class="pill success">已启用</span>
           {% elif c.status == 'pending' %}<span class="pill warning">待审</span>
