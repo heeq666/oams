@@ -65,6 +65,8 @@ OAMS_DATABASE_URL=... .venv/bin/python -m pytest   # 不给库地址 = 整批 db
 ## 约定
 
 - 中文优先：注释、文档、界面文案都用中文。
+- **界面可见文字只回答三件事：这是什么、现在什么状态、下一步做什么。** 不许把内部信息印到用户页面上：仓库路径与文件名（如 `docs/architecture/*.md`）、格式名与代码符号（descriptor、slug、`emit`、`metrics`、JSON 键名）、设计理由与交接背景、给作者自己看的解释段。判据是**可执行**的：**把这句话删掉，读者是否仍然知道该做什么——仍然知道，就必须删**；真要解释就走 hover 或帮助文档，不占页面。产品是给第三方部门用的，不是给作者看的。实例（2026-11-05 老大原话「太蠢了，做页面开发又不是给我一个人看的」）：`app/oams/templates/department_new_page.html:55` 印了 `docs/architecture/*.md`、`app/oams/templates/department_workbench.html:171` 写「在 descriptor 的 metrics 里加一条 emit」、`app/oams/templates/setup_interfaces.html:35` 把内部文件名当链接文字。
+- **这条不靠自觉**：界面文案要能被机器检查，不能只写在规范里等人读（`docs/design/design-system-v1.md` 早就有这条散文规范，2026-10-29 定的，一处也没拦住）。闸门由测试来立——模板里出现内部路径、格式名、代码符号即判红；本文只写要求，判据落在 `tests/`。
 - 提交前跑 `pytest`；改 UI 要截图自检（1440 / 1024 / 768 三档，窄屏不许横向滚动），工具与命令见「浏览器自动化」。
 - **验收 pytest 要两种机器状态都跑，并且看 skip 数**：本机有库 → **0 skipped**，这才是真绿；故意指向不存在的库 → 允许 skip，那只证明「无库不炸」。skip 数一涨就说明有库没被用上，别拿 `0 failed` 当验收口径。
 - **对外承诺要在干净环境里验**：改 README / quickstart / skill / 测试这类外人照着做的东西，推之前要在**全新 clone + 全新空库**上原样跑一遍才算数。拿主仓的 `.venv` 加 `PYTHONPATH` 跑不算外人环境——这道闸已经抓过两次（本机显示名写进断言、全新 clone 缺 pytest 依赖）。
