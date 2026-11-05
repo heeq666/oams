@@ -51,6 +51,17 @@
   font-weight: 600;
   margin: 0 0 12px;
   color: var(--oams-ink);
+  /* 标题旁那枚「别人开给你的页」标记要跟字基线对齐，图标与文字之间按行内档 8。 */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 「别人开给你的页」标记：界面上只占一枚 16 见方的小图标，整句说明在 title 里。
+   不是状态、不用语义色（规范：图标一律 muted）。 */
+.wh-icon-shared {
+  flex: 0 0 auto;
+  cursor: help;
 }
 
 .wh-interface-body {

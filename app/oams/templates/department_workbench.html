@@ -31,11 +31,8 @@
     {% elif saved %}<div class="flash">{{ '已保存到测试区——页面还没正式使用，这条不计入公司汇总。' if draft_mode else '已保存。关联到工作项后，这条才会计入公司汇总。' }}</div>{% endif %}
     {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
-    {# 跨部门「借」这一页来用的人：顶部一句中性说明——你看到的不是自己部门的东西。
-       文案由 web.py 的 `access_note` 给（复用 _page_access 算出来的授权，不另查库）；
-       本部门的人、以及没有这句的情况都不进 DOM。 #}
-    {% if access_note %}<p class="strip neutral" style="margin-bottom:12px">{{ access_note }}</p>{% endif %}
-
+    {# 跨部门「借」这一页来用的人：说明已收进页面标题旁那枚小图标（title/aria-label），
+       不再占一整行。这页里的 `access_note` 仍有用——只读时下面那句兜底要判断它有没有。 #}
     {% if page %}
       {% if page.status != 'active' %}
       <div class="card" style="margin-bottom:12px">

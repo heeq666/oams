@@ -1008,8 +1008,23 @@ def _unshown_fields_block(state: "_RenderState", mode: str) -> str:
             % "".join(rows))
 
 
+# 页面标题旁那枚「别人开给你的页」标记。几何照抄 Lucide `share-2`（24 网格、描边 2、
+# 圆头圆角），不手画；颜色走模块层的 --oams-muted。整句说明放在 title / aria-label
+# 里：界面上只占一枚 16 见方的小图标，鼠标停上去才出这句话，正文不再占一整行。
+_SHARED_ICON = (
+    '<svg class="wh-icon wh-icon-shared" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img"'
+    ' aria-label="{note}"><title>{note}</title>'
+    '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>'
+    '<circle cx="18" cy="19" r="3"/>'
+    '<line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/>'
+    '<line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>'
+)
+
+
 def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
-            mode: str, lookup: str = "", include_unbound: bool = False) -> str:
+            mode: str, lookup: str = "", include_unbound: bool = False,
+            title_note: str = "") -> str:
     if mode not in MODES:
         raise RenderError(f"mode: 未知视角 {mode!r}")
     problems = _structural_problems(descriptor)
@@ -1036,14 +1051,17 @@ def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
     return (f'<div class="wh-interface wh-interface-{mode}" '
             f'data-interface="{_text(descriptor.get("interface_id"))}" '
             f'data-org="{_text(descriptor.get("org_unit_code"))}" data-mode="{mode}">'
-            f'<h2 class="wh-interface-title">{_text(descriptor.get("name"))}</h2>'
+            f'<h2 class="wh-interface-title">{_text(descriptor.get("name"))}'
+            + (_SHARED_ICON.format(note=_text(title_note)) if title_note else "")
+            + '</h2>'
             f'<div class="wh-interface-body">{blocks}</div></div>')
 
 
 def render_interface(descriptor: dict, values: dict | None = None,
                      aggregates: dict[str, float] | None = None,
                      lookup: str = "",
-                     include_unbound: bool = False) -> str:
+                     include_unbound: bool = False,
+                     title_note: str = "") -> str:
     """Department viewpoint: input modules render widgets, display modules real numbers.
 
     ``lookup`` is the already-rendered result block a lookup box should show on a
@@ -1052,7 +1070,7 @@ def render_interface(descriptor: dict, values: dict | None = None,
     the database and never decides what a query means.
     """
     return _render(descriptor, values, aggregates, mode="edit", lookup=lookup,
-                   include_unbound=include_unbound)
+                   include_unbound=include_unbound, title_note=title_note)
 
 
 def render_read_only(descriptor: dict, values: dict | None = None,
