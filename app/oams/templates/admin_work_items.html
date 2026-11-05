@@ -62,7 +62,7 @@
   <tbody>
   {% for item in items %}
     <tr>
-      <td>{{ item.title }}{% if item.needs_decision %} <span class="badge decision">待决策</span>{% endif %}</td>
+      <td><span>{{ item.title }}</span>{% if item.needs_decision %} <span class="badge decision">待决策</span>{% endif %}</td>
       <td>{{ item.org_code }} · {{ item.position_title }}</td>
       <td>{{ kind_labels[item.kind] }}</td>
       <td>{{ status_labels[item.status] }}</td>

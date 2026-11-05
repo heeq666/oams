@@ -24,7 +24,9 @@
     {% for c in choices %}
       <tr>
         <td>
-          {{ c.name }}
+          {# 名字包一层 span：胶囊的 -8px 对齐规则按 `:first-child` 判，而 :first-child 不数
+             文字节点——裸写「名字 + 胶囊」会让胶囊被当成第一个子元素左挪 8px，压住名字。 #}
+          <span>{{ c.name }}</span>
           {% if c.is_company %}<span class="pill neutral">全公司</span>{% endif %}
           {% if c.is_owner %}<span class="pill success">本部门</span>{% endif %}
         </td>
