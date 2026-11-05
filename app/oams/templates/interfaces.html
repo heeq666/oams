@@ -13,7 +13,7 @@
   <tbody>
   {% for i in interfaces %}
     <tr>
-      <td>{{ i.name }}<div class="meta mono">{{ i.slug }}</div></td>
+      <td><span>{{ i.name }}</span>{% if i.interface_id not in mine %} <span class="pill neutral">别的部门开给你的</span>{% endif %}<div class="meta mono">{{ i.slug }}</div></td>
       <td>{{ i.org_name }}</td>
       <td>{{ i.position_title or '—' }}</td>
       <td>{{ '全公司公共模板' if i.visibility == 'public' else '仅本部门' }}</td>

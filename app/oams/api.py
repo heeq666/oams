@@ -17,7 +17,8 @@ from oams.schemas import (APP_SCOPES, AppCodeCreate, AppRevokeRequest, AppTokenR
                              AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
                              PositionConfigCreate, PositionCreate, ReportCreate, ReportRetract,
                              WorkItemCreate, WorkItemUpdate)
-from oams.security import (accessible_org_unit_ids, active_org_unit_ids, has_all_scope_grant, current_principal,
+from oams.security import (accessible_org_unit_ids, active_org_unit_ids, can_view_interface,
+                              has_all_scope_grant, current_principal,
                               has_company_scope, has_permission, issue_session, principal_for_token,
                               principal_from_request, require_org_unit_access,
                               require_permission, revoke_session)
@@ -1778,7 +1779,26 @@ app.mount("/static", _VersionedStaticFiles(directory=str(Path(__file__).resolve(
 app.include_router(web_router)
 
 
-def _shell_rail(path, nav, departments, dept_active, caps):
+def _shared_pages(conn, member_id):
+    """别的部门开给我看的页——左侧栏「开给你的页」那几条。
+
+    判据只有 `security.can_view_interface`（跟真正打开那一页时同一个函数），候选是
+    「已经上线、且不属于我能进的部门」的那些页。这个数在一组织里是个位数，逐页问
+    比在 SQL 里重写一遍祖先链更安全：重写一份就是两份判据，迟早给出两个答案。
+    """
+    mine = set(active_org_unit_ids(conn, member_id))
+    rows = conn.execute(
+        """SELECT i.org_unit_id, i.slug, i.name, i.status, o.name AS org_name,
+                  o.org_code AS org_code
+             FROM oams.interfaces i JOIN oams.org_units o USING (org_unit_id)
+            WHERE i.status = 'active'
+            ORDER BY o.name, i.name""").fetchall()
+    return [row for row in rows
+            if row["org_unit_id"] not in mine
+            and can_view_interface(conn, member_id, row["org_unit_id"], row["slug"])]
+
+
+def _shell_rail(path, nav, departments, dept_active, caps, shared_pages=()):
     """The left column is the sub-navigation of whichever top entry you are in.
 
     A screen can have several views -- the review queue and what it decided
@@ -1790,8 +1810,8 @@ def _shell_rail(path, nav, departments, dept_active, caps):
     head = path.strip("/").split("/")[0] if path.strip("/") else ""
     items = []
 
-    def add(label, href, on=False):
-        items.append({"label": label, "href": href, "on": bool(on)})
+    def add(label, href, on=False, head=False):
+        items.append({"label": label, "href": href, "on": bool(on), "head": bool(head)})
 
     # Building a page is a view of the interface screens, not of setup, so it is
     # listed with them even though its URL still lives under /setup.
@@ -1804,6 +1824,13 @@ def _shell_rail(path, nav, departments, dept_active, caps):
         for row in departments:
             add(row["name"], "/departments/" + str(row["org_unit_id"]),
                 dept_active == row["org_unit_id"])
+        if shared_pages:
+            # 一条小标题把它们和「你自己的部门」分开：这些页不属于你，点进去是
+            # 读别人的数据（页头还会再说明一遍是谁开给你的）。
+            add("开给你的页", None, False, head=True)
+            for row in shared_pages:
+                on = path == f"/pages/{row['org_code']}/{row['slug']}"
+                add(row["name"], f"/pages/{row['org_code']}/{row['slug']}", on)
     elif head in ("interfaces", "board"):
         add("汇报汇总", "/interfaces/board", path.startswith("/interfaces/board"))
         if nav.get("departments"):
@@ -1886,8 +1913,11 @@ async def attach_browser_principal(request, call_next):
                 "work_items": has_permission(conn, member_id, "workforce.work_items", "read"),
                 "positions": has_permission(conn, member_id, "workforce.positions", "read"),
             }
+            shared = []
+            if nav["departments"] and request.method == "GET":
+                shared = _shared_pages(conn, member_id)
             request.state.rail = _shell_rail(request.url.path, nav, request.state.dept_rail,
-                                             request.state.dept_active, caps)
+                                             request.state.dept_active, caps, shared)
             # 徽章只在整页出现。片段响应（/collab 里那几条）不画外壳，跳过这次查询。
             if request.method == "GET" and not request.url.path.startswith("/collab"):
                 request.state.collab_unread = collab.unread_total(conn, member_id)

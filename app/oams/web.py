@@ -662,17 +662,23 @@ def _access_editor(powers, org_unit_id) -> tuple[bool, str | None]:
 
 
 def _audience_text(audience) -> str:
-    """这一页能被谁打开（「谁能查看」那一列）。列头已经说明含义，值里不再叠「只读」这种词。"""
-    if not audience:
+    """这一页能被谁打开（「谁能查看」那一列）。列头已经说明含义，值里不再叠「只读」这种词。
+
+    只数 `can_read` 的行：加了「可作参考」之后，一行可以只有参考权、看不到内容，
+    那种行放进「谁能查看」就是在说假话。
+    """
+    readers = [row for row in audience if row["can_read"]]
+    if not readers:
         return "只有本部门"
-    parts = ["全公司" if row["unit_type"] == "company" else row["name"] for row in audience]
+    parts = ["全公司" if row["unit_type"] == "company" else row["name"] for row in readers]
     return "本部门 + " + "、".join(parts)
 
 
 def _audience_payload(audience) -> list[dict[str, Any]]:
-    """审计里记的形态：按部门码写清能看/能填，别记 id（人看审计认不出 id）。"""
+    """审计里记的形态：按部门码写清能看/能改/能参考，别记 id（人看审计认不出 id）。"""
     return [{"org_code": row["org_code"], "can_read": row["can_read"],
-             "can_write": row["can_write"]} for row in audience]
+             "can_write": row["can_write"],
+             "can_base": bool(row.get("can_base"))} for row in audience]
 
 
 def _fill_text(audience) -> str:
@@ -681,6 +687,40 @@ def _fill_text(audience) -> str:
     if not writers:
         return "只有本部门"
     names = ["全公司" if row["unit_type"] == "company" else row["name"] for row in writers]
+    return "本部门 + " + "、".join(names)
+
+
+def _access_summary(row) -> str:
+    """弹窗「说明」列：这一行现在是什么状态，用一句话说清。
+
+    三格独立，所以不能说成「可查看、可编辑、可参考」——只勾了参考的人看不到数据，
+    那句话会让人以为他能打开。按实际勾选拼，顺序固定：查看 > 编辑 > 参考。
+    """
+    if row.get("is_owner"):
+        return "这一页属于它，天然可查看、可编辑、可参考"
+    if row.get("closed_reason"):
+        kept = row.get("can_read") or row.get("can_write") or row.get("can_base")
+        return row["closed_reason"] + ("；已有授权会原样保留" if kept else "")
+    granted = []
+    if row.get("can_read"):
+        granted.append("可查看")
+    if row.get("can_write"):
+        granted.append("可编辑")
+    if row.get("can_base"):
+        granted.append("可当模板")
+    if not granted:
+        return "—"
+    if granted == ["可当模板"]:
+        return "只能拿它当模板，看不到里面的数据"
+    return "、".join(granted)
+
+
+def _base_text(audience) -> str:
+    """这一页能被谁当模板参考（「谁能参考」那一列）：只列真拿到参考权的部门。"""
+    bases = [row for row in audience if row.get("can_base")]
+    if not bases:
+        return "只有本部门"
+    names = ["全公司" if row["unit_type"] == "company" else row["name"] for row in bases]
     return "本部门 + " + "、".join(names)
 
 
@@ -1010,11 +1050,15 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
                 return RedirectResponse(url=back + "?error=" + urllib.parse.quote("来源页面编号不对"),
                                         status_code=303)
             source = conn.execute(
-                """SELECT interface_id, org_unit_id, status, visibility FROM oams.interfaces
-                    WHERE interface_id = %s""", (source_id,)).fetchone()
+                """SELECT interface_id, org_unit_id, slug, status, visibility
+                     FROM oams.interfaces WHERE interface_id = %s""", (source_id,)).fetchone()
             openable = source is not None and source["status"] == "active" and (
                 source["visibility"] == "public"
-                or source["org_unit_id"] in active_org_unit_ids(conn, principal["member_id"]))
+                or source["org_unit_id"] in active_org_unit_ids(conn, principal["member_id"])
+                # 页面主人把「参考」开给了这个人的部门（`can_base`）：能拿它当模板，
+                # 但这份权利不让他打开那一页，所以这里单独问一次，不走 can_view。
+                or security.can_base_interface(conn, principal["member_id"],
+                                               source["org_unit_id"], source["slug"]))
             if not openable:
                 # "不存在" and "不开放给你" are one sentence on purpose: telling them
                 # apart would confirm that a page you may not see exists.
@@ -1719,17 +1763,27 @@ def _acting_stage(powers: dict[str, Any], page: Any) -> str:
 def _basis_pages(conn, member_id, org_unit_id: UUID) -> list[Any]:
     """Other departments' live pages this person may start a new page from.
 
-    Only pages the caller can already open: a picker that lists pages it would
-    then refuse invites people to click a dead option, and a list that names
-    hidden pages leaks exactly the fact a 404 is there to withhold.
+    Three ways a page qualifies, and only these three: it is a public template,
+    it belongs to a department this person can already enter, or its owner gave
+    this person's department the **参考** right (`can_base`). A picker that lists
+    pages it would then refuse invites people to click a dead option, and a list
+    that names hidden pages leaks exactly the fact a 404 is there to withhold.
+
+    The 参考 right is checked per page through `security.can_base_interface` rather
+    than in SQL: that function owns the ancestor-chain rule, and repeating it here
+    is how the two answers drift apart.
     """
     mine = list(active_org_unit_ids(conn, member_id))
-    return conn.execute(
-        """SELECT i.interface_id, i.name, i.visibility, o.name AS org_name
+    rows = conn.execute(
+        """SELECT i.interface_id, i.slug, i.name, i.visibility, i.org_unit_id,
+                  o.name AS org_name
              FROM oams.interfaces i JOIN oams.org_units o USING (org_unit_id)
             WHERE i.status = 'active' AND i.org_unit_id <> %s
-              AND (i.visibility = 'public' OR i.org_unit_id = ANY(%s))
-            ORDER BY o.name, i.name""", (org_unit_id, mine)).fetchall()
+            ORDER BY o.name, i.name""", (org_unit_id,)).fetchall()
+    return [row for row in rows
+            if row["visibility"] == "public"
+            or row["org_unit_id"] in mine
+            or security.can_base_interface(conn, member_id, row["org_unit_id"], row["slug"])]
 
 
 def _employee_code_of(conn, principal: dict[str, Any]) -> str | None:
@@ -1930,12 +1984,14 @@ def page_access_dialog(request: Request, org_code: str, slug: str,
             "is_owner": is_owner, "is_company": root is not None and unit["org_unit_id"] == root["org_unit_id"],
             "can_read": is_owner or bool(row and row["can_read"]),
             "can_write": is_owner or bool(row and row["can_write"]),
+            "can_base": is_owner or bool(row and row.get("can_base")),
             "allowed": allowed,
             "closed_reason": (None if allowed else
                               ("只有系统管理员能把页面开给全公司" if root is not None
                                and unit["org_unit_id"] == root["org_unit_id"]
                                else f"你没有「{unit['name']}」的管理范围")),
         })
+        choices[-1]["summary"] = _access_summary(choices[-1])
     return TEMPLATES.TemplateResponse(request, "access_dialog.html", {
         "page": page, "choices": choices, "audience": audience,
         "audience_text": _audience_text(audience),
@@ -1958,6 +2014,7 @@ async def page_access_save(request: Request, org_code: str, slug: str, csrf: str
     form = await request.form()
     read_ids = {str(value) for value in form.getlist("read")}
     write_ids = {str(value) for value in form.getlist("write")}
+    base_ids = {str(value) for value in form.getlist("base")}
     with connection() as conn:
         powers = _review_powers(conn, principal)
         page = _page_by_address(conn, org_code, slug)
@@ -1969,15 +2026,19 @@ async def page_access_save(request: Request, org_code: str, slug: str, csrf: str
         grantable = security.grantable_org_unit_ids(conn, principal["member_id"])
         owner_id = page["org_unit_id"]
         wanted: list[dict[str, Any]] = []
-        for raw in sorted(write_ids | read_ids):
+        for raw in sorted(write_ids | read_ids | base_ids):
             try:
                 unit_id = UUID(raw)
             except ValueError:
                 continue
             if unit_id == owner_id:
-                continue  # 本部门不写表：它永远能看能填
-            wanted.append({"org_unit_id": unit_id, "can_read": True,
-                           "can_write": raw in write_ids})
+                continue  # 本部门不写表：它永远能看能改能参考
+            # 能编辑必然能查看（表上有 CHECK）；「能参考」不蕴含能查看——参考的是
+            # 页面定义，不是条目内容，两件事分开勾。
+            wanted.append({"org_unit_id": unit_id,
+                           "can_read": raw in read_ids or raw in write_ids,
+                           "can_write": raw in write_ids,
+                           "can_base": raw in base_ids})
         if wanted:
             known = conn.execute(
                 """SELECT org_unit_id, name FROM oams.org_units
@@ -2003,7 +2064,7 @@ async def page_access_save(request: Request, org_code: str, slug: str, csrf: str
             # 管不到的部门：它本来就有权限的话原样留着。看不见不等于可以撤掉——
             # 否则一个部门管理员保存一次，就把系统管理员给别人的授权悄悄删了。
             keep = [{"org_unit_id": row["org_unit_id"], "can_read": row["can_read"],
-                     "can_write": row["can_write"]}
+                     "can_write": row["can_write"], "can_base": bool(row.get("can_base"))}
                     for row in before if row["org_unit_id"] not in grantable]
             wanted.extend(keep)
         security.set_interface_audience(conn, owner_id, slug, wanted,
@@ -2083,6 +2144,7 @@ def _review_view(request: Request, view: str, saved: str | None = None,
         for row in catalog:
             row["audience_text"] = _audience_text(row["audience"])
             row["fill_text"] = _fill_text(row["audience"])
+            row["base_text"] = _base_text(row["audience"])
             row["can_edit_access"], row["access_why"] = _access_editor(powers, row["org_unit_id"])
     mine = [row for row in awaiting if _review_refusal(powers, row) is None]
     others = [row for row in awaiting if powers["company"] and _review_refusal(powers, row) is not None]
@@ -2371,7 +2433,8 @@ def interfaces(request: Request, saved: str | None = None, error: str | None = N
         scoped = list(active_org_unit_ids(conn, principal["member_id"]))
         rows = conn.execute(
             """SELECT i.interface_id, i.slug, i.name, i.visibility, i.version_no,
-                      o.name AS org_name, o.org_code AS org_code, p.title AS position_title,
+                      i.org_unit_id, o.name AS org_name, o.org_code AS org_code,
+                      p.title AS position_title,
                       (SELECT count(*) FROM oams.interface_entries e
                         WHERE e.interface_id = i.interface_id AND e.status_entry = 'active') AS entry_count
                FROM oams.interfaces i
@@ -2379,8 +2442,30 @@ def interfaces(request: Request, saved: str | None = None, error: str | None = N
                LEFT JOIN oams.positions p ON p.position_id = i.position_id
                WHERE i.status = 'active' AND (%s OR i.org_unit_id = ANY(%s))
                ORDER BY o.name, i.name""", (company_scope, scoped)).fetchall()
+        # 别的部门开给我看的页也要出现在这里，否则「勾了能查看」等于只给了一个
+        # 得自己背下来的网址——授权在界面上没有落点。判据不另写：逐页问
+        # `security.can_view_interface`（与打开那一页时用的是同一个函数）。
+        # 候选只取「不属于我管的部门」的页，通常只有个位数，列表页不是热路径。
+        mine = {row["interface_id"] for row in rows}
+        candidates = conn.execute(
+            """SELECT i.interface_id, i.slug, i.name, i.visibility, i.version_no,
+                      i.org_unit_id, o.name AS org_name, o.org_code AS org_code,
+                      p.title AS position_title,
+                      (SELECT count(*) FROM oams.interface_entries e
+                        WHERE e.interface_id = i.interface_id AND e.status_entry = 'active') AS entry_count
+               FROM oams.interfaces i
+               JOIN oams.org_units o USING (org_unit_id)
+               LEFT JOIN oams.positions p ON p.position_id = i.position_id
+               WHERE i.status = 'active' AND NOT (%s OR i.org_unit_id = ANY(%s))
+               ORDER BY o.name, i.name""", (company_scope, scoped)).fetchall()
+        shared = [row for row in candidates
+                  if row["interface_id"] not in mine
+                  and security.can_view_interface(conn, principal["member_id"],
+                                                  row["org_unit_id"], row["slug"])]
+        rows = list(rows) + shared
     return TEMPLATES.TemplateResponse(request, "interfaces.html", {
-        "interfaces": rows, "member": _member(request), "saved": saved, "error": error})
+        "interfaces": rows, "mine": mine, "member": _member(request),
+        "saved": saved, "error": error})
 
 
 

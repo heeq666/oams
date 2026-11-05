@@ -177,6 +177,10 @@ CREATE TABLE IF NOT EXISTS oams.interface_access (
     org_unit_id uuid NOT NULL,
     can_read boolean DEFAULT true NOT NULL,
     can_write boolean DEFAULT false NOT NULL,
+    -- 可作参考：这个部门能拿这一页当样本，另建自己的一版（based_on）。它既不是
+    -- 「能看」也不是「能改」——看的是内容，参考的是结构；分开一格是为了不让
+    -- 「能看」顺带把页面定义也开出去。
+    can_base boolean DEFAULT false NOT NULL,
     granted_by uuid,
     granted_at timestamp with time zone DEFAULT now() NOT NULL,
     note text,
@@ -185,6 +189,9 @@ CREATE TABLE IF NOT EXISTS oams.interface_access (
 );
 
 COMMENT ON TABLE oams.interface_access IS '页面权限：哪几个部门能看/能填这一页（本部门默认能看能填，不入表）';
+
+-- 老库补列：`db init` 每次整份重跑，所以这里也写成幂等的。
+ALTER TABLE oams.interface_access ADD COLUMN IF NOT EXISTS can_base boolean DEFAULT false NOT NULL;
 
 --
 -- Name: interface_entries; Type: TABLE; Schema: oams; Owner: -
