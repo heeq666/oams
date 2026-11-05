@@ -24,12 +24,15 @@ from starlette.requests import Request
 from oams.config import settings
 from oams.security import (DEV_ROLE_ADMIN, DEV_ROLE_MANAGER, DEV_ROLE_STAFF, DEV_WORKER_COOKIE,
                               ROLE_DEPARTMENT, ROLE_RANK, ROLE_STAFF, ROLE_SYSTEM,
-                              current_principal, dev_autologin_target, dev_identities, dev_principal,
-                              dev_role_label, principal_for_token, principal_from_request)
+                              assert_dev_autologin_is_local, current_principal,
+                              dev_autologin_refusal, dev_autologin_target, dev_identities,
+                              dev_principal, dev_role_label, principal_for_token,
+                              principal_from_request)
 
 
 def _request(path: str = "/board", cookie: str | None = None,
-             dev_cookie: str | None = None) -> Request:
+             dev_cookie: str | None = None,
+             client: tuple[str, int] | None = ("127.0.0.1", 51234)) -> Request:
     headers = []
     if cookie:
         headers.append((b"cookie", f"{settings.web_session_cookie}={cookie}".encode()))
@@ -43,6 +46,7 @@ def _request(path: str = "/board", cookie: str | None = None,
         "query_string": b"",
         "scheme": "http",
         "server": ("127.0.0.1", 8000),
+        "client": client,
     })
 
 
@@ -55,6 +59,77 @@ def shortcut(monkeypatch):
 
     _set("ADMIN001")
     return _set
+
+
+# ---------------------------------------------------------------------------
+# The shortcut has no login, so it is only allowed where only this machine looks
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bind_host, refused", [
+    # Loopback: the only place with no login is safe.
+    ("127.0.0.1", False),
+    ("127.0.0.5", False),
+    ("::1", False),
+    ("localhost", False),
+    ("  127.0.0.1  ", False),
+    # Reachable from somewhere else -- every one of these is a refusal.
+    ("0.0.0.0", True),
+    ("::", True),
+    ("[::]", True),
+    ("198.51.100.10", True),
+    ("198.51.100.11", True),
+    ("oams.example[.]local", True),
+])
+def test_the_shortcut_is_only_allowed_on_a_loopback_bind(monkeypatch, bind_host, refused):
+    monkeypatch.setattr(settings, "dev_autologin", "ADMIN001", raising=False)
+    monkeypatch.setattr(settings, "bind_host", bind_host, raising=False)
+    refusal = dev_autologin_refusal()
+    assert (refusal is not None) is refused, (bind_host, refusal)
+    if refused:
+        # And it really does stop signing people in: the check is not decoration.
+        assert dev_autologin_target() is None
+        assert dev_autologin_target(_request()) is None
+        assert dev_identities() == []
+        with pytest.raises(SystemExit):
+            assert_dev_autologin_is_local()
+    else:
+        assert dev_autologin_target() == "ADMIN001"
+        assert_dev_autologin_is_local()  # 不抛
+
+
+def test_a_caller_from_another_machine_gets_no_shortcut(monkeypatch):
+    """`uvicorn --host` 能绕过设置，所以按请求来源再判一次。
+
+    The settings may still say 127.0.0.1 while the command line bound elsewhere;
+    only the request itself knows where the browser really came from.
+    """
+    monkeypatch.setattr(settings, "dev_autologin", "ADMIN001", raising=False)
+    monkeypatch.setattr(settings, "bind_host", "127.0.0.1", raising=False)
+    assert dev_autologin_target(_request(client=("198.51.100.10", 5011))) is None
+    # 本机来的照常，否则本机试用就没意义了。
+    assert dev_autologin_target(_request(client=("127.0.0.1", 5011))) == "ADMIN001"
+    assert dev_autologin_target(_request(client=("::1", 5011))) == "ADMIN001"
+
+
+def test_an_unreadable_client_address_does_not_turn_the_shortcut_off(monkeypatch):
+    """只有确凿证据才拒绝：进程内测试客户端的来源叫 `testserver`，那不是 IP。
+
+    把「读不懂就当外网」写成判据，会让所有进程内用例莫名失去免登录，而且报告里
+    看不出是这条规则干的——比漏判更难查。
+    """
+    monkeypatch.setattr(settings, "dev_autologin", "ADMIN001", raising=False)
+    monkeypatch.setattr(settings, "bind_host", "127.0.0.1", raising=False)
+    assert dev_autologin_target(_request(client=("testserver", 80))) == "ADMIN001"
+    assert dev_autologin_target(_request(client=None)) == "ADMIN001"
+
+
+def test_switching_the_shortcut_off_needs_no_bind_change(monkeypatch):
+    """关掉之后，绑哪儿都不该拦：拦的是「没登录还对外开放」这件事，不是端口。"""
+    monkeypatch.setattr(settings, "dev_autologin", "0", raising=False)
+    monkeypatch.setattr(settings, "bind_host", "0.0.0.0", raising=False)
+    assert dev_autologin_refusal() is None
+    assert dev_autologin_target() is None
+    assert_dev_autologin_is_local()
 
 
 # ---------------------------------------------------------------------------

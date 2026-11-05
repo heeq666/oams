@@ -158,6 +158,11 @@ def _login_url(token, base_url=None):
 
 
 def serve():
+    # 免登录没有登录这一步：它只许绑在本机。绑到别的机器也连得到的地址就拒绝启动，
+    # 而不是起完打一行警告——警告没人读，而这时候谁打开都是系统管理员。
+    from oams.security import assert_dev_autologin_is_local
+
+    assert_dev_autologin_is_local()
     uvicorn.run("oams.api:app", host=settings.bind_host, port=settings.bind_port)
 
 

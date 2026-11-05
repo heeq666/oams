@@ -66,6 +66,29 @@ SHOWN_HOST="$BIND_HOST"
 # 权限、部门范围、审计一条不少，页面右下角会一直显示「开发模式 · 免登录」角标。
 # 恢复登录：OAMS_DEV_AUTOLOGIN=0 ./scripts/start-local-trial.sh
 export OAMS_DEV_AUTOLOGIN="${OAMS_DEV_AUTOLOGIN:-1}"
+
+# 免登录没有登录这一步，所以它只许绑在本机：绑到别人也连得到的地址时，谁打开都是
+# 系统管理员。这里直接拒绝启动，不靠页面上的角标提醒——角标是给正在看页面的人看的，
+# 而一个开着免登录、又绑到 0.0.0.0 的站点，看它的人已经是不该进来的那个了。
+case "$(printf '%s' "$OAMS_DEV_AUTOLOGIN" | tr '[:upper:]' '[:lower:]')" in
+  ""|0|false|no|off|none) : ;;
+  *)
+    case "$BIND_HOST" in
+      127.*|::1|\[::1\]|localhost) : ;;
+      *)
+        cat >&2 <<EOF
+拒绝启动：监听地址是 ${BIND_HOST}，别的机器也能连，而免登录（OAMS_DEV_AUTOLOGIN=${OAMS_DEV_AUTOLOGIN}）没有登录这一步——
+谁打开都是系统管理员。
+
+要开放给别人访问：OAMS_DEV_AUTOLOGIN=0 scripts/start-local-trial.sh（恢复登录）
+只在本机试用：  OAMS_BIND_HOST=127.0.0.1 scripts/start-local-trial.sh（这是默认值）
+EOF
+        exit 2
+        ;;
+    esac
+    ;;
+esac
+
 echo "网站即将启动： http://${SHOWN_HOST}:${BIND_PORT}"
 echo "按 Ctrl+C 停止网站（数据库继续运行）。"
 exec .venv/bin/python -m uvicorn oams.api:app --host "$BIND_HOST" --port "$BIND_PORT"

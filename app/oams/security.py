@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import secrets
 import sys
 import time
@@ -163,8 +164,91 @@ _DEV_IDENTITY_SQL = """SELECT m.member_id, m.employee_code, m.display_name,
   WHERE m.employment_status = 'active'"""
 
 _DEV_WARNED = False
+_DEV_REFUSED_WARNED = False
 _DEV_IDENTITIES: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _DEV_IDENTITIES_TTL = 15.0
+
+
+def _loopback_address(value: Any) -> bool | None:
+    """True/False for an IP literal, None when the value is not one.
+
+    A hostname is deliberately *not* resolved here: resolution needs the network,
+    it can disagree with what the socket actually bound to, and a name that fails
+    to resolve would turn a safety check into a crash.
+    """
+    text = str(value or "").strip().strip("[]")
+    if not text:
+        return None
+    try:
+        return ipaddress.ip_address(text).is_loopback
+    except ValueError:
+        return None
+
+
+def dev_autologin_refusal(request: Request | None = None) -> str | None:
+    """Why the shortcut must not sign anybody in here, or None when it may.
+
+    The shortcut has no login at all, so it is only ever safe on an instance that
+    nothing but this machine can reach. Two ways of learning that it is not:
+
+    * the configured bind address names an address other machines can reach
+      (`0.0.0.0`, `::`, a LAN address, a real hostname) -- a setting, so this
+      fires even before a request arrives;
+    * a live request arrived from a non-loopback client -- the binding might have
+      been passed on the command line instead of the settings (`uvicorn --host`),
+      and then this is the only thing that sees the truth.
+
+    Only positive evidence refuses: an address we cannot read as an IP (the
+    in-process test client calls itself `testserver`) keeps working, because the
+    startup gate below is what actually stops a real deployment.
+
+    Asking this question is itself only meaningful while the shortcut is on, so a
+    switched-off shortcut is never refused -- the rule is about "no login out in
+    the open", not about which port anything listens on.
+    """
+    if (settings.dev_autologin or "").strip().lower() in DEV_AUTOLOGIN_OFF:
+        return None
+    bind = (settings.bind_host or "").strip()
+    binding_reads_local = _loopback_address(bind)
+    if binding_reads_local is False:
+        return f"监听地址是 {bind}（别的机器也能连），免登录会让谁打开都是管理员"
+    if binding_reads_local is None and bind and bind.lower() not in {"localhost", "localhost.localdomain"}:
+        return f"监听地址是 {bind}（不是回环地址，别的机器可能连得到）"
+    if request is None:
+        return None
+    client = request.scope.get("client")
+    host = client[0] if isinstance(client, (tuple, list)) and client else None
+    if _loopback_address(host) is False:
+        return f"这次请求来自 {host}（不是本机），免登录只对本机开放"
+    return None
+
+
+def _warn_refused(reason: str) -> None:
+    """Say it once, on stderr, so an operator sees the shortcut did not take."""
+    global _DEV_REFUSED_WARNED
+    if _DEV_REFUSED_WARNED:
+        return
+    _DEV_REFUSED_WARNED = True
+    print(f"[oams] DEV AUTOLOGIN REFUSED: {reason}。"
+          f"把 OAMS_DEV_AUTOLOGIN 去掉，或改绑 127.0.0.1。", file=sys.stderr, flush=True)
+
+
+def assert_dev_autologin_is_local() -> None:
+    """Refuse to start: the shortcut on an address other machines reach.
+
+    Called by `oams serve` before uvicorn binds. Starting anyway would print a
+    warning nobody reads and then hand out the administrator session to the
+    network; failing to boot is the only answer that cannot be ignored.
+    """
+    if (settings.dev_autologin or "").strip().lower() in DEV_AUTOLOGIN_OFF:
+        return
+    reason = dev_autologin_refusal()
+    if reason is not None:
+        raise SystemExit(
+            f"拒绝启动：{reason}。\n"
+            f"免登录（OAMS_DEV_AUTOLOGIN）没有登录这一步，只许绑在 127.0.0.1 上：\n"
+            f"  OAMS_DEV_AUTOLOGIN=0 或去掉它 → 要开放给别人访问就恢复登录；\n"
+            f"  OAMS_BIND_HOST=127.0.0.1 → 只在本机试用。")
 
 
 def dev_role_label(grants: list[str] | tuple[str, ...] | None) -> str:
@@ -189,6 +273,8 @@ def dev_identities() -> list[dict[str, Any]]:
     off, so a template cannot leak the roster into a login screen by accident.
     """
     if (settings.dev_autologin or "").strip().lower() in DEV_AUTOLOGIN_OFF:
+        return []
+    if dev_autologin_refusal() is not None:
         return []
     cached = _DEV_IDENTITIES.get(settings.database_url)
     now = time.monotonic()
@@ -215,9 +301,17 @@ def dev_autologin_target(request: Request | None = None) -> str | None:
 
     A browser that picked somebody in the badge wins over the environment default:
     the cookie is the switch's memory, and it only ever names a *who*.
+
+    The shortcut is also off whenever the server is reachable from another machine
+    (see dev_autologin_refusal): it has no login at all, so it belongs to a
+    loopback-only instance and nowhere else.
     """
     raw = (settings.dev_autologin or "").strip()
     if raw.lower() in DEV_AUTOLOGIN_OFF:
+        return None
+    refusal = dev_autologin_refusal(request)
+    if refusal is not None:
+        _warn_refused(refusal)
         return None
     if request is not None:
         chosen = (request.cookies.get(DEV_WORKER_COOKIE) or "").strip()

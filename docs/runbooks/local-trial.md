@@ -96,7 +96,9 @@ OAMS_DEV_AUTOLOGIN=1 .venv/bin/python -m oams.cli serve
 
 它只决定「我是谁」，不决定「我能干什么」：权限、部门范围、表单令牌、审计一条都不少，所以看到的页面和登录后完全一致。
 
-恢复真实登录：
+**免登录只许绑在本机。** 它没有登录这一步，所以绑到别的机器也连得到的地址（`0.0.0.0`、`::`、局域网地址、真主机名）时，`oams serve` 与 `scripts/start-local-trial.sh` 都会**拒绝启动**并说明怎么改，而不是起完打一行警告——警告没人读，而那时候谁打开都是系统管理员。除了启动时这一道，每次请求还会按来源地址再判一次（命令行 `uvicorn --host` 能绕过设置项），来自非本机的请求同样不会免登录。
+
+要开放给别人访问就恢复登录：
 
 ```sh
 OAMS_DEV_AUTOLOGIN=0 .venv/bin/python -m oams.cli serve
