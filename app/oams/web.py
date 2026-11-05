@@ -3466,14 +3466,25 @@ async def admin_create_grant(request: Request):
     except (ValueError, TypeError):
         return refuse("member", "要选一个成员。")
     company_wide = str(form.get("company_wide") or "").lower() in ("1", "true", "on", "yes")
+    if company_wide:
+        # 这一屏不发 `scope_type='all'`。理由不是「危险」，是**它在这儿不生效**：
+        # security.accessible_org_unit_ids 只在「这个人没有岗位座位」时才把 all 摊成
+        # 全部在用部门，有座位的人拿到 all 之后权限判据过得了门、range 一点没变——
+        # 勾了「全公司」还是只能进自己那几个部门。一个兑现不了的选项比没有更坏。
+        # 而界面上建不出「没有座位的人」：/setup 建成员必须选岗位，岗位一定挂在部门上。
+        # 全公司范围只有 `oams bootstrap-admin` 在初始化时能造（在建库那条路上）。
+        return refuse("scope", "这一屏不发「全公司」：它对有岗位的人不生效——"
+                               "有岗位的人拿到全公司授权，能进的部门还是自己那几个。"
+                               "全公司范围属于系统管理员，目前只能在建库初始化时用 "
+                               "`oams bootstrap-admin` 建，界面上没有入口。")
     wanted: list[UUID] = []
     for raw in form.getlist("org_unit_id"):
         try:
             wanted.append(UUID(str(raw)))
         except (ValueError, TypeError):
             return refuse("scope", "部门没选对，刷新这一页重来。")
-    if not wanted and not company_wide:
-        return refuse("scope", "至少选一个部门；要给全公司，用系统管理员勾「全公司」。")
+    if not wanted:
+        return refuse("scope", "至少选一个部门。")
     if valid_until <= datetime.now(timezone.utc):
         return refuse("date", "到期日要在今天之后。")
 
@@ -3485,8 +3496,6 @@ async def admin_create_grant(request: Request):
             return refuse("member", "这个成员不存在。")
         if target["employment_status"] != "active":
             return refuse("member", f'{target["display_name"]} 已经不在职，不能给他在职授权。')
-        if company_wide and not security.has_company_scope(conn, principal["member_id"]):
-            return _denied(request, "只有系统管理员能把授权开到全公司。")
         grantable = _reachable_departments(conn, principal["member_id"])
         known = conn.execute(
             """SELECT org_unit_id, name, unit_type, status FROM oams.org_units
@@ -3502,47 +3511,37 @@ async def admin_create_grant(request: Request):
 
         # 同一个人、同一件事、同一个部门，只许一行有效授权：两行到期时间不一样，
         # 谁也说不清哪行算数。所以不覆盖，直接拒，并把已有的那一行指出来。
-        targets = ([("all", None)] if company_wide else []) + [("org_unit", unit_id) for unit_id in wanted]
-        for scope_type, scope_unit in targets:
+        # （这里只剩 `org_unit` 一档：`all` 在更上面已经整笔拒掉了。）
+        for unit_id in wanted:
             # 只看「没收回、还没到期」：**故意不看 valid_from**。将来才生效的那行
             # 一样是「这个人已经有一条了」，两行同时挂着仍然说不清哪行算数；
             # 而且这条判据和插入在同一个事务里，`now()` 是事务开始时刻，
             # 刚插入那行的 valid_from 比它晚，带上这句就会漏掉自己刚写的那行。
-            if scope_type == "all":
-                clash = conn.execute(
-                    """SELECT valid_until FROM oams.permission_grants
-                        WHERE subject_type = 'member' AND member_id = %s
-                          AND resource = %s AND action = %s AND scope_type = 'all'
-                          AND revoked_at IS NULL
-                          AND (valid_until IS NULL OR now() < valid_until)""",
-                    (target_member, resource, action)).fetchone()
-                where_text = "全公司"
-            else:
-                clash = conn.execute(
-                    """SELECT valid_until FROM oams.permission_grants
-                        WHERE subject_type = 'member' AND member_id = %s
-                          AND resource = %s AND action = %s AND scope_type = 'org_unit'
-                          AND scope_org_unit_id = %s AND revoked_at IS NULL
-                          AND (valid_until IS NULL OR now() < valid_until)""",
-                    (target_member, resource, action, scope_unit)).fetchone()
-                where_text = by_id[scope_unit]["name"]
+            clash = conn.execute(
+                """SELECT valid_until FROM oams.permission_grants
+                    WHERE subject_type = 'member' AND member_id = %s
+                      AND resource = %s AND action = %s AND scope_type = 'org_unit'
+                      AND scope_org_unit_id = %s AND revoked_at IS NULL
+                      AND (valid_until IS NULL OR now() < valid_until)""",
+                (target_member, resource, action, unit_id)).fetchone()
             if clash is not None:
                 until_text = (clash["valid_until"].astimezone(DISPLAY_TZ).strftime("%Y-%m-%d")
                               if clash["valid_until"] else "无期限")
                 return refuse(
                     "duplicate",
-                    f'{target["display_name"]} 在「{where_text}」已经有这一条了（到期 {until_text}）。'
+                    f'{target["display_name"]} 在「{by_id[unit_id]["name"]}」已经有这一条了'
+                    f"（到期 {until_text}）。"
                     "要改日期就先收回那条，再发新的——两行同时有效，就说不清哪行算数。")
 
         now = datetime.now(timezone.utc)
-        for scope_type, scope_unit in targets:
+        for unit_id in wanted:
             api.insert_grant(conn, GrantCreate(
                 subject_type="member", member_id=target_member,
                 resource=resource, action=action,
-                scope_type=scope_type, scope_org_unit_id=scope_unit,
+                scope_type="org_unit", scope_org_unit_id=unit_id,
                 valid_from=now, valid_until=valid_until, reason=reason),
                 principal["member_id"])
-    return RedirectResponse(url=f"{back}?saved={len(targets)}", status_code=303)
+    return RedirectResponse(url=f"{back}?saved={len(wanted)}", status_code=303)
 
 
 @router.post("/admin/grants/{grant_id}/revoke")

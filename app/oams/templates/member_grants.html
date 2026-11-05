@@ -61,12 +61,13 @@
         {% endfor %}
       </div>
       {% else %}<span class="empty">还没有部门，先去「组织与成员」建一个。</span>{% endif %}
-      {% if can_company %}
-      <span class="check" style="display:inline-flex;align-items:center;gap:8px;margin-top:12px">
-        <input type="checkbox" id="company_wide" name="company_wide" value="1">
-        <label for="company_wide">全公司（包含以后新建的部门）</label>
-      </span>
-      {% endif %}
+      {# 这里曾经有一个「全公司（包含以后新建的部门）」勾选框，2026-11-05 撤掉了。
+         `scope_type='all'` 在 security.accessible_org_unit_ids 里**只在没有岗位座位的人
+         身上**才摊成全部在用部门：有座位的人拿到 all，权限判据过得了门，range 却一点不
+         变——勾了「全公司」还是只能进自己那几个部门。界面上留一个兑现不了的选项，比不
+         给这个选项更坏。全公司范围属于系统管理员，而系统管理员今天只能在建库时用
+         `oams bootstrap-admin` 建（它在公司根节点上建岗位、发全套 all 授权；界面上没有
+         第二条路——/setup 建成员必须选岗位，而岗位一定挂在部门上）。 #}
     </div>
 
     <div class="field" style="margin-bottom:16px">
