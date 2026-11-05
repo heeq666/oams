@@ -113,7 +113,7 @@ def _script() -> None:
 
     admin_client = client(admin)
     status, page, _ = request(admin_client, "/setup/interfaces")
-    check("interface setup page opens", status == 200 and "界面制作" in page, status)
+    check("interface setup page opens", status == 200 and "新建页面" in page, status)
 
     status, _, headers = request(admin_client, "/setup/interfaces", "POST", {
         "csrf": tokens(page)[0], "org_unit_id": str(org), "slug": "design-sampling",

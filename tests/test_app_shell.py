@@ -98,9 +98,20 @@ def _script() -> None:
 
     status, html, _ = admin_call("/settings")
     has_rail, names, links = shell(html)
+    # 左栏是**二级菜单**，只放「点开就直接看到的那几屏」。「组织与成员」是从
+    # 「部门与岗位」上的按钮点进去的第三级，不许占左栏（用户原话：「三级页怎么能
+    # 越级来二级」）；「成员与权限」自己是一棵子树的根，留在左栏。
     check("the settings column lists its own views",
           has_rail and names == ["部门与岗位", "岗位目录", "工作项管理",
-                                 "审计记录", "组织与成员", "成员与权限"], names)
+                                 "审计记录", "成员与权限"], names)
+
+    # 第三级页面上，左栏照旧是这一组，加亮的是父项——人退得回去，也不会以为
+    # 自己还在二级页上。
+    for third in ("/setup", "/admin/grants"):
+        status, html, _ = admin_call(third)
+        _, names3, _ = shell(html)
+        check(third + " keeps the rail and does not add itself as a second-level item",
+              status == 200 and names3 == names, (status, names3))
     check("admin top bar keeps globals", links == ["进度中心", "汇报中心", "页面管理", "设置"], links)
 
     status, html, _ = admin_call("/progress")

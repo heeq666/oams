@@ -1795,8 +1795,8 @@ def _shell_rail(path, nav, departments, dept_active, caps):
     def add(label, href, on=False):
         items.append({"label": label, "href": href, "on": bool(on)})
 
-    # Building a page is a view of the interface screens, not of setup, so it is
-    # listed with them even though its URL still lives under /setup.
+    # 建页是「部门页面」那一页上的动作，URL 仍在 /setup 下：它不占左栏，从
+    # 「部门页面」上的按钮进去，停在它上面时加亮父项。
     if path.startswith("/setup/interfaces"):
         head = "interfaces"
 
@@ -1809,9 +1809,7 @@ def _shell_rail(path, nav, departments, dept_active, caps):
     elif head in ("interfaces", "board"):
         add("汇报汇总", "/interfaces/board", path.startswith("/interfaces/board"))
         if nav.get("departments"):
-            add("部门页面", "/interfaces", path == "/interfaces")
-        if caps.get("interfaces"):
-            add("界面制作", "/setup/interfaces", path.startswith("/setup/interfaces"))
+            add("部门页面", "/interfaces", path in ("/interfaces", "/setup/interfaces"))
     elif head == "reviews":
         # 三条是**三个页面**，不是一页里的三个锚点：左侧栏是二级菜单，菜单项得是
         # 真页面。原来三条都指 /reviews 加锚点，而「待审核」正好就是页面本身，
@@ -1820,18 +1818,21 @@ def _shell_rail(path, nav, departments, dept_active, caps):
         add("页面设置", "/reviews/settings", path.startswith("/reviews/settings"))
         add("最近决定", "/reviews/decided", path.startswith("/reviews/decided"))
     elif head in ("settings", "admin", "setup"):
+        # 左栏是二级菜单，只放「点开栏目就能直接看到的那几屏」。「组织与成员」是从
+        # 「部门与岗位」上的按钮点进去的**第三级**（URL /setup 也挂在它下面），所以
+        # 不在左栏占位置——放进来的话，读起来就像它与父页平起平坐（用户原话：
+        # 「三级页怎么能越级来二级」）。停在它上面时，加亮父项「部门与岗位」。
         if caps.get("settings"):
-            add("部门与岗位", "/settings", path == "/settings")
+            add("部门与岗位", "/settings", path in ("/settings", "/setup"))
         if caps.get("positions"):
             add("岗位目录", "/admin/positions", path.startswith("/admin/positions"))
         if caps.get("work_items"):
             add("工作项管理", "/admin/work-items", path.startswith("/admin/work-items"))
         if caps.get("audit"):
             add("审计记录", "/admin/audit", path == "/admin/audit")
-        if caps.get("setup"):
-            add("组织与成员", "/setup", path == "/setup")
-        # 「成员与权限」和「组织与成员」是两件事，别一起收：前者点名给几个人开几个
-        # 部门，只认 grants/manage；后者才是建号建岗（要四个权限全齐）。
+        # 「成员与权限」留在左栏：它自己是一棵子树的根（/admin/grants），不由任何页面
+        # 上的按钮进入；而且它只要 grants/manage，比「组织与成员」那四个 manage 轻，
+        # 收进向导里会让只有授权权的人永远找不到它。
         if caps.get("settings"):
             add("成员与权限", "/admin/grants", path.startswith("/admin/grants"))
     return items
