@@ -7,11 +7,13 @@
 演示站上用 GA001 复现后改的句式）。点名部门与公司根同时命中时只提更具体的那个部门；
 本部门的人（这一页的主人）即使另外还拿到别的部门授权，也不显示这句。
 
-句子在服务端拼（`web._access_note`），模板只做纯文本输出；判据来自
-`security.interface_access_via`——它读的就是 `_page_access` 判可见性的那张表，不另写
-SQL。所以这里的用例既钉文案，也钉「本部门不出现」这条边界。
+句子在服务端拼（`web._access_note`），判据来自 `security.interface_access_via`——它读的
+就是 `_page_access` 判可见性的那张表，不另写 SQL。所以这里的用例既钉文案，也钉「本部门
+不出现」这条边界。
 
-数据一律自己造、整笔事务结束时回滚。
+**2026-11-05 起这句话不再占一整行**（负责人：最多在标题上加个图标）：它进页面标题旁那枚
+Lucide 小图标的 `title` / `aria-label`，正文里没有那条带底色的 `strip` 了。所以下面除了
+断言句子在，还断言它**只在图标里**、不再压在正文顶部。
 """
 
 from __future__ import annotations
@@ -28,6 +30,20 @@ from oams import web
 from oams.config import settings
 
 pytestmark = pytest.mark.db
+
+def _title_block(html: str) -> str:
+    """页面标题那一块（渲染器画的 `<h2 class="wh-interface-title">`）——图标应该在这里。"""
+    import re
+
+    found = re.search(r'<h2 class="wh-interface-title">.*?</h2>', html, re.S)
+    return found.group(0) if found else ""
+
+
+def _body_without_title(html: str) -> str:
+    import re
+
+    return re.sub(r'<h2 class="wh-interface-title">.*?</h2>', "", html, flags=re.S)
+
 
 ADMIN = "ADMIN001"         # 系统管理员：不需要授权就能进任何部门的页
 OWNER = "DESIGN001"        # 设计负责人：这张页的主人
@@ -120,7 +136,7 @@ def shared(seeded_database, monkeypatch):
         conn.close()
 
 
-def test_the_strip_names_the_department_that_opened_the_page(shared):
+def test_the_note_names_the_department_that_opened_the_page(shared):
     """只给查看：先说主人，再说开给了谁；不提姓名。"""
     shared["clear"]()
     shared["grant"]("HR")
@@ -133,7 +149,7 @@ def test_the_strip_names_the_department_that_opened_the_page(shared):
     assert "系统管理员" not in response.text
 
 
-def test_the_strip_says_editing_when_that_was_granted(shared):
+def test_the_note_says_editing_when_that_was_granted(shared):
     """也给了编辑：一句说完，不拆成两句。"""
     shared["clear"]()
     shared["grant"]("HR", can_write=True)
@@ -163,7 +179,7 @@ def test_the_named_department_wins_over_the_company_root(shared):
     assert EVERYONE not in response.text
 
 
-def test_the_owning_department_sees_no_strip(shared):
+def test_the_owning_department_sees_no_note(shared):
     """主人不是客人：本部门的人打开自己那页，看不到这句。"""
     shared["clear"]()
     shared["grant"]("HR")
@@ -174,7 +190,7 @@ def test_the_owning_department_sees_no_strip(shared):
     assert EVERYONE not in response.text
 
 
-def test_a_system_admin_without_a_grant_sees_no_strip(shared):
+def test_a_system_admin_without_a_grant_sees_no_note(shared):
     """系统管理员是靠身份进来的，不是靠某一行授权——没有行就没有这句。"""
     shared["clear"]()
     shared["as_"](ADMIN)
@@ -182,3 +198,29 @@ def test_a_system_admin_without_a_grant_sees_no_strip(shared):
     assert response.status_code == 200, response.text
     assert "可查看" not in response.text
     assert EVERYONE not in response.text
+
+
+def test_the_note_is_a_quiet_icon_on_the_title_not_a_banner(shared):
+    """整句只出现在标题旁那枚图标的 title / aria-label 里，正文里不再占一整行。"""
+    shared["clear"]()
+    shared["grant"]("HR")
+    html = shared["open_page"]().text
+
+    title = _title_block(html)
+    assert OPENED_VIEW in title, title
+    assert "wh-icon-shared" in title and "<svg" in title, title
+    # 正文里没有这句了：不再有一条压在内容顶部的 strip。
+    assert OPENED_VIEW not in _body_without_title(html)
+
+
+def test_the_icon_uses_lucide_geometry(shared):
+    """图标得是 Lucide 的几何（24 网格、描边 2、圆头圆角），不是拿字符凑的。"""
+    shared["clear"]()
+    shared["grant"]("HR")
+    title = _title_block(shared["open_page"]().text)
+
+    assert 'viewBox="0 0 24 24"' in title
+    assert 'stroke-width="2"' in title
+    assert 'stroke-linecap="round"' in title and 'stroke-linejoin="round"' in title
+    # 一枚图标里不该出现文字节点当图形（例：拿「!」「→」当图标）。
+    assert "share" in title or "circle" in title

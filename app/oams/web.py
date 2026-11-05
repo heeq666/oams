@@ -1357,7 +1357,10 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         # because a metric_card cannot compute anything by itself.
         rendered = render_interface(descriptor, values=values, include_unbound=True,
                                     aggregates=rollup.get("aggregates") or {},
-                                    lookup=lookup_html)
+                                    lookup=lookup_html,
+                                    # 靠授权跨部门进来时，页面标题旁加一枚小图标，
+                                    # 这句话放进它的 title/aria-label——不再占一整行。
+                                    title_note=access_note or "")
     except RenderError as exc:
         return _render_failed(request, page=page, exc=exc, org_name=unit["name"],
                               back_href=f"/departments/{org_unit_id}", back_label="返回部门")

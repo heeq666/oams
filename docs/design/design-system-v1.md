@@ -148,7 +148,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 - **颜色靠变量**：规范里描边用 `text/muted`（需要深色时用 `text/primary` / `accent/on`）；代码里 `stroke="currentColor"`，颜色由父级 `color` 决定。
 - **两处同源**：本节记的这份图标集与模板里的内联 `<svg>` 用同一份 path，改一处必须改另一处。
 
-现在库里有十五枚（2026-10-30 补 `plus` / `trash-2` / `external-link` / `arrow-right`）：
+现在库里有十六枚（2026-10-30 补 `plus` / `trash-2` / `external-link` / `arrow-right`；2026-11-05 补 `share-2`）：
 
 | 语义 | Lucide | 用在哪 |
 | --- | --- | --- |
@@ -166,6 +166,7 @@ shadcn 的语义色 + **白底 / hairline 分界 / 五档圆角 / 一个强调�
 | 删除 | `trash-2` | 页面级删除动作（16 见方） |
 | 外链 | `external-link` | `evidence_gallery` 证据链接行尾（16 见方，`wh-icon-external`，一律 `text/muted`） |
 | 指向 | `arrow-right` | `flow_strip` 段间（替掉字符 `→`，16 见方） |
+| 别人开给你的页 | `share-2` | 页面标题右侧（16 见方，`wh-icon-shared`，一律 `text/muted`；整句说明放 `title` / `aria-label`，正文不占行） |
 
 B4 批次已把模块层四枚补齐（2026-10-30）：`external-link` 用在 `evidence_gallery` 链接行尾、`arrow-right` 用在 `flow_strip` 段间；`plus` / `trash-2` 是页面级动作图标——模块层是渲染器不是编辑器，空态与表尾不放按钮，所以模板里暂时没有落点，等页面级「编辑页面」入口开工再用。
 
