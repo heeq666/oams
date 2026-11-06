@@ -9,7 +9,8 @@ OAMS（Organizational App Management System，组织应用中台）：组织内 
 3. **界面规范以 `docs/design/design-system-v1.md` 为唯一口径，本文即真源**（组件与视觉都按它）；内部画布（Figma 那类本地文件）不在本仓，画布规则与归档问界面。改规范先改这份文档，再改代码。
 4. `docs/design/brand-assets.md` —— 品牌标志：开源版用的中性标、9 张回归图、以及怎么换回内部版。
 
-六条最容易犯的错：
+七条最容易犯的错：
+- **导航层级不许越级**：顶部胶囊是一级页、左栏是二级页，**从某一页的按钮点进去的页面是三级，不许单独占左栏**——停在它上面时左栏加亮它所在的那一二级就行。判据一句话：这页是不是从别处点进来的？是，就不进左栏。反例：「组织与成员」曾与它的上级「部门与岗位」并排；`/setup` 下的「界面制作」只因地址被塞进汇报中心的左栏。口径见 `docs/design/design-system-v1.md` 第九条硬规则。
 
 - **别引 shadcn/ui 的代码**。它要求 React + Tailwind + npx，本项目没有也不该有；我们只借它的**视觉语言**（白底、hairline、语义色、五档圆角、无阴影、一个强调色）。
 - **别写字面颜色/圆角**。仓库是**两套令牌、两层作用域，故意的**：**外壳**（`app/oams/templates/base.html` 的 `:root`）用短名 `--bg`/`--card`/`--ink`/`--muted`/`--line`/`--accent`（另有一批派生值），**模块层**（`app/oams/static/oams-modules.css`，作用域 `.wh-interface` 等）用 `--oams-*`（如 `--oams-ink`、`--oams-radius-card`）。**两层不互相借**——模块层取不到 `--ink-2`，外壳也取不到 `--oams-*`。值与 `docs/design/tokens.json` 对齐，新增值先加令牌。
