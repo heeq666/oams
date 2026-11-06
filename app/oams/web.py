@@ -728,11 +728,11 @@ def _access_summary(row) -> str:
     if row.get("can_write"):
         granted.append("可编辑")
     if row.get("can_base"):
-        granted.append("可当模板")
+        granted.append("可作参考")
     if not granted:
         return "—"
-    if granted == ["可当模板"]:
-        return "只能拿它当模板，看不到里面的数据"
+    if granted == ["可作参考"]:
+        return "只能作参考，看不到里面的数据"
     return "、".join(granted)
 
 
@@ -748,12 +748,14 @@ def _granted_text(rights) -> str:
     if rights["can_write"]:
         granted.append("可编辑")
     if rights["can_base"]:
-        granted.append("可当模板")
+        granted.append("可作参考")
     if not granted:
         return "—"
     if not rights["can_read"]:
-        return "只开给你当模板，看不到里面的数据"
-    return "开给你的：" + "、".join(granted)
+        return "只可作参考，看不到数据"
+    # 不加「开给你的：」前缀：这一行的页面名旁边已经有「别的部门开给你的」那枚胶囊，
+    # 同一句再说一遍是重复；而 768 下这一格只有 78px（约 6 个汉字），多一个字就多一行。
+    return "、".join(granted)
 
 
 def _base_text(audience) -> str:

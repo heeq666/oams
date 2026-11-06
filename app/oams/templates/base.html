@@ -526,6 +526,10 @@ body { margin: 0; background: var(--bg); color: var(--ink);
      那条竖线；代价是胶囊底贴到单元格左沿——宁可底色齐边，也不要字错位。
      只认单元格里的第一个元素：前面已经有字（如「本部门 已启用」）时对齐的是那行字。 */
   td > .pill:first-child, td > .badge:first-child { margin-left: -8px; }
+  /* 动作格里的链接不许折行（2026-11-06）：窄档放行 `td` 折行是为了长文字，但
+     「打开填写 →」这类**动作**一折就变成「打开填写」/「→」两行，读起来像两个控件。
+     整格保持一行，宽度不够时让它去挤前面那些文字列（文字列本来就能折）。 */
+  td:last-child > a { white-space: nowrap; }
   .strip { padding: 8px 12px; border-radius: var(--r-control); font-size: 12px; line-height: 1.6; }
   .strip.warning { background: var(--warning-soft); color: var(--warning-ink); }
   .strip.neutral { background: var(--subtle); color: var(--muted); }

@@ -135,7 +135,7 @@ def test_only_read_shows_the_rights_i_actually_got(shared):
     shared["clear"]()
     shared["grant"](can_read=True)
     row = shared["row_html"]()
-    assert "开给你的：可查看" in row, row
+    assert "可查看" in row, row
     assert "仅本部门" not in row, "别部门的页，可见范围一列不该再写主人的范围"
     assert "打开填写" in row
 
@@ -145,7 +145,7 @@ def test_edit_and_reference_are_listed_as_they_are(shared):
     shared["clear"]()
     shared["grant"](can_read=True, can_base=True)
     row = shared["row_html"]()
-    assert "开给你的：可查看、可当模板" in row, row
+    assert "可查看、可作参考" in row, row
 
 
 def test_reference_only_does_not_offer_a_page_it_would_refuse(shared):
@@ -153,7 +153,7 @@ def test_reference_only_does_not_offer_a_page_it_would_refuse(shared):
     shared["clear"]()
     shared["grant"](can_read=False, can_base=True)
     row = shared["row_html"]()
-    assert "只开给你当模板，看不到里面的数据" in row, row
+    assert "只可作参考，看不到数据" in row, row
     assert "打开填写" not in row, "拿不到查看权就别画那个会把人挡回来的链接"
     assert "照着做一版" in row, row
     assert f"based_on={shared['interface_id']}" in row, "建页页要把这一页预选成基础页"
