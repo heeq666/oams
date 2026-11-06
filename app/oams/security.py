@@ -700,43 +700,52 @@ def interface_access_via(conn, member_id: Any, owner_org_unit_id: Any, slug: str
     return None
 
 
-def can_view_interface(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> bool:
-    """这一页这个人能不能打开。
+def interface_rights(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> dict[str, bool] | None:
+    """这一页这个人三格各拿到没有：查看 / 编辑 / 可作参考。页不存在返回 None。
 
-    部门内（含公司级、含被授权代管）先过——这是「只放宽不收紧」的保证；过不了才看
-    页面自己开的范围。页不存在一律 False，不抛异常。
+    三个 ``can_*_interface`` 判据都从这里取自己那一格，界面也取同一份结果——三处各算
+    一遍是两套判据分叉的老路子，迟早显示的和真正放行的那一条对不上。
+
+    部门内（含公司级、含被授权代管）三格全真：这是「只放宽不收紧」的保证。部门外
+    只认页面自己开的范围，一行都没有就是三格全假。「能参考但看不到」是合法组合，
+    所以三格分开算，不许用 can_read 兜底。
     """
     owner_org_unit_id = _audience_uuid(owner_org_unit_id)
     if not _interface_exists(conn, owner_org_unit_id, slug):
-        return False
+        return None
     if can_access_org_unit(conn, member_id, owner_org_unit_id):
-        return True
-    return _reachable_by_audience(conn, member_id, owner_org_unit_id, slug, "can_read")
+        return {"can_read": True, "can_write": True, "can_base": True}
+    chain = _seat_chain(conn, member_id)
+    rows = ([row for row in interface_audience(conn, owner_org_unit_id, slug)
+             if row["org_unit_id"] in chain] if chain else [])
+    return {
+        "can_read": any(row["can_read"] for row in rows),
+        "can_write": any(row["can_write"] for row in rows),
+        "can_base": any(row["can_base"] for row in rows),
+    }
+
+
+def can_view_interface(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> bool:
+    """这一页这个人能不能打开。判据见 :func:`interface_rights`（「查看」那一格）。"""
+    rights = interface_rights(conn, member_id, owner_org_unit_id, slug)
+    return bool(rights and rights["can_read"])
 
 
 def can_fill_interface(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> bool:
-    """这一页这个人能不能提条目——判据同上，但要的是「能填」那一格。"""
-    owner_org_unit_id = _audience_uuid(owner_org_unit_id)
-    if not _interface_exists(conn, owner_org_unit_id, slug):
-        return False
-    if can_access_org_unit(conn, member_id, owner_org_unit_id):
-        return True
-    return _reachable_by_audience(conn, member_id, owner_org_unit_id, slug, "can_write")
+    """这一页这个人能不能提条目。判据见 :func:`interface_rights`（「编辑」那一格）。"""
+    rights = interface_rights(conn, member_id, owner_org_unit_id, slug)
+    return bool(rights and rights["can_write"])
 
 
 def can_base_interface(conn, member_id: Any, owner_org_unit_id: Any, slug: str) -> bool:
     """这一页这个人能不能拿它当模板另建一版（权限弹窗第三格「可作参考」）。
 
-    与 :func:`can_view_interface` 同形状，但**绝不能让它顺手变成「能看」**：参考的是
-    页面定义（字段、模块、版式），不是条目里的内容。给一个部门参考权而没给查看权，
-    是合法组合——他要照着做一页自己的，而不是来读别人的数据。
+    **绝不能让它顺手变成「能看」**：参考的是页面定义（字段、模块、版式），不是条目
+    里的内容。给一个部门参考权而没给查看权，是合法组合——他要照着做一页自己的，
+    而不是来读别人的数据。判据见 :func:`interface_rights`（「可作参考」那一格）。
     """
-    owner_org_unit_id = _audience_uuid(owner_org_unit_id)
-    if not _interface_exists(conn, owner_org_unit_id, slug):
-        return False
-    if can_access_org_unit(conn, member_id, owner_org_unit_id):
-        return True
-    return _reachable_by_audience(conn, member_id, owner_org_unit_id, slug, "can_base")
+    rights = interface_rights(conn, member_id, owner_org_unit_id, slug)
+    return bool(rights and rights["can_base"])
 
 
 def set_interface_audience(conn, owner_org_unit_id: Any, slug: str, rows: list[dict[str, Any]], *,

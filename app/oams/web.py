@@ -736,6 +736,26 @@ def _access_summary(row) -> str:
     return "、".join(granted)
 
 
+def _granted_text(rights) -> str:
+    """别部门开给我这一页时，我到底拿到了哪一档——列表里那一句，别让人自己猜。
+
+    三格独立，所以只列真拿到的那几个；只有参考权时还必须说清「看不到里面的数据」，
+    否则读者会以为点得开。口径与弹窗「说明」列（`_access_summary`）同一套词。
+    """
+    granted = []
+    if rights["can_read"]:
+        granted.append("可查看")
+    if rights["can_write"]:
+        granted.append("可编辑")
+    if rights["can_base"]:
+        granted.append("可当模板")
+    if not granted:
+        return "—"
+    if not rights["can_read"]:
+        return "只开给你当模板，看不到里面的数据"
+    return "开给你的：" + "、".join(granted)
+
+
 def _base_text(audience) -> str:
     """这一页能被谁当模板参考（「谁能参考」那一列）：只列真拿到参考权的部门。"""
     bases = [row for row in audience if row.get("can_base")]
@@ -985,7 +1005,7 @@ def department_workbench(request: Request, org_unit_id: UUID, saved: str | None 
 
 @router.get("/departments/{org_unit_id}/new", response_class=HTMLResponse)
 def department_new_page(request: Request, org_unit_id: UUID, saved: str | None = None,
-                        error: str | None = None):
+                        error: str | None = None, based_on: str = ""):
     """Where a department pastes the page its AI just wrote and sees it immediately."""
     try:
         principal = _require(request, "workforce.reports", "read")
@@ -1007,10 +1027,14 @@ def department_new_page(request: Request, org_unit_id: UUID, saved: str | None =
         counts = {row["org_unit_id"]: _pages_for_reader(conn, principal, row["org_unit_id"])
                   for row in found}
         bases = _basis_pages(conn, principal["member_id"], org_unit_id)
+    # 从「部门页面」里那一行「照着做一版」点过来时，把基础页预选好，别让人再找一次。
+    # 只认列表里真给他选的那些（`bases`），传了个不在其中的 id 就当没传。
+    preselected = based_on.strip() if any(str(b["interface_id"]) == based_on.strip() for b in bases) else ""
     departments = [dict(unit=row, pages=counts.get(row["org_unit_id"], [])) for row in found]
     return TEMPLATES.TemplateResponse(request, "department_new_page.html", {
         "unit": unit, "departments": departments, "pages": pages,
         "current": None, "page": None, "positions": positions, "bases": bases,
+        "preselected_basis": preselected,
         "member": _member(request), "saved": saved, "error": error,
         "csrf": _form_token(request, "oams:page-form:v1")})
 
@@ -2498,18 +2522,35 @@ def interfaces(request: Request, saved: str | None = None, error: str | None = N
                LEFT JOIN oams.positions p ON p.position_id = i.position_id
                WHERE i.status = 'active' AND NOT (%s OR i.org_unit_id = ANY(%s))
                ORDER BY o.name, i.name""", (company_scope, scoped)).fetchall()
-        shared = [row for row in candidates
-                  if row["interface_id"] not in mine
-                  and security.can_view_interface(conn, principal["member_id"],
-                                                  row["org_unit_id"], row["slug"])]
-        rows = list(rows) + shared
+        # 别部门开给我的页：三格分开算，整行带上「我拿到的是哪一档」。
+        # 只拿到「可作参考」的页也列进来——那一格本来就是给出去的东西，只列能打开的
+        # 页等于让它没有落点；但它的下一步不是「打开填写」，而是「照着做一版」。
+        shared = []
+        for row in candidates:
+            if row["interface_id"] in mine:
+                continue
+            rights = security.interface_rights(conn, principal["member_id"],
+                                               row["org_unit_id"], row["slug"])
+            if not rights or not (rights["can_read"] or rights["can_base"]):
+                continue
+            shared.append({**row, "rights": rights,
+                           "grant": _granted_text(rights)})
+        rows = [{**row, "rights": None} for row in rows] + shared
+        # 「照着做一版」要有落点：参考权只给页面定义，不让他打开这一页，所以下一步是去
+        # 自己部门的建页页、把这个页面选成基础。没有可建页的部门就不给链接（给了也是死路）。
+        build_target = None
+        for unit in _visible_departments(conn, principal["member_id"]):
+            if can_access_org_unit(conn, principal["member_id"], unit["org_unit_id"]):
+                build_target = unit
+                break
         # 建页入口挂在「部门页面」这一屏上，所以这一屏得知道自己能不能建：与
         # /setup/interfaces 用同一条判据（workforce.work_items/manage），别在模板里另判。
         can_build = has_permission(conn, principal["member_id"],
                                    "workforce.work_items", "manage")
     return TEMPLATES.TemplateResponse(request, "interfaces.html", {
         "interfaces": rows, "mine": mine, "member": _member(request),
-        "saved": saved, "error": error, "can_build": can_build})
+        "saved": saved, "error": error, "can_build": can_build,
+        "build_target": build_target})
 
 
 

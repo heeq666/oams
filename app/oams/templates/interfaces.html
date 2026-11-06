@@ -23,10 +23,22 @@
       <td><span>{{ i.name }}</span>{% if i.interface_id not in mine %} <span class="pill neutral">别的部门开给你的</span>{% endif %}</td>
       <td>{{ i.org_name }}</td>
       <td>{{ i.position_title or '—' }}</td>
-      <td>{{ '全公司公共模板' if i.visibility == 'public' else '仅本部门' }}</td>
+      {# 别部门开给我的页，这一格说的是「我拿到哪一档」——它和本部门页的可见范围是
+         两件事，混在同一句话里就分不出来了。 #}
+      <td>{% if i.rights %}{{ i.grant }}{% else %}{{ '全公司公共模板' if i.visibility == 'public' else '仅本部门' }}{% endif %}</td>
       <td>v{{ i.version_no }}</td>
       <td>{{ i.entry_count }}</td>
-      <td><a href="/pages/{{ i.org_code }}/{{ i.slug }}">打开填写 →</a></td>
+      {# 只拿到参考权的页打不开，所以那一行不能挂「打开填写」——点了才知道不行的
+         按钮不该画在页面上。它的下一步是照这一页做自己的一版。 #}
+      <td>
+        {% if not i.rights or i.rights.can_read %}
+          <a href="/pages/{{ i.org_code }}/{{ i.slug }}">打开填写 →</a>
+        {% elif build_target %}
+          <a href="/departments/{{ build_target.org_unit_id }}/new?based_on={{ i.interface_id }}">照着做一版 →</a>
+        {% else %}
+          <span class="meta">只可参考</span>
+        {% endif %}
+      </td>
     </tr>
   {% endfor %}
   </tbody>

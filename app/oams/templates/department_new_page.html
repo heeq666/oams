@@ -39,7 +39,7 @@
     <div class="field" style="margin-bottom:16px"><label for="based_on">基于哪个页面（可留空）</label>
       <select id="based_on" name="based_on" style="align-self:flex-start; max-width:100%">
         <option value="">（从零开始）</option>
-        {% for b in bases %}<option value="{{ b.interface_id }}">{{ b.org_name }} · {{ b.name }}</option>{% endfor %}
+        {% for b in bases %}<option value="{{ b.interface_id }}"{% if preselected_basis and b.interface_id|string == preselected_basis %} selected{% endif %}>{{ b.org_name }} · {{ b.name }}</option>{% endfor %}
       </select>
       <p class="sub" style="margin:0">选别的部门的页面，等于说「这页是照着它们做的」。这种页子部门审完还要公司再终审一次；本部门自己的上一版会自动接上，不用在这里选。</p>
     </div>
