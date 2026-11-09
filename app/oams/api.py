@@ -7,11 +7,13 @@ from uuid import UUID
 import secrets
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from psycopg.errors import CheckViolation, ForeignKeyViolation, RaiseException, UniqueViolation, ExclusionViolation
 from psycopg.types.json import Jsonb
 import json
 
 from oams import admin_labels
+from oams.config import settings
 from oams.db import connection
 from oams.schemas import (APP_SCOPES, AppCodeCreate, AppRevokeRequest, AppTokenRequest,
                              AssignmentCreate, GrantCreate, MemberCreate, MemberStatusUpdate, OrgUnitCreate,
@@ -553,9 +555,31 @@ def revoke_grant(grant_id: UUID, reason: str,
 # ---------------------------------------------------------------------------
 # Work items and progress reports
 #
-# SCOPE WARNING: require_permission only understands scope_type='all' today, so
-# every endpoint in this section is effectively an all-scope reader until row-level
-# range filtering exists. Do not issue a member token on that basis.
+# SCOPE NOTE (2026-11-09). Read and item-level write in this section ARE scoped by
+# org unit: the list / create / patch / report-history / board handlers resolve the
+# caller's reachable departments through security.effective_grants
+# (has_company_scope / active_org_unit_ids / require_org_unit_access), so a caller
+# whose grant covers one department only sees that department's items.
+#
+# Two handlers here are NOT narrowed by org unit, so do not read the above as "the
+# whole section". create_report (below) instead binds the caller to the work item's
+# position, and retract_report goes by row ownership only -- reported_by_member_id
+# must equal the caller's, which is stricter than a department check for that one
+# row and needs no scope.
+#
+# The stale warning that used to sit here ("require_permission only understands
+# scope_type='all', so every endpoint in this section is an all-scope reader") is no
+# longer true for work items, and acting on it today would mislead you into
+# rebuilding what already works.
+#
+# What IS still missing is a different problem, and it is about *people*, not app
+# tickets: require_permission (security.py:821) calls has_permission without
+# org_unit_id, so for a member holding a department-scoped grant the management
+# endpoints -- /v1/members, /v1/grants, /v1/audit-events -- return company-wide
+# data. Holding the read action there still means read-the-whole-company.
+# (App tickets are a separate axis: they are narrowed by APP_ROUTE_WHITELIST
+# below, which keeps them off the admin surface entirely. Do not conflate the two
+# when fixing either.) See docs/architecture/v1-hr-department-scope.md §8.
 #
 # One deliberate omission: submitting a report does not change the work item's
 # status. The two are kept separate so that appending progress cannot be used to
@@ -1974,6 +1998,121 @@ def require_app_scope(principal: dict[str, Any] | None, scope: str):
         label = APP_SCOPE_LABELS.get(scope, scope)
         raise HTTPException(status_code=403, detail=f"这个接入方没有被允许「{label}」")
     return authorization
+
+
+# ---------------------------------------------------------------------------
+# 接入方**能碰到哪些路由**：白名单，默认拒绝
+#
+# 上一条 `require_app_scope` 是「进门之后再查票」，它的毛病是**每个出口都得记得
+# 调一次**——`api.py` 三十二个端点一个都没调，于是一张只申请「读本部门条目」的票
+# 把 `POST /v1/grants` 打通了（2026-11-09 实测，一次发出公司级管理授权）。
+# 逐端点补必然漏，所以反过来：先列出「票能碰的路由 + 方法」，不在表里的一律 403。
+# 新加的路由默认对票不可见，要开得回来改这张表——漏是拒绝，不是放行。
+#
+# 表里的每一条都对着一个 `require_app_scope` 调用点（web.py 那六个 `/v1/` 出口
+# 加工作台表单出口）；`/v1/me` 与 `/api/apps/*` 是票自己的事，进来只服务于这一张
+# 票本身，不碰组织数据。管理面（部门/成员/岗位/授权/工作项/审计/看板）一条不进。
+# ---------------------------------------------------------------------------
+
+#: `(方法, 路由模板)` —— 模板就是 FastAPI 注册时那个带 `{...}` 的字符串。
+APP_ROUTE_WHITELIST: tuple[tuple[str, str], ...] = (
+    # 票自己：换票、看自己是谁、断开自己。读的是这一张票，不改组织数据。
+    ("POST", "/api/apps/token"),
+    ("GET", "/v1/me"),
+    ("GET", "/api/apps/authorizations"),
+    ("POST", "/api/apps/authorizations/{authorization_id}/revoke"),
+    # 部门页面的 JSON 出口：每个都另有 require_app_scope 再收一层。
+    ("POST", "/v1/interfaces"),
+    ("GET", "/v1/interfaces/{interface_id}"),
+    ("POST", "/v1/interfaces/{interface_id}/submit"),
+    ("POST", "/v1/interfaces/{interface_id}/review"),
+    ("GET", "/v1/interfaces/{interface_id}/entries"),
+    ("POST", "/v1/interfaces/{interface_id}/entries"),
+    # 工作台表单那六个出口：历史上就是应用票能走的（也各自 require_app_scope）。
+    # 票若被塞进 cookie 去开页面，能到的地方与这里一模一样，不多一分。
+    ("POST", "/departments/{org_unit_id}/new"),
+    ("POST", "/departments/{org_unit_id}/{interface_id}"),
+    ("POST", "/departments/{org_unit_id}/{interface_id}/entries/{entry_id}/link"),
+    ("POST", "/departments/{org_unit_id}/{interface_id}/submit-review"),
+    ("POST", "/interfaces/{interface_id}"),
+    ("GET", "/departments/{org_unit_id}/{interface_id}/entries.json"),
+)
+
+
+def app_route_allowed(method: str, route_template: str) -> bool:
+    """票能不能碰这条路由。方法一起比：同一个地址读放行、写不放行是常态。"""
+    return (method.upper(), route_template) in APP_ROUTE_WHITELIST
+
+
+def _iter_routes(routes):
+    """按注册顺序摊平所有路由，包括 `include_router` 进来那一层。
+
+    FastAPI 0.162 把 `include_router` 的产物收成一个 `_IncludedRouter` 包在
+    `app.routes` 里，模板藏在它自己的 `original_router.routes` 下——只看最外层，
+    web.py 那七十来条会一条都看不见，白名单等于关了个寂寞。
+    """
+
+    for route in routes:
+        inner = getattr(route, "original_router", None)
+        if inner is not None and hasattr(inner, "routes"):
+            yield from _iter_routes(inner.routes)
+        else:
+            yield route
+
+
+def _matched_route(path: str) -> str | None:
+    """这条路径命中的**路由模板**（`/v1/interfaces/{interface_id}` 这种）；命不中 None。
+
+    不能在 `request.scope["route"]` 上取——HTTP 中间件比路由匹配更外层，
+    那时 `route` 还没被塞进 scope。所以拿各条路由自己的 `path_regex` 去比：
+    比的是注册时的模板，`/v1/GRANTS`、带查询串、多一层斜杠都不会被当成同一条。
+    """
+    for route in _iter_routes(app.routes):
+        path_regex = getattr(route, "path_regex", None)
+        if path_regex is None:
+            continue
+        if path_regex.match(path):
+            return route.path
+    return None
+
+
+@app.middleware("http")
+async def block_routes_outside_app_whitelist(request: Request, call_next):
+    """**默认拒绝**：带接入方票的请求，只要不在白名单里就一律 403。
+
+    这一层不查人、不查库里的授权行，只看「这张票想打哪条路由」；判断极轻，所以
+    放在最前面。它拦的是「漏了范围检查」这一类 bug——`require_app_scope` 会漏，
+    这里不会，因为漏掉的表现是拒绝而不是放行。认不出路由的请求（404、静态资源）
+    同样拒：对票来说「没明说可以」就是不可以。
+
+    票走 cookie 的情况单独处理：票**不能**当浏览器会话用。工作台那几屏要表单令牌，
+    而表单令牌正是拿 cookie 值当密钥算的——票攥在自己手里，就等于能自己签发它，
+    于是「票只能走 JSON 出口」这条约束就名存实亡。所以 cookie 里解析出接入方，
+    一律 403，让它回 Bearer 去。
+    """
+    header = request.headers.get("authorization", "")
+    bearer_token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    if bearer_token:
+        principal = principal_for_token(bearer_token)
+        if app_id_of(principal) is None:
+            # 不是接入方的票：普通会话（含人自己的 bearer）照旧走原来的路。
+            return await call_next(request)
+        template = _matched_route(request.scope.get("path") or request.url.path)
+        if template is not None and app_route_allowed(request.method, template):
+            return await call_next(request)
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "这张票没有被允许做这件事：它能做的只有建草稿页、读条目、"
+                               "往本部门页面里记条目、送审，以及查看自己的授权。"},
+        )
+    cookie_token = request.cookies.get(settings.web_session_cookie, "")
+    if cookie_token and app_id_of(principal_for_token(cookie_token)) is not None:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "接入方的票不能当浏览器会话用：它只能打 JSON 出口"
+                               "（请求头带 Authorization: Bearer），打不开工作台的页面。"},
+        )
+    return await call_next(request)
 
 
 def _six_digit_code(conn) -> str:
