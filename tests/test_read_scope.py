@@ -6,13 +6,22 @@
 「这个权到哪个部门为止」。
 
 口径（C经理定，别自己改）：
-1. 有一条全公司范围（`scope_type='all'`、effect=allow）的对应授权 → 看全公司，照旧；
-2. 只有部门级授权或岗位座位 → 只返回范围里的，范围外的不出现（不是打码）；
-3. 既无座位也无全公司授权 → 200 空列表，不报错；
+1. 坐在**公司本级岗位**上（`org_units.unit_type='company'`）→ 看全公司；
+2. 其余所有情形（不管授权写的是 `all` 还是 `org_unit` 档）→ 只返回范围内的，
+   范围外的不出现（不是打码）；
+3. 既无座位也无全公司范围 → 200 空列表，不报错；
 4. 范围判断只在 `security.readable_org_unit_ids` 一处做，端点只调它。
 
-这个文件里最要紧的是那几条**对照**：同一个人、同一棵树，只换一条授权，结果就得
-不一样。只断言「部门级读者少看到人」是验不出东西的——把收敛整段删掉，断言照样过。
+**`scope_type='all'` 不是全公司范围**——这是第一版踩的坑。真实种子里 67 条授权
+全部是 `all` 档（装载脚本的注释写着「除非 spec 另说，每条授权都写 all」），在这套
+数据里它是「这个岗位有这件事的权」的标记。按「有没有 `all` 授权」判，真库里每个
+部门负责人都成了全公司读者，而用例全绿——因为用例自己造的授权写的是 `org_unit`
+档，真实数据里一条都没有。所以本文件里**必须**有一条拿 `all` 档授权验「照样收窄」
+的用例，它就是那次「用例全绿、真库没生效」的回归。
+
+这个文件里最要紧的是那几条**对照**：同一个人、同一棵树，只换座位挂在哪一级部门，
+结果就得不一样。只断言「部门级读者少看到人」是验不出东西的——把收敛整段删掉，
+断言照样过。
 """
 
 from __future__ import annotations
@@ -35,7 +44,7 @@ pytestmark = pytest.mark.db
 
 
 # ---------------------------------------------------------------------------
-# 世界：公司 + 两个部门（GA / HR），每部门一个岗位，一个部门级读者
+# 世界：公司（本级）+ 两个部门（GA / HR），每部门一个岗位
 # ---------------------------------------------------------------------------
 
 WORLD_SQL = """
@@ -48,6 +57,9 @@ INSERT INTO oams.positions (position_code, title, org_unit_id)
 SELECT 'GA_STAFF', '行政专员', org_unit_id FROM oams.org_units WHERE org_code = 'GA';
 INSERT INTO oams.positions (position_code, title, org_unit_id)
 SELECT 'HR_STAFF', '人事专员', org_unit_id FROM oams.org_units WHERE org_code = 'HR';
+-- 公司本级的岗位：坐在这儿的人才是全公司读者
+INSERT INTO oams.positions (position_code, title, org_unit_id)
+SELECT 'COMPANY_BOSS', '公司本级负责人', org_unit_id FROM oams.org_units WHERE org_code = 'COMPANY';
 
 -- 两个人：一个在 GA，一个在 HR（谁在哪个部门由岗位说了算）
 -- employment_status 默认是 pending，签票要求 active，所以这里显式写死
@@ -92,6 +104,18 @@ def world(db_ready):
                           now() - interval '1 day', '测试用', now(), m.member_id
                      FROM oams.workforce_members m, oams.positions p
                     WHERE m.employee_code = 'READER' AND p.position_code = 'GA_STAFF'""")
+            # 坐在公司本级岗位上的人（但不是管理员，用来验「判据是座位不是权」）
+            conn.execute(
+                """INSERT INTO oams.workforce_members (employee_code, display_name, employment_status)
+                   VALUES ('BOSS', '公司本级的人', 'active')""")
+            conn.execute(
+                """INSERT INTO oams.position_assignments
+                       (member_id, position_id, assignment_type, status, starts_at, reason,
+                        approved_at, approved_by)
+                   SELECT m.member_id, p.position_id, 'primary', 'active',
+                          now() - interval '1 day', '测试用', now(), m.member_id
+                     FROM oams.workforce_members m, oams.positions p
+                    WHERE m.employee_code = 'BOSS' AND p.position_code = 'COMPANY_BOSS'""")
             # 另一个读者：没有任何岗位（用来验「范围内没有人」那条）
             conn.execute(
                 """INSERT INTO oams.workforce_members (employee_code, display_name, employment_status)
@@ -111,7 +135,11 @@ def _member_id(url: str, employee_code: str) -> str:
 
 def _grant(url: str, employee_code: str, resource: str, action: str,
            scope_type: str = "org_unit", org_code: str = "GA") -> None:
-    """给这个人在某个范围发一条 allow 授权。"""
+    """给这个人在某个范围发一条 allow 授权。
+
+    `scope_type='all'` / `'self_position'` 不带 `scope_org_unit_id`（表上的
+    `permission_grants_check3` 只要求 `org_unit` 档非空）。
+    """
     member_id = _member_id(url, employee_code)
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute(
@@ -119,11 +147,20 @@ def _grant(url: str, employee_code: str, resource: str, action: str,
                    (subject_type, member_id, resource, action, scope_type, scope_org_unit_id,
                     effect, valid_from, valid_until, reason, approved_by, approved_at)
                VALUES ('member', %s, %s, %s, %s,
-                       CASE WHEN %s = 'self_position' THEN NULL
-                            ELSE (SELECT org_unit_id FROM oams.org_units WHERE org_code = %s) END,
+                       CASE WHEN %s = 'org_unit'
+                            THEN (SELECT org_unit_id FROM oams.org_units WHERE org_code = %s)
+                            ELSE NULL END,
                        'allow', now() - interval '1 day', now() + interval '30 days',
                        '测试用', %s, now())""",
             (member_id, resource, action, scope_type, scope_type, org_code, member_id),
+        )
+
+
+def _clear_grants(url: str, employee_code: str, resource: str) -> None:
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute(
+            "DELETE FROM oams.permission_grants WHERE member_id = %s AND resource = %s",
+            (_member_id(url, employee_code), resource),
         )
 
 
@@ -150,12 +187,14 @@ def _codes(rows, key: str = "employee_code") -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# ① 部门级读者：跨部门的人不出现（这是那个洞本身）
+# ① 部门级读者：跨部门的人不出现（两条，授权档不同，结果必须一样）
 # ---------------------------------------------------------------------------
 
 
 def test_a_department_reader_does_not_see_people_from_another_department(world):
-    _grant(world["url"], "READER", "workforce.members", "read")
+    """授权写的是 `org_unit` 档：只落到 GA。"""
+
+    _grant(world["url"], "READER", "workforce.members", "read", scope_type="org_unit")
     status, rows = _get(world["base"], "/v1/members", _token(world["url"], "READER"))
     assert status == 200, rows
     codes = _codes(rows)
@@ -163,6 +202,26 @@ def test_a_department_reader_does_not_see_people_from_another_department(world):
     assert "HR001" not in codes, codes
     assert "李人事" not in json.dumps(rows, ensure_ascii=False)
     assert "GA001" in codes, codes
+
+
+def test_an_all_scope_grant_does_not_make_a_department_reader_company_wide(world):
+    """授权写的是 `all` 档——**这才是真实种子的形状**，结果必须照样收窄。
+
+    这条就是那次「用例全绿、真库没生效」的回归：第一版判据是「有没有 `all` 授权」，
+    于是真库里每个部门负责人都成了全公司读者，而当时这个文件里每条授权都写成
+    `org_unit` 档，一条都没碰到。
+    """
+
+    try:
+        _grant(world["url"], "READER", "workforce.members", "read", scope_type="all")
+        status, rows = _get(world["base"], "/v1/members", _token(world["url"], "READER"))
+        assert status == 200, rows
+        codes = _codes(rows)
+        assert "HR001" not in codes, codes
+        assert "李人事" not in json.dumps(rows, ensure_ascii=False)
+        assert "GA001" in codes, codes
+    finally:
+        _clear_grants(world["url"], "READER", "workforce.members")
 
 
 def test_the_company_admin_still_sees_everybody(world):
@@ -173,6 +232,20 @@ def test_the_company_admin_still_sees_everybody(world):
     assert status == 200, rows
     codes = _codes(rows)
     assert {"ADMIN001", "GA001", "HR001", "READER"} <= codes, codes
+
+
+def test_sitting_in_a_company_level_position_makes_you_company_wide(world):
+    """判据是**座位挂在哪一级**，不是有没有管理员权。
+
+    BOSS 不是管理员（没拿 grants/manage），只因为岗位挂公司本级就看得全。这也是
+    「同一个人换座位，结果就变」的对照：READER 与 BOSS 拿同样的 `all` 档授权，
+    一个在 GA 岗、一个在公司本级岗，读到的范围必须不一样。
+    """
+
+    _grant(world["url"], "BOSS", "workforce.members", "read", scope_type="all")
+    status, rows = _get(world["base"], "/v1/members", _token(world["url"], "BOSS"))
+    assert status == 200, rows
+    assert {"GA001", "HR001"} <= _codes(rows), _codes(rows)
 
 
 def test_a_reader_without_any_department_gets_an_empty_list(world):
@@ -192,6 +265,8 @@ def test_a_member_with_no_seat_only_appears_for_company_level_readers(world):
     若为了「别漏人」把他放进来，那等于整张名单又多了一条绕过范围的路径。
     """
 
+    # 前一条用例在 finally 里清过 READER 的授权，这条自己备一份
+    _grant(world["url"], "READER", "workforce.members", "read", scope_type="all")
     reader_rows = _get(world["base"], "/v1/members", _token(world["url"], "READER"))[1]
     assert "FLOATER" not in _codes(reader_rows), _codes(reader_rows)
 
@@ -199,47 +274,27 @@ def test_a_member_with_no_seat_only_appears_for_company_level_readers(world):
     assert "FLOATER" in _codes(admin_rows), _codes(admin_rows)
 
 
-# ---------------------------------------------------------------------------
-# ② 同一件事换一条授权，结果就得变（只断言「少看到人」验不出收敛）
-# ---------------------------------------------------------------------------
+def test_the_company_seat_criterion_is_decided_in_one_place(world):
+    """函数级：`company_seat` 只认公司本级的岗位，与授权档无关。"""
 
+    from oams.security import company_seat, readable_org_unit_ids
 
-def test_the_same_reader_sees_the_whole_company_once_given_company_scope(world):
-    """把同一个人换成公司级授权：同一端点立刻看到人事部的人。
+    # 备一条 `all` 档授权：断言的是「有 all 也照样收窄」，得真有一条
+    _grant(world["url"], "READER", "workforce.members", "read", scope_type="all")
+    with psycopg.connect(world["url"], row_factory=dict_row) as conn:
+        assert company_seat(conn, _member_id(world["url"], "ADMIN001")) is True
+        assert company_seat(conn, _member_id(world["url"], "BOSS")) is True
+        assert company_seat(conn, _member_id(world["url"], "READER")) is False
+        # 无座位的人也不是全公司读者
+        assert company_seat(conn, _member_id(world["url"], "FLOATER")) is False
 
-    这条是那个洞的**正向对照**——它证明「少看到人」确实来自范围收敛，
-    而不是因为库里本来就没有那些人。
-    """
-
-    reader = _token(world["url"], "READER")
-    before = _codes(_get(world["base"], "/v1/members", reader)[1])
-    assert "HR001" not in before, before
-
-    with psycopg.connect(world["url"], autocommit=True) as conn:
-        conn.execute(
-            """INSERT INTO oams.permission_grants
-                   (subject_type, member_id, resource, action, scope_type, effect,
-                    valid_from, valid_until, reason, approved_by, approved_at)
-               VALUES ('member', %s, 'workforce.members', 'read', 'all', 'allow',
-                       now() - interval '1 day', now() + interval '30 days', '测试用', %s, now())""",
-            (_member_id(world["url"], "READER"), _member_id(world["url"], "READER")),
-        )
-    try:
-        after = _codes(_get(world["base"], "/v1/members", reader)[1])
-        assert "HR001" in after, after
-    finally:
-        # 收回这条授权：它是本文件里唯一一条 members 的全公司授权，
-        # 留着会把后面「指定范围外部门应该被拒」那条静默变成全公司读者。
-        with psycopg.connect(world["url"], autocommit=True) as conn:
-            conn.execute(
-                """DELETE FROM oams.permission_grants
-                    WHERE member_id = %s AND resource = 'workforce.members' AND scope_type = 'all'""",
-                (_member_id(world["url"], "READER"),),
-            )
+        # READER 手上有 `all` 档授权，但仍然被收窄（这是那次的判据错）
+        assert readable_org_unit_ids(
+            conn, _member_id(world["url"], "READER"), "workforce.members", "read") is not None
 
 
 # ---------------------------------------------------------------------------
-# ③ 其余三个读端点同口径
+# ② 其余三个列表读端点同口径
 # ---------------------------------------------------------------------------
 
 
@@ -283,17 +338,18 @@ def test_grants_are_narrowed_too(world):
 
     status, rows = _get(world["base"], "/v1/grants", _token(world["url"], "READER"))
     assert status == 200, rows
-    subjects = {str(row["member_id"]) for row in rows}
-    assert _member_id(world["url"], "HR001") not in subjects, subjects
-    assert _member_id(world["url"], "GA001") in subjects, subjects
+    scope_units = {str(row["scope_org_unit_id"]) for row in rows}
+    with psycopg.connect(world["url"], row_factory=dict_row) as conn:
+        hr_org = str(conn.execute(
+            "SELECT org_unit_id FROM oams.org_units WHERE org_code = 'HR'").fetchone()["org_unit_id"])
+    assert hr_org not in scope_units, scope_units
 
     admin_rows = _get(world["base"], "/v1/grants", _token(world["url"], "ADMIN001"))[1]
-    admin_subjects = {str(row["member_id"]) for row in admin_rows}
-    assert {_member_id(world["url"], "GA001"), _member_id(world["url"], "HR001")} <= admin_subjects
+    assert hr_org in {str(row["scope_org_unit_id"]) for row in admin_rows}
 
 
 # ---------------------------------------------------------------------------
-# ④ 按件读一个部门：范围外要 403 说人话，不是静默返回空
+# ③ 按件读一个部门：范围外要 403 说人话，不是静默返回空
 # ---------------------------------------------------------------------------
 
 

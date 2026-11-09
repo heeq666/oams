@@ -533,25 +533,53 @@ def accessible_org_unit_ids(conn, member_id: Any, resource: str | None = None,
     return units
 
 
+def company_seat(conn, member_id: Any) -> bool:
+    """这个人是不是坐在**公司本级**的岗位上。
+
+    「全公司范围」只有这一种来源：他的岗位挂在一个 `unit_type='company'` 的部门下。
+    不能拿 `scope_type='all'` 当全公司范围——现有种子 67 条授权**全部**是 `all` 档
+    （`scripts/load_department_data.py` 那句注释：除非 spec 另说，每条授权都写 all），
+    在这套数据里 `all` 被当成「这个岗位有这件事的权」的标记，不是「范围到全公司」。
+    早先按「有没有 `all` 授权」判，真库里每个部门负责人都成了全公司读者。
+
+    判据与 `active_org_unit_ids` 同源（同一个时限、同一批状态），不另算一套。
+    """
+    row = conn.execute(
+        """SELECT 1 FROM oams.position_assignments a
+             JOIN oams.positions p USING (position_id)
+             JOIN oams.org_units o USING (org_unit_id)
+            WHERE a.member_id = %s
+              AND a.status IN ('active', 'scheduled')
+              AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)
+              AND o.unit_type = 'company'
+            LIMIT 1""",
+        (member_id,),
+    ).fetchone()
+    return row is not None
+
+
 def readable_org_unit_ids(conn, member_id: Any, resource: str, action: str) -> set[Any] | None:
     """读这件事时，这个人该被收窄到哪些部门；`None` 表示**不收窄**（全公司读者）。
 
-    返回 `None` 只有一种情形：他在这件事上有一条全公司范围（`scope_type='all'`、
-    effect=allow）的授权。这时照旧把全公司给他——所以系统管理员与现有那批全公司
-    授权的人，读到的条数一条不变。
+    返回 `None` 只有一种情形：他坐在公司本级的岗位上（`company_seat`）。这时把全公司
+    给他——系统管理员、公司本级的岗位本来就该看全公司。
 
     其余情形返回「岗位所在的部门 ∪ 这件事上点名授权给他的部门」。两者都没有就是一个
     空集合：他确实有读权，但范围内没有任何部门，端点返回空列表而不是报错。
+
+    **`scope_type='all'` 不能当全公司范围**：全套种子数据里每条授权都是 `all` 档，
+    它在这里是「这个岗位有这件事的权」的标记。我第一版按「有没有 `all` 授权」判，
+    在 55433 上跑出来 GA001/FIN001/IT001 全部 readable=None（= 每个部门负责人都能看
+    全公司），而用例全绿——因为用例自己造的授权写的是 `org_unit` 档。真实数据里
+    一条那样的授权都没有。判据只能落在「座位挂在哪一级部门」上。
 
     这是**唯一**决定「读的范围」的地方。端点只拿它的返回值去 `= ANY(%s)`，不自己
     再写一套——每个页面各写一套，迟早有一套写漏。
 
     范围本身仍交给 `accessible_org_unit_ids`（岗位 ∪ 定点授权），这里只多回答一件事：
-    有没有全公司范围。不重写那套逻辑，是因为「`all` 在有座位时也摊成全公司」与
-    `accessible_org_unit_ids` 的边界不同——那边 `all` 只对没有座位的人生效，否则部门
-    负责人会连别的部门一起看到；而读者手上有一条 `all` 授权时，读全公司本来就是他要的。
+    有没有公司本级的座位。
     """
-    if has_all_scope_grant(conn, member_id, resource, action):
+    if company_seat(conn, member_id):
         return None
     return accessible_org_unit_ids(conn, member_id, resource, action)
 
