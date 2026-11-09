@@ -12,24 +12,30 @@ from psycopg.types.json import Jsonb
 from oams.config import settings
 from oams.db import connection
 from oams.security import issue_session
+from oams.sensitive_fields import seed_registry
 
 SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"
 
 
 def db_init():
-    """按 schema.sql 建出整套对象；重复执行只输出「已存在」，不报错。"""
+    """按 schema.sql 建出整套对象，并写入敏感字段登记表的种子；重复执行不报错。"""
     if not SCHEMA_FILE.exists():
         raise SystemExit(f"找不到建库脚本：{SCHEMA_FILE}")
     sql = SCHEMA_FILE.read_text(encoding="utf-8")
     try:
         with connection() as conn:
             conn.execute(sql)
+            # 建表之后紧接着写种子：让别人「建完表就有一张能用的登记表」，
+            # 而不是建完表、等到第一次要判敏感字段时才发现表是空的。
+            # 幂等口径见 oams.sensitive_fields 模块开头——已有行一律不动。
+            inserted = seed_registry(conn)
     except psycopg.errors.InsufficientPrivilege:
         raise SystemExit(
             "当前角色没有建表权限：换个拥有该库的角色（或请 DBA）重跑 `oams db init`；"
             "建库、建 schema、建表都走这一条命令，不再有分角色的建库脚本。"
         )
     print(f"建表完成：{SCHEMA_FILE.name}（幂等，可重复执行）")
+    print(f"敏感字段登记表：新增 {inserted} 条（已登记的不覆盖）")
 
 
 def bootstrap_admin(args):
