@@ -567,7 +567,12 @@ def approve_position_config_version(version_id: UUID, actor: dict = Depends(requ
 def update_member_status(member_id: UUID, payload: MemberStatusUpdate,
                          actor: dict = Depends(require_permission("workforce.members", "manage"))):
     with connection() as conn:
-        member = conn.execute("SELECT * FROM oams.workforce_members WHERE member_id = %s FOR UPDATE", (member_id,)).fetchone()
+        # 显式四列，不取整行：这一行要进审计的 before_state，取整行等于把 token_version
+        # 这类内部列也写进审计；四列与下面 UPDATE 的 RETURNING 同键，前后才比得出来。
+        member = conn.execute(
+            """SELECT member_id, display_name, employment_status, departed_at
+                 FROM oams.workforce_members WHERE member_id = %s FOR UPDATE""",
+            (member_id,)).fetchone()
         if not member:
             raise HTTPException(status_code=404, detail="member not found")
         updated = conn.execute(

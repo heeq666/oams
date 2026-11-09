@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -424,6 +425,11 @@ def test_member_responses_never_carry_internal_columns(served_members):
 #     条数对不上 → 红（在已有函数里又塞了一条查询）。
 #
 # 每一条都要写清「为什么可以」。写不出来的那一条，就是下一个泄漏点。
+#
+# 这道清单**看不出列的选择**：`token_version` 是不是被写进了某条显式列里，机器不知道，
+# 只能靠人在上面每条理由里写清（2026-11-09 就是这么发现两处 RETURNING 带 token_version 的）。
+# 全自动的那半截另有一条闸门——`test_personnel_queries_never_select_star`，它只管
+# 「有没有 `SELECT *` / `别名.*`」，管不了「显式列挑错了」。两条合起来才够，别以为哪一条能单挑。
 
 QUALIFIED_TABLE = "oams.workforce_members"
 
@@ -431,7 +437,7 @@ PERSONNEL_ACCESS_POINTS: dict[str, tuple[int, str]] = {
     # ---- API 层：只有 list_members 的返回能出站，且必须过 project_member_row ----
     "api.py::list_members": (2, "全公司 / 部门范围两条查询，返回前统一过 project_member_row（唯一读取口）"),
     "api.py::insert_member": (1, "INSERT RETURNING 五个公开列"),
-    "api.py::update_member_status": (2, "SELECT * FOR UPDATE 取整行给审计 before_state；UPDATE RETURNING 只取公开列"),
+    "api.py::update_member_status": (2, "显式四列 FOR UPDATE 取 before_state（与 UPDATE 的 RETURNING 同键）；UPDATE RETURNING 只取公开列"),
     "api.py::insert_assignment": (2, "读在职状态判能不能派岗；UPDATE 自增 token_version 作废旧会话，不返回行"),
     "api.py::end_assignment": (1, "UPDATE 自增 token_version 作废旧会话，不返回行"),
     "api.py::list_assignments": (1, "联表取 display_name 做展示"),
@@ -530,6 +536,68 @@ def test_every_personnel_table_access_point_is_registered():
 
     for key, (count, reason) in registered.items():
         assert count > 0 and reason.strip(), f"{key} 的登记不完整（条数或理由为空）"
+
+
+def _personnel_sql_strings() -> list[tuple[str, str]]:
+    """碰人员表的 SQL 字符串，连同「哪个文件的哪个函数」，用来查 `*`。"""
+
+    import ast
+
+    root = Path(__file__).resolve().parents[1] / "app" / "oams"
+    found: list[tuple[str, str]] = []
+    for path in sorted(root.rglob("*.py")):
+        source = path.read_text()
+        if QUALIFIED_TABLE not in source:
+            continue
+        tree = ast.parse(source)
+        parent: dict[ast.AST, ast.AST] = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parent[child] = node
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and QUALIFIED_TABLE in node.value):
+                continue
+            cursor: ast.AST = node
+            owner = "<module>"
+            while cursor in parent:
+                cursor = parent[cursor]
+                if isinstance(cursor, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    owner = cursor.name
+                    break
+            found.append((f"{path.name}::{owner}", node.value))
+    return found
+
+
+STAR_SELECT = re.compile(r"\bSELECT\s+\*", re.IGNORECASE)
+ALIAS_STAR = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.\*")
+
+
+def test_personnel_queries_never_select_star():
+    """碰人员表的 SQL 里不许出现 `SELECT *` 或 `别名.*`。
+
+    显式列今天是习惯，习惯会松：写的人图省事敲一个 `*`，脱敏分类里那句「internal
+    永不返回」就靠运气了——整行取出来、`dict_row` 一序列化就出站。所以把它变成机器守的。
+
+    **这道闸门不管什么**（写在前面，免得下一个人以为它全自动）：
+      · 它只看有没有 `*`，看不出「显式列里挑了 token_version」——那件事靠上面
+        `PERSONNEL_ACCESS_POINTS` 每条理由的人工复核；
+      · 它不解析列清单。这里的 SQL 有联表、子查询、CTE，解析器写出来必然误报，
+        误报三次就会有人加白名单，闸门就废了。窄而准，比宽而假强。
+    """
+
+    offenders: list[str] = []
+    for key, sql in _personnel_sql_strings():
+        for pattern, label in ((STAR_SELECT, "SELECT *"), (ALIAS_STAR, "别名.*")):
+            match = pattern.search(sql)
+            if match:
+                excerpt = " ".join(sql.split())
+                offenders.append(f"  {key}  含 {label}（{match.group(0)!r}）：{excerpt[:110]}")
+
+    assert not offenders, (
+        "这些地方用 `*` 取人员表，整行会漏出内部列：\n"
+        + "\n".join(offenders)
+        + "\n改成显式列；确实要整行，先想清楚它会不会进响应或审计。")
 
 
 # ---------------------------------------------------------------------------
