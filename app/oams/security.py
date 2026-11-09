@@ -1,5 +1,6 @@
 import hashlib
 import ipaddress
+import json
 import secrets
 import sys
 import time
@@ -438,16 +439,44 @@ def can_read_sensitive_field(conn, member_id: Any, field_key: str) -> bool:
     return has_permission(conn, member_id, SENSITIVE_FIELD_RESOURCE, "read")
 
 
-def readable_sensitive_fields(conn, member_id: Any, columns) -> frozenset[str]:
-    """这些列里，他能看明文的那些敏感键。
+#: 读人事敏感字段明文的事件类型。事后要查「谁在什么时候看了谁的敏感字段」就按它捞。
+SENSITIVE_READ_EVENT = "sensitive_field.read"
 
-    没有敏感列时**不查库**（今天的人员表就是这种情况）——闸门还在，只是没有需要打码
-    的字段，别为了「看起来在跑」多打一次库。
+
+def readable_sensitive_fields(conn, member_id: Any, subject_member_id: Any, columns,
+                              *, via: str = "api") -> frozenset[str]:
+    """这些列里，他能看明文的那些敏感键；**真解锁了就记一条审计**。
+
+    两个成员别搞混：`member_id` 是**看的人**（审计的 actor），`subject_member_id` 是
+    **被看的人**（审计的 subject_id）。要求调用方显式给出被看的人，是为了不给
+    「忘了记审计」留一条静默的路。
+
+    口径（2026-11-09 定，别自己扩）：
+
+    1. 只在**真解锁**时写——打码的不写。翻一遍名单几百行，把打码也记进去，真出事那条
+       就淹在噪声里了；
+    2. 一次调用一条，`field_keys` 排好序放进 `metadata`——不按字段逐条写；
+    3. 明文值一个字都不进审计：`metadata` 里只有字段键与来源（`web` / `api`）。
+
+    没有敏感列时**不查库也不写审计**（今天的人员表就是这种情况）——闸门还在，
+    只是没有需要打码的字段，别为了「看起来在跑」多打一次库。
     """
     keys = sensitive_keys_in(columns)
     if not keys:
         return frozenset()
-    return frozenset(key for key in keys if can_read_sensitive_field(conn, member_id, key))
+    readable = frozenset(key for key in keys if can_read_sensitive_field(conn, member_id, key))
+    if not readable:
+        return frozenset()
+    # 审计写在这里而不是调 `api.audit`：`api` 反过来 import 本模块，调它就成了循环。
+    conn.execute(
+        """INSERT INTO oams.workforce_audit_events
+           (actor_member_id, event_type, subject_type, subject_id, reason, metadata)
+           VALUES (%s, %s, 'member', %s, %s, %s)""",
+        (member_id, SENSITIVE_READ_EVENT, subject_member_id, "读取人事敏感字段明文",
+         Jsonb({"field_keys": sorted(readable), "via": via},
+               dumps=lambda obj: json.dumps(obj, default=str))),
+    )
+    return readable
 
 
 def shared_org_unit_ids(conn, member_id: Any) -> set[Any]:

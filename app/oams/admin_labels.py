@@ -26,6 +26,7 @@ EVENT_LABELS = {
     "report.submitted": "提交了汇报",
     "session.issued": "签发了登录令牌",
     "session.revoked": "吊销了登录令牌",
+    "sensitive_field.read": "查看了人事敏感字段",
 }
 
 # resource -> the noun a manager would use.

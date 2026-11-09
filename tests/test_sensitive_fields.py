@@ -530,3 +530,111 @@ def test_every_personnel_table_access_point_is_registered():
 
     for key, (count, reason) in registered.items():
         assert count > 0 and reason.strip(), f"{key} 的登记不完整（条数或理由为空）"
+
+
+# ---------------------------------------------------------------------------
+# 读明文要留痕：谁在什么时候看了谁的敏感字段
+# ---------------------------------------------------------------------------
+#
+# 前面几节管的是「能不能看、看到的是不是打码」，这一节管「看了之后查不查得到」。
+# 脱敏的四件里这是最后一件：没有它，读了明文也说不清是谁读的。
+#
+# 口径（2026-11-09 定）：只在**真解锁**时写一条；打码的不写（翻名单几百行会把真
+# 记录淹掉）；一次调用一条，字段键排好序进 metadata；明文值一个字都不进审计。
+
+
+def _add_member(url: str, employee_code: str, display_name: str) -> str:
+    import psycopg
+    from psycopg.rows import dict_row
+
+    with psycopg.connect(url, autocommit=True, row_factory=dict_row) as conn:
+        return str(conn.execute(
+            """INSERT INTO oams.workforce_members (employee_code, display_name, employment_status)
+               VALUES (%s, %s, 'active') RETURNING member_id""",
+            (employee_code, display_name)).fetchone()["member_id"])
+
+
+def _sensitive_read_events(url: str) -> list[dict]:
+    import psycopg
+    from psycopg.rows import dict_row
+
+    with psycopg.connect(url, row_factory=dict_row) as conn:
+        return conn.execute(
+            """SELECT actor_member_id, subject_type, subject_id, reason, metadata
+                 FROM oams.workforce_audit_events
+                WHERE event_type = 'sensitive_field.read'
+                ORDER BY occurred_at""").fetchall()
+
+
+def test_reading_a_sensitive_field_writes_exactly_one_event(fresh, monkeypatch):
+    """有授权、列里真有敏感键 → 恰好一条，actor / subject / keys 都对得上。
+
+    今天人员表里没有敏感列，所以这里把「这些列里有敏感键」这一层合成进来喂函数；
+    判权与写审计走的都是真代码、真登记表。
+    """
+
+    import psycopg
+
+    import oams.security as security_module
+
+    suite._cli(["db", "init"], fresh)
+    monkeypatch.setattr(security_module, "sensitive_keys_in", lambda columns: frozenset({"salary"}))
+    viewer = _add_member(fresh, "VIEWER", "看的人")
+    subject = _add_member(fresh, "SUBJECT", "被看的人")
+    _grant(fresh, viewer, security_module.SENSITIVE_FIELD_RESOURCE, "read")
+
+    from psycopg.rows import dict_row
+
+    # 生产里的连接一律是 dict_row（`oams.db.connection`），闸门读登记表时按键取值。
+    with psycopg.connect(fresh, autocommit=True, row_factory=dict_row) as conn:
+        readable = security_module.readable_sensitive_fields(
+            conn, viewer, subject, ("member_id", "salary"), via="api")
+    assert readable == frozenset({"salary"}), readable
+
+    events = _sensitive_read_events(fresh)
+    assert len(events) == 1, events
+    event = events[0]
+    assert event["subject_type"] == "member"
+    assert str(event["actor_member_id"]) == viewer
+    assert str(event["subject_id"]) == subject
+    assert event["metadata"] == {"field_keys": ["salary"], "via": "api"}, event["metadata"]
+
+
+def test_masked_reads_write_no_event(fresh, monkeypatch):
+    """没授权 → 打码 → 零条。打码也记的话，翻一遍名单就是几百行噪声。"""
+
+    import psycopg
+
+    import oams.security as security_module
+
+    suite._cli(["db", "init"], fresh)
+    monkeypatch.setattr(security_module, "sensitive_keys_in", lambda columns: frozenset({"salary"}))
+    viewer = _add_member(fresh, "VIEWER", "看的人")
+    subject = _add_member(fresh, "SUBJECT", "被看的人")
+
+    from psycopg.rows import dict_row
+
+    with psycopg.connect(fresh, autocommit=True, row_factory=dict_row) as conn:
+        readable = security_module.readable_sensitive_fields(
+            conn, viewer, subject, ("member_id", "salary"))
+    assert readable == frozenset(), readable
+    assert _sensitive_read_events(fresh) == []
+
+
+def test_the_members_list_writes_no_sensitive_read_event(served_members):
+    """真接口上翻一遍成员名单，审计表零新增——今天这六个字段一个都不敏感。
+
+    这条盯的是噪声，也是回归：哪天有人给 `MEMBER_READ_FIELDS` 加了一列敏感字段、
+    又忘了闸门，这里会先红。
+    """
+
+    token = _token_for(served_members["url"], "ADMIN001")
+    _call(served_members["base"], "POST", "/v1/members", token,
+          {"employee_code": "M001", "display_name": "甲"})
+    _call(served_members["base"], "POST", "/v1/members", token,
+          {"employee_code": "M002", "display_name": "乙"})
+
+    status, rows = _call(served_members["base"], "GET", "/v1/members", token)
+    assert status == 200, rows
+    assert len(rows) >= 3, rows
+    assert _sensitive_read_events(served_members["url"]) == []

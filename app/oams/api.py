@@ -291,10 +291,6 @@ def list_members(actor: dict = Depends(require_permission("workforce.members", "
     部门级读者看不到：对他来说那是「范围外的人」，应当不出现，而不是打码。
     """
     with connection() as conn:
-        # 返回什么、要不要打码，只由 sensitive_fields 的那一个读取口决定。
-        # 今天六个字段全是 public，所以 readable 是空的、一行也不会打码；
-        # 但这一句必须在这里——它保证「以后加一列敏感字段」时不用再想起这件事。
-        readable = readable_sensitive_fields(conn, actor["member_id"], MEMBER_READ_FIELDS)
         units = readable_org_unit_ids(conn, actor["member_id"], "workforce.members", "read")
         if units is None:
             rows = conn.execute(
@@ -316,7 +312,17 @@ def list_members(actor: dict = Depends(require_permission("workforce.members", "
                    ORDER BY m.display_name""",
                 (list(units),),
             ).fetchall()
-        return [project_member_row(row, readable=readable) for row in rows]
+        # 返回什么、要不要打码，只由 sensitive_fields 的那一个读取口决定；它同时负责
+        # 记审计。所以按「这一行被看的人」逐行调，不在循环外算一次——算一次的话审计的
+        # subject_id 只能记成一个人，其余的人看了等于没记。今天六个字段全是 public，
+        # 每行都走「没有敏感列」的早退分支：不查库、不写审计。
+        return [
+            project_member_row(
+                row,
+                readable=readable_sensitive_fields(
+                    conn, actor["member_id"], row["member_id"], MEMBER_READ_FIELDS, via="api"))
+            for row in rows
+        ]
 
 
 def insert_member(conn, payload: MemberCreate, actor_member_id: Any) -> dict[str, Any]:

@@ -14,6 +14,8 @@ def test_known_events_read_as_actions():
     assert admin_labels.describe_event("interface.approved") == "通过了页面版本"
     assert admin_labels.describe_event("interface.rejected") == "退回了页面版本"
     assert admin_labels.describe_event("org_unit.created") == "新建了部门"
+    # 读人事敏感字段明文也要有中文说法，否则审计页上就是一行机器键
+    assert admin_labels.describe_event("sensitive_field.read") == "查看了人事敏感字段"
 
 
 def test_unknown_event_is_passed_through_not_guessed():
