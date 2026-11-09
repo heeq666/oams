@@ -533,6 +533,29 @@ def accessible_org_unit_ids(conn, member_id: Any, resource: str | None = None,
     return units
 
 
+def readable_org_unit_ids(conn, member_id: Any, resource: str, action: str) -> set[Any] | None:
+    """读这件事时，这个人该被收窄到哪些部门；`None` 表示**不收窄**（全公司读者）。
+
+    返回 `None` 只有一种情形：他在这件事上有一条全公司范围（`scope_type='all'`、
+    effect=allow）的授权。这时照旧把全公司给他——所以系统管理员与现有那批全公司
+    授权的人，读到的条数一条不变。
+
+    其余情形返回「岗位所在的部门 ∪ 这件事上点名授权给他的部门」。两者都没有就是一个
+    空集合：他确实有读权，但范围内没有任何部门，端点返回空列表而不是报错。
+
+    这是**唯一**决定「读的范围」的地方。端点只拿它的返回值去 `= ANY(%s)`，不自己
+    再写一套——每个页面各写一套，迟早有一套写漏。
+
+    范围本身仍交给 `accessible_org_unit_ids`（岗位 ∪ 定点授权），这里只多回答一件事：
+    有没有全公司范围。不重写那套逻辑，是因为「`all` 在有座位时也摊成全公司」与
+    `accessible_org_unit_ids` 的边界不同——那边 `all` 只对没有座位的人生效，否则部门
+    负责人会连别的部门一起看到；而读者手上有一条 `all` 授权时，读全公司本来就是他要的。
+    """
+    if has_all_scope_grant(conn, member_id, resource, action):
+        return None
+    return accessible_org_unit_ids(conn, member_id, resource, action)
+
+
 def has_admin_rights(conn, member_id: Any) -> bool:
     """Can this member change other people's work, or only their own?"""
     return any(has_permission(conn, member_id, resource, "manage") for resource in ADMIN_RESOURCES)

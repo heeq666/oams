@@ -23,7 +23,8 @@ from oams.security import (accessible_org_unit_ids, active_org_unit_ids,
                               shared_org_unit_ids,
                               has_all_scope_grant, current_principal,
                               has_company_scope, has_permission, issue_session, principal_for_token,
-                              principal_from_request, require_org_unit_access,
+                              principal_from_request, readable_org_unit_ids,
+                              require_org_unit_access,
                               require_permission, revoke_session)
 
 app = FastAPI(title="Company OAMS API", version="0.1.0")
@@ -150,9 +151,24 @@ def me(principal: dict = Depends(current_principal)):
 
 
 @app.get("/v1/org-units")
-def list_org_units(_actor: dict = Depends(require_permission("workforce.org_units", "read"))):
+def list_org_units(actor: dict = Depends(require_permission("workforce.org_units", "read"))):
+    """读得到的部门：只列他范围内的，不列祖先当「目录」。
+
+    这条会让人看到 `parent_org_unit_id` 指向一个没在结果里的部门——那是**故意的**：
+    祖先也是别的部门，把它顺带列出来就等于泄漏了「公司还有哪些部门」。客户端要按
+    树渲染时，自己的根从列表里挑（他岗位所在的那个）当根，别假设能拿全一棵树。
+    """
     with connection() as conn:
-        return conn.execute("SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status FROM oams.org_units ORDER BY org_code").fetchall()
+        units = readable_org_unit_ids(conn, actor["member_id"], "workforce.org_units", "read")
+        if units is None:
+            return conn.execute(
+                "SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status"
+                "  FROM oams.org_units ORDER BY org_code").fetchall()
+        return conn.execute(
+            """SELECT org_unit_id, parent_org_unit_id, org_code, name, unit_type, status
+                 FROM oams.org_units WHERE org_unit_id = ANY(%s) ORDER BY org_code""",
+            (list(units),),
+        ).fetchall()
 
 
 def insert_org_unit(conn, payload: OrgUnitCreate, actor_member_id: Any) -> dict[str, Any]:
@@ -264,11 +280,34 @@ def create_org_unit(payload: OrgUnitCreate, actor: dict = Depends(require_permis
 
 
 @app.get("/v1/members")
-def list_members(_actor: dict = Depends(require_permission("workforce.members", "read"))):
+def list_members(actor: dict = Depends(require_permission("workforce.members", "read"))):
+    """读得着的人：他管得到的部门里的，加上**哪里都没挂岗位的人**。
+
+    最后一类是故意的，不是漏了：没有任何岗位的人不属于任何部门，按部门收窄就永远
+    看不见他——那样新入职、还没排岗位的人会从成员名单里凭空消失，谁也没法给他排
+    岗位。所以他们只对**全公司级读者**出现（`readable_org_unit_ids` 返回 None 的人），
+    部门级读者看不到：对他来说那是「范围外的人」，应当不出现，而不是打码。
+    """
     with connection() as conn:
+        units = readable_org_unit_ids(conn, actor["member_id"], "workforce.members", "read")
+        if units is None:
+            return conn.execute(
+                """SELECT member_id, employee_code, display_name, employment_status, joined_at, departed_at
+                   FROM oams.workforce_members ORDER BY display_name"""
+            ).fetchall()
         return conn.execute(
-            """SELECT member_id, employee_code, display_name, employment_status, joined_at, departed_at
-               FROM oams.workforce_members ORDER BY display_name"""
+            """SELECT m.member_id, m.employee_code, m.display_name, m.employment_status,
+                      m.joined_at, m.departed_at
+               FROM oams.workforce_members m
+               WHERE EXISTS (
+                     SELECT 1 FROM oams.position_assignments a
+                       JOIN oams.positions p USING (position_id)
+                      WHERE a.member_id = m.member_id
+                        AND a.status IN ('active', 'scheduled')
+                        AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)
+                        AND p.org_unit_id = ANY(%s))
+               ORDER BY m.display_name""",
+            (list(units),),
         ).fetchall()
 
 
@@ -312,12 +351,21 @@ def create_member(payload: MemberCreate, actor: dict = Depends(require_permissio
 
 
 @app.get("/v1/positions")
-def list_positions(_actor: dict = Depends(require_permission("workforce.positions", "read"))):
+def list_positions(actor: dict = Depends(require_permission("workforce.positions", "read"))):
     with connection() as conn:
+        units = readable_org_unit_ids(conn, actor["member_id"], "workforce.positions", "read")
+        if units is None:
+            return conn.execute(
+                """SELECT p.position_id, p.position_code, p.title, p.org_unit_id, o.org_code, p.status
+                   FROM oams.positions p JOIN oams.org_units o USING (org_unit_id)
+                   ORDER BY o.org_code, p.position_code"""
+            ).fetchall()
         return conn.execute(
             """SELECT p.position_id, p.position_code, p.title, p.org_unit_id, o.org_code, p.status
                FROM oams.positions p JOIN oams.org_units o USING (org_unit_id)
-               ORDER BY o.org_code, p.position_code"""
+               WHERE p.org_unit_id = ANY(%s)
+               ORDER BY o.org_code, p.position_code""",
+            (list(units),),
         ).fetchall()
 
 
@@ -334,7 +382,7 @@ def create_position(payload: PositionCreate, actor: dict = Depends(require_permi
 
 @app.get("/v1/assignments")
 def list_assignments(member_id: UUID | None = None, position_id: UUID | None = None,
-                     _actor: dict = Depends(require_permission("workforce.assignments", "read"))):
+                     actor: dict = Depends(require_permission("workforce.assignments", "read"))):
     filters = []
     params: list[Any] = []
     if member_id is not None:
@@ -343,8 +391,13 @@ def list_assignments(member_id: UUID | None = None, position_id: UUID | None = N
     if position_id is not None:
         filters.append("a.position_id = %s")
         params.append(position_id)
-    where = ("WHERE " + " AND ".join(filters)) if filters else ""
     with connection() as conn:
+        units = readable_org_unit_ids(conn, actor["member_id"], "workforce.assignments", "read")
+        if units is not None:
+            # 岗位在哪，任命就落在哪个部门——按岗位所属部门收窄，口径与成员一致。
+            filters.append("p.org_unit_id = ANY(%s)")
+            params.append(list(units))
+        where = ("WHERE " + " AND ".join(filters)) if filters else ""
         return conn.execute(
             f"""SELECT a.assignment_id, a.member_id, m.display_name, a.position_id, p.position_code,
                       p.title, a.assignment_type, a.status, a.starts_at, a.ends_at, a.reason,
@@ -359,7 +412,13 @@ def list_assignments(member_id: UUID | None = None, position_id: UUID | None = N
 
 @app.get("/v1/grants")
 def list_grants(subject_type: str | None = None, subject_id: UUID | None = None,
-               _actor: dict = Depends(require_permission("workforce.grants", "read"))):
+               actor: dict = Depends(require_permission("workforce.grants", "read"))):
+    """读得到的授权行：只列**管着他范围内部门**的那些。
+
+    判据是这条授权自己的范围（`scope_org_unit_id`）落不落在他的读范围里，不去追主体
+    在哪——「谁被授了权」本身不是读权边界，这条列的是授权的**内容**。所以全公司范围
+    （`scope_type='all'`）的行对部门级读者不出现：它没有具体部门，描述的是公司级权力。
+    """
     if subject_type not in (None, "member", "position"):
         raise HTTPException(status_code=422, detail="subject_type must be member or position")
     filters = []
@@ -370,8 +429,13 @@ def list_grants(subject_type: str | None = None, subject_id: UUID | None = None,
     if subject_id is not None:
         filters.append("CASE WHEN g.subject_type = 'member' THEN g.member_id ELSE g.position_id END = %s")
         params.append(subject_id)
-    where = ("WHERE " + " AND ".join(filters)) if filters else ""
     with connection() as conn:
+        units = readable_org_unit_ids(conn, actor["member_id"], "workforce.grants", "read")
+        if units is not None:
+            filters.append(
+                """(g.scope_type = 'org_unit' AND g.scope_org_unit_id = ANY(%s))""")
+            params.append(list(units))
+        where = ("WHERE " + " AND ".join(filters)) if filters else ""
         return conn.execute(
             f"""SELECT g.grant_id, g.subject_type, g.position_id, g.member_id, g.resource, g.action,
                       g.scope_type, g.scope_org_unit_id, g.scope_definition, g.effect, g.valid_from,
