@@ -367,3 +367,127 @@ def test_reading_one_department_outside_the_range_is_refused_in_chinese(world):
     status, body = _get(world["base"], f"/v1/board/org-units/{hr}", _token(world["url"], "READER"))
     assert status == 403, body
     assert "这个部门不在你的范围内" in body["detail"], body
+
+
+# ---------------------------------------------------------------------------
+# ④ 工作项列表：被点名授权的部门，写了就得看得见
+# ---------------------------------------------------------------------------
+
+
+def _add_work_items(url: str) -> None:
+    """GA 与 HR 各放一条工作项，标题里带部门名，便于在列表里认。"""
+    with psycopg.connect(url, autocommit=True) as conn:
+        for org_code, position_code, title in (("GA", "GA_STAFF", "行政部的活"),
+                                               ("HR", "HR_STAFF", "人事部的活")):
+            conn.execute(
+                """INSERT INTO oams.work_items (org_unit_id, position_id, title, kind, status, created_by)
+                   SELECT p.org_unit_id, p.position_id, %s, 'routine', 'planned', m.member_id
+                     FROM oams.positions p, oams.workforce_members m
+                    WHERE p.position_code = %s AND m.employee_code = 'READER'""",
+                (title, position_code))
+
+
+def _titles(base: str, token: str) -> set[str]:
+    status, rows = _get(base, "/v1/work-items", token)
+    assert status == 200, rows
+    return {row["title"] for row in rows}
+
+
+def test_the_work_item_list_shows_the_department_i_was_named_for(world):
+    """岗位在 GA、又被点名授权 HR：两条都得看得见。
+
+    这条是 2026-11-09 那个洞的回归：`list_work_items` 当时自己写了一套
+    `has_company_scope + active_org_unit_ids`，只用岗位算范围，于是「往 HR 写一条」
+    接口回 201、列表里却不出现——而同一份权限下 `POST` 与看板都放行（它们走的是
+    `require_org_unit_access`）。范围只认一处，两条路才对得上。
+    """
+
+    _add_work_items(world["url"])
+    _clear_grants(world["url"], "READER", "workforce.work_items")
+    # 先只给座位那个部门：这正是「有权、但只看得见自己部门」的基线
+    _grant(world["url"], "READER", "workforce.work_items", "read", scope_type="org_unit", org_code="GA")
+    token = _token(world["url"], "READER")
+    assert _titles(world["base"], token) == {"行政部的活"}
+
+    _grant(world["url"], "READER", "workforce.work_items", "read", scope_type="org_unit", org_code="HR")
+    assert _titles(world["base"], token) == {"行政部的活", "人事部的活"}, (
+        "被点名授权的部门，写得进去就得看得见；只剩座位那一条说明列表还在用岗位算范围")
+
+
+def test_the_list_and_the_board_agree_about_the_same_department(world):
+    """同一个部门，列表里有条目、看板就得开得出来；反过来也一样。
+
+    两个接口各写一套范围，就会出现「能看见却打不开」或「打得开却看不见」。
+    """
+
+    _add_work_items(world["url"])
+    _clear_grants(world["url"], "READER", "workforce.work_items")
+    _grant(world["url"], "READER", "workforce.work_items", "read", scope_type="org_unit", org_code="HR")
+    token = _token(world["url"], "READER")
+    with psycopg.connect(world["url"], row_factory=dict_row) as conn:
+        hr = str(conn.execute(
+            "SELECT org_unit_id FROM oams.org_units WHERE org_code = 'HR'").fetchone()["org_unit_id"])
+
+    listed = "人事部的活" in _titles(world["base"], token)
+    status, board = _get(world["base"], f"/v1/board/org-units/{hr}", token)
+    assert status == 200, board
+    on_board = any(card["title"] == "人事部的活" for card in board["cards"])
+    assert listed == on_board, (
+        f"列表里有={listed}、看板上有={on_board}：同一份权限下两个接口给了两个范围")
+
+
+def test_a_writer_cannot_be_blind_to_what_they_just_wrote(world):
+    """写了就得看得见——这条是那条洞最直接的形状。
+
+    给 HR 的读权与写权之后，往 HR 写一条新的，随后列表里必须能找到它。
+    """
+
+    _add_work_items(world["url"])
+    _clear_grants(world["url"], "READER", "workforce.work_items")
+    _grant(world["url"], "READER", "workforce.work_items", "read", scope_type="org_unit", org_code="HR")
+    _grant(world["url"], "READER", "workforce.work_items", "manage", scope_type="org_unit", org_code="HR")
+    token = _token(world["url"], "READER")
+    with psycopg.connect(world["url"], row_factory=dict_row) as conn:
+        hr_position = str(conn.execute(
+            "SELECT position_id FROM oams.positions WHERE position_code = 'HR_STAFF'").fetchone()["position_id"])
+
+    request = urllib.request.Request(world["base"] + "/v1/work-items", method="POST")
+    request.add_header("Authorization", "Bearer " + token)
+    request.add_header("Content-Type", "application/json")
+    body = json.dumps({"position_id": hr_position, "title": "刚写进人事部的一条",
+                       "kind": "routine", "status": "planned"}).encode()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, body, timeout=20) as response:
+        assert response.status == 201
+
+    assert "刚写进人事部的一条" in _titles(world["base"], token), (
+        "往被授权的部门写成功了，列表里却看不见——那就是「能写不能读」")
+
+
+def _page(base: str, path: str, token: str) -> str:
+    request = urllib.request.Request(base + path)
+    request.add_header("Cookie", "oams_session=" + token)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=20) as response:
+        return response.read().decode()
+
+
+def test_the_admin_page_shows_the_same_range_as_the_json_list(world):
+    """HTML 管理页与 `/v1/work-items` 必须是同一个范围。
+
+    这页原先也自己算一套（`active_org_unit_ids`），于是被点名授权的部门在页面上
+    既看不到工作项、也选不到岗位，可接口那边却能往里写——「能写进去、页面上读不出来」。
+    """
+
+    _add_work_items(world["url"])
+    _clear_grants(world["url"], "READER", "workforce.work_items")
+    _grant(world["url"], "READER", "workforce.work_items", "read", scope_type="org_unit", org_code="GA")
+    token = _token(world["url"], "READER")
+    page = _page(world["base"], "/admin/work-items", token)
+    assert "行政部的活" in page
+    assert "人事部的活" not in page
+
+    _grant(world["url"], "READER", "workforce.work_items", "read", scope_type="org_unit", org_code="HR")
+    page = _page(world["base"], "/admin/work-items", token)
+    assert "行政部的活" in page and "人事部的活" in page, (
+        "接口能往这儿写，管理页上却看不到，两处范围不是一个")

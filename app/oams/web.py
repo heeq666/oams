@@ -55,7 +55,7 @@ from oams.security import (DEV_WORKER_COOKIE, ROLE_DEPARTMENT, ROLE_STAFF, ROLE_
                               can_access_org_unit,
                               dev_autologin_target, dev_identities, dev_principal, has_company_scope,
                               has_permission, issue_session, principal_from_request,
-                              principal_for_token, require_org_unit_access, revoke_session)
+                              principal_for_token, readable_org_unit_ids, require_org_unit_access, revoke_session)
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 router = APIRouter()
@@ -3259,10 +3259,21 @@ def admin_work_items(request: Request, created: str | None = None, error: str | 
         return _denied(request, "查看工作项需要 workforce.work_items/read 权限。")
     with connection() as conn:
         can_manage = has_permission(conn, principal["member_id"], "workforce.work_items", "manage")
-        company_scope = has_company_scope(conn, principal["member_id"])
-        scoped_orgs = list(active_org_unit_ids(conn, principal["member_id"]))
-        scope_sql = "" if company_scope else "WHERE w.org_unit_id = ANY(%s)"
-        scope_params = [] if company_scope else [scoped_orgs]
+        # 两个范围问的是两件事，别合成一个：能看哪些工作项（`readable_org_unit_ids`，
+        # 与 /v1/work-items 同一处判），能往哪些部门写（`accessible_org_unit_ids`，
+        # 与 POST 走的 `require_org_unit_access` 同源）。原先这里两处都用
+        # `active_org_unit_ids`，于是「被点名授权的部门」既看不到也选不到岗位，
+        # 人却能通过接口往那儿写——能写进去、页面上读不出来。
+        readable = readable_org_unit_ids(conn, principal["member_id"], "workforce.work_items", "read")
+        writable = accessible_org_unit_ids(conn, principal["member_id"])
+        everywhere = readable is None
+        # 建工作项放行的是 `require_org_unit_access`：公司级管理员对哪个部门都放行，
+        # 其余人只认 accessible。岗位下拉必须照这条放行规则来，否则系统管理员会只剩
+        # 公司本级一个岗位可选。
+        company_writer = has_company_scope(conn, principal["member_id"])
+        scoped_orgs = [] if everywhere else sorted(readable, key=str)
+        scope_sql = "" if everywhere else "WHERE w.org_unit_id = ANY(%s)"
+        scope_params = [] if everywhere else [scoped_orgs]
         items = conn.execute(
             f"""SELECT {api.WORK_ITEM_SELECT}
                   FROM oams.work_items w
@@ -3275,7 +3286,7 @@ def admin_work_items(request: Request, created: str | None = None, error: str | 
             """SELECT p.position_id, p.position_code, p.title, o.org_code
                FROM oams.positions p JOIN oams.org_units o USING (org_unit_id)
                WHERE p.status = 'active' AND (%s OR p.org_unit_id = ANY(%s))
-               ORDER BY o.org_code, p.position_code""", (company_scope, scoped_orgs)).fetchall()
+               ORDER BY o.org_code, p.position_code""", (company_writer, sorted(writable, key=str))).fetchall()
     return TEMPLATES.TemplateResponse(request, "admin_work_items.html", {
         "items": items, "positions": positions, "can_manage": can_manage,
         "created": created, "error": error, "member": _member(request),

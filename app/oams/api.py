@@ -674,8 +674,13 @@ def list_work_items(org_unit_id: UUID | None = None, position_id: UUID | None = 
     with connection() as conn:
         if org_unit_id is not None:
             require_org_unit_access(conn, _actor["member_id"], org_unit_id)
-        if not has_company_scope(conn, _actor["member_id"]):
-            scoped_orgs = list(active_org_unit_ids(conn, _actor["member_id"]))
+        # 范围与 POST / PATCH / 看板同一处判：它们都用 require_org_unit_access
+        # （内部是 accessible_org_unit_ids）。这里原先另写了一套
+        # has_company_scope + active_org_unit_ids，结果是「能往被点名授权的部门写、
+        # 写完在列表里看不见」，而同一份权限下看板看得见。范围只认一处。
+        scoped_orgs = readable_org_unit_ids(conn, _actor["member_id"], "workforce.work_items", "read")
+        if scoped_orgs is not None:
+            scoped_orgs = list(scoped_orgs)
             if not scoped_orgs:
                 return []
             filters.append("w.org_unit_id = ANY(%s)")
