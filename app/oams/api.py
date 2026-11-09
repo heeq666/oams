@@ -344,7 +344,7 @@ def activate_member(conn, member_id: Any, actor_member_id: Any, reason: str) -> 
         """UPDATE oams.workforce_members SET employment_status = 'active', departed_at = NULL,
                   token_version = token_version + 1, updated_at = now()
            WHERE member_id = %s
-           RETURNING member_id, display_name, employment_status, departed_at, token_version""",
+           RETURNING member_id, display_name, employment_status, departed_at""",
         (member_id,),
     ).fetchone()
     conn.execute("UPDATE oams.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))
@@ -587,7 +587,7 @@ def update_member_status(member_id: UUID, payload: MemberStatusUpdate,
                                          WHEN %s = 'active' THEN NULL ELSE departed_at END,
                       token_version = token_version + 1, updated_at = now()
                 WHERE member_id = %s
-                RETURNING member_id, display_name, employment_status, departed_at, token_version""",
+                RETURNING member_id, display_name, employment_status, departed_at""",
             (payload.employment_status, payload.employment_status, payload.employment_status, member_id),
         ).fetchone()
         conn.execute("UPDATE oams.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))

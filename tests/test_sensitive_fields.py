@@ -309,3 +309,234 @@ def test_the_registry_row_decides_whether_a_grant_is_needed(hr_world):
     with psycopg.connect(hr_world, row_factory=dict_row) as conn:
         assert can_read_sensitive_field(conn, hr_id, "performance") is True
         assert can_read_sensitive_field(conn, hr_id, "salary") is False
+
+
+# ---------------------------------------------------------------------------
+# 响应里不许出现内部字段：分类说「永不返回」，就得有接口级证据
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def served_members(db_ready):
+    """一个只做过 `db init` + `bootstrap-admin` 的库，起真服务。
+
+    为什么不用开发库：开发库里「碰巧」没有敏感列、也没有多余返回字段，
+    验不出「响应里多出内部字段」。只有从零建起来、自己造成员的库，
+    返回体的键集合才是这条闸门说了算。
+    """
+
+    name, url = suite._create_database(db_ready)
+    try:
+        suite._cli(["db", "init"], url)
+        suite._cli(
+            [
+                "bootstrap-admin",
+                "--name", "管理员",
+                "--employee-code", "ADMIN001",
+                "--org-code", "COMPANY",
+                "--org-name", "公司",
+            ],
+            url,
+        )
+        with suite.serve(url) as base:
+            yield {"url": url, "base": base}
+    finally:
+        suite._drop_database(db_ready, name)
+
+
+def _call(base: str, method: str, path: str, token: str, payload: dict | None = None):
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    body = _json.dumps(payload).encode() if payload is not None else None
+    request = urllib.request.Request(base + path, data=body, method=method)
+    request.add_header("Authorization", "Bearer " + token)
+    if body is not None:
+        request.add_header("Content-Type", "application/json")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=20) as response:
+            return response.status, _json.loads(response.read().decode())
+    except urllib.error.HTTPError as error:
+        return error.code, _json.loads(error.read().decode())
+
+
+def _token_for(url: str, employee_code: str) -> str:
+    from oams.security import issue_session
+
+    return issue_session(_member(url, employee_code))[0]
+
+
+def test_member_responses_never_carry_internal_columns(served_members):
+    """建成员、改状态的返回体只许有公开列——`token_version` 连键都不出现。
+
+    2026-11-09 的实情：这两处 `RETURNING` 里带着 `token_version`，连接用的是
+    `dict_row`，整行原样序列化进响应体，分类里写的「内部字段永不返回」当场不成立。
+    这条用例盯的是**接口实际返回了什么**，不是函数里写了什么。
+    """
+
+    token = _token_for(served_members["url"], "ADMIN001")
+    status, created = _call(
+        served_members["base"], "POST", "/v1/members", token,
+        {"employee_code": "NEW001", "display_name": "新人"})
+    assert status == 201, created
+    assert set(created) == {
+        "member_id", "employee_code", "display_name", "employment_status", "joined_at"
+    }, created
+
+    status, updated = _call(
+        served_members["base"], "PATCH", f"/v1/members/{created['member_id']}/status", token,
+        {"employment_status": "suspended", "reason": "验证响应体"})
+    assert status == 200, updated
+    assert set(updated) == {
+        "member_id", "display_name", "employment_status", "departed_at"
+    }, updated
+
+
+def test_activate_member_helper_returns_only_public_columns(served_members):
+    """`activate_member` 现在没有任何调用方，它的 `RETURNING` 一样得干净。
+
+    死代码最容易被下一个接线的人当成现成实现直接接上——那时候漏出去的
+    `token_version` 就不是「没人用」，而是「刚上线」。
+    """
+
+    import psycopg
+    from psycopg.rows import dict_row
+
+    from oams.api import activate_member
+
+    with psycopg.connect(served_members["url"], autocommit=True, row_factory=dict_row) as conn:
+        target = conn.execute(
+            """INSERT INTO oams.workforce_members (employee_code, display_name, employment_status)
+               VALUES ('ACT001', '待激活', 'suspended') RETURNING member_id""").fetchone()["member_id"]
+        updated = activate_member(conn, target, _member(served_members["url"], "ADMIN001"), "验证响应体")
+    assert set(updated) == {
+        "member_id", "display_name", "employment_status", "departed_at"
+    }, updated
+
+
+# ---------------------------------------------------------------------------
+# 人员表的访问面：谁碰这张表，就得写清为什么可以
+# ---------------------------------------------------------------------------
+#
+# 脱敏闸门只装在一个门上（`GET /v1/members` 的返回经 `project_member_row`）。
+# 只要别处还能把整行取出来塞进响应，分类里写的「internal 永不返回」就是空话——
+# 2026-11-09 就是这么发现 `activate_member` / `update_member_status` 的
+# `RETURNING` 里带着 `token_version` 的：闸门装好了，旁边那扇窗没关。
+#
+# 所以这里把「谁碰这张表」列成清单，由机器对账，不靠人记得住：
+#   · 扫 `app/oams/**.py` 里所有**带限定表名** `oams.workforce_members` 的字符串常量
+#     （限定名才认，是为了不把注释、docstring、`PERSONNEL_TABLE` 这种常量算进来）；
+#   · 按「文件::函数」归并并数条数；
+#   · 清单里没有的 → 红（新加一处没登记）；清单里有、代码里没有 → 红（删了没销账）；
+#     条数对不上 → 红（在已有函数里又塞了一条查询）。
+#
+# 每一条都要写清「为什么可以」。写不出来的那一条，就是下一个泄漏点。
+
+QUALIFIED_TABLE = "oams.workforce_members"
+
+PERSONNEL_ACCESS_POINTS: dict[str, tuple[int, str]] = {
+    # ---- API 层：只有 list_members 的返回能出站，且必须过 project_member_row ----
+    "api.py::list_members": (2, "全公司 / 部门范围两条查询，返回前统一过 project_member_row（唯一读取口）"),
+    "api.py::insert_member": (1, "INSERT RETURNING 五个公开列"),
+    "api.py::update_member_status": (2, "SELECT * FOR UPDATE 取整行给审计 before_state；UPDATE RETURNING 只取公开列"),
+    "api.py::activate_member": (2, "同上；该函数目前没有任何调用方，留着就得同样干净"),
+    "api.py::insert_assignment": (2, "读在职状态判能不能派岗；UPDATE 自增 token_version 作废旧会话，不返回行"),
+    "api.py::end_assignment": (1, "UPDATE 自增 token_version 作废旧会话，不返回行"),
+    "api.py::list_assignments": (1, "联表取 display_name 做展示"),
+    "api.py::list_work_item_reports": (1, "联表取 display_name AS reported_by"),
+    "api.py::_page_activity": (1, "审计流联表取 display_name 当 actor"),
+    "api.py::exchange_app_token": (1, "只取 display_name，回填「这张票代表谁」"),
+    "api.py::revoke_authorization": (1, "只取 display_name 记审计"),
+    # ---- CLI：命令行只在终端里出现，但同样只取要用的列 ----
+    "cli.py::bootstrap_admin": (1, "INSERT RETURNING member_id"),
+    "cli.py::_member_id_from_code": (1, "按员工编号取 id，只回 id"),
+    # ---- 协作室：姓名 / 员工编号做展示，不碰内部字段 ----
+    "collab.py::<module>": (1, "_DIRECTORY_SQL 通讯录，只选公开列 + 岗位与部门名"),
+    "collab.py::visible_dms": (1, "联表取对方姓名与员工编号"),
+    "collab.py::thread_header": (1, "只取 display_name / employee_code 做会话头"),
+    "collab.py::list_messages": (1, "联表取 display_name AS author_name"),
+    "collab.py::post_message": (1, "只取 display_name 记消息作者名"),
+    "plugin_cli.py::active_employee_codes": (1, "只取在职员工编号，做插件身份的候选"),
+    # ---- 身份与会话：token_version 只用来比对，不出现在任何响应里 ----
+    "security.py::issue_session": (1, "读在职状态与 token_version 校验并发会话，值只写进会话表"),
+    "security.py::principal_for_token": (1, "票校验，token_version 只做比对"),
+    "security.py::<module>": (2, "开发模式的取身份 SQL，token_version 只做会话比对，不进响应"),
+    # ---- Web 层：服务端渲染，模板只读公开列 ----
+    "web.py::setup": (1, "初始化页成员表，只选公开列"),
+    "web.py::dev_switch_identity": (1, "开发模式切身份，只取 employee_code"),
+    "web.py::_employee_code_of": (1, "只取 employee_code"),
+    "web.py::_member_id_for_code": (1, "只取 member_id"),
+    "web.py::_active_employee_codes": (1, "只取在职员工编号"),
+    "web.py::_review_view": (2, "审核页联表取 reviewer 姓名"),
+    "web.py::interface_board": (1, "看板联表取最近进展的填报人姓名"),
+    "web.py::<module>": (1, "授权清单页的大 SQL，联表取 display_name"),
+    "web.py::admin_grants": (1, "授权页候选人下拉，只选公开列"),
+    "web.py::admin_create_grant": (1, "建授权前取 member_id / display_name / employment_status"),
+    "web.py::admin_audit": (1, "审计页联表取 actor_name"),
+    "web.py::settings_home": (1, "设置页最近动态，联表取 actor_name"),
+}
+
+
+def _personnel_access_points() -> dict[str, int]:
+    """扫出代码里真实的访问点，口径写在上面那段注释里。"""
+
+    import ast
+
+    root = Path(__file__).resolve().parents[1] / "app" / "oams"
+    found: dict[str, int] = {}
+    for path in sorted(root.rglob("*.py")):
+        source = path.read_text()
+        if QUALIFIED_TABLE not in source:
+            continue
+        tree = ast.parse(source)
+        parent: dict[ast.AST, ast.AST] = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parent[child] = node
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and QUALIFIED_TABLE in node.value):
+                continue
+            cursor: ast.AST = node
+            owner = "<module>"
+            while cursor in parent:
+                cursor = parent[cursor]
+                if isinstance(cursor, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    owner = cursor.name
+                    break
+            key = f"{path.name}::{owner}"
+            found[key] = found.get(key, 0) + 1
+    return found
+
+
+def test_every_personnel_table_access_point_is_registered():
+    """碰 `workforce_members` 的地方必须一条条登记，并写清为什么可以。
+
+    这条闸门挡的是「闸门只装在一个门上」——新开一扇窗就得在这里留下理由，
+    否则下一个人以为整张表都脱敏了。
+    """
+
+    actual = _personnel_access_points()
+    registered = PERSONNEL_ACCESS_POINTS
+
+    unregistered = sorted(set(actual) - set(registered))
+    assert not unregistered, (
+        "这些地方访问了 workforce_members 但没登记（新开的窗？）：\n"
+        + "\n".join(f"  {key}  x{actual[key]}" for key in unregistered)
+        + "\n登记到 PERSONNEL_ACCESS_POINTS，并写清为什么不会把内部字段带进响应。")
+
+    stale = sorted(set(registered) - set(actual))
+    assert not stale, (
+        "清单里登记了、代码里已经没有的访问点（删了没销账）：\n"
+        + "\n".join(f"  {key}" for key in stale))
+
+    mismatched = sorted(
+        (key, registered[key][0], actual[key]) for key in actual if registered[key][0] != actual[key])
+    assert not mismatched, (
+        "访问点条数对不上（在这个函数里又加/删了一条查询）：\n"
+        + "\n".join(f"  {key}  登记 {want} 条，实际 {got} 条" for key, want, got in mismatched))
+
+    for key, (count, reason) in registered.items():
+        assert count > 0 and reason.strip(), f"{key} 的登记不完整（条数或理由为空）"
