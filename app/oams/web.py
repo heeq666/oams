@@ -732,7 +732,9 @@ def _access_summary(row) -> str:
     if not granted:
         return "—"
     if granted == ["可作参考"]:
-        return "只能作参考，看不到里面的数据"
+        # 与列表那句（`_granted_text`）用同一句话：同一个意思两个说法，读的人还得
+        # 停下来比较它们是不是一回事。短的那句也更好排——768 下那一格很窄。
+        return "只可作参考，看不到数据"
     return "、".join(granted)
 
 
