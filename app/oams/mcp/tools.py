@@ -68,16 +68,13 @@ ERR_STORE = "STORE_ERROR"
 #: unexpected server-side failure.
 ERR_INTERNAL = "INTERNAL_ERROR"
 
-#: Frozen capability vocabulary (contract §4).
-CAPABILITY_VOCABULARY: tuple[str, ...] = (
-    "entries:write",
-    "entries:read:dept",
-    "entries:read:self",
-    "aggregate:read:dept",
-    "aggregate:read:company",
-    "entries:link:work_item",
-    "export:dept",
-)
+# NOTE: there is deliberately no capability list in this file.  There used to be
+# a `CAPABILITY_VOCABULARY` copy of the frozen set (contract §4); nothing ever
+# read it, so it only drifted from `oams.descriptor.CAPABILITIES` -- which is the
+# set validation actually enforces, including which entries are not implemented
+# yet (`UNIMPLEMENTED_CAPABILITIES`).  Read the capability list from the contract
+# module through `_import_contract("descriptor", "CAPABILITIES")`; a second copy
+# is a second answer to the same question.
 
 #: Frozen standard-field vocabulary (contract §5), used by list_canonical_fields
 #: as a fallback when `oams.descriptor` is still on the 0.1 field list.

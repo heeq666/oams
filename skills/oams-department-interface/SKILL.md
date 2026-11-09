@@ -68,7 +68,7 @@ python -m oams.cli plugin upgrade old.yaml             # 存量 0.1 描述自动
 2. **列出部门自己的字段与黑话。** 每个字段决定 ``map_to``（标准字段 / `display_only`）与 `aggregatable`。
 3. **选模块。** 只能从 21 个预设模块里选（7 容器 / 6 录入 / 8 展示）。默认优先 `progress_row` + `blocker_list` 做录入、`metric_grid` + `flow_strip` 做展示。
 4. **写状态映射表。** 部门每个状态词 → 四个标准状态之一。
-5. **声明能力与指标。** `capabilities` 没有声明就没有权限（`entries:write` / `entries:read:dept` / `entries:read:self` / `aggregate:read:dept` / `aggregate:read:company` / `entries:link:work_item` / `export:dept`）；部门自建指标命名必须是 `dept.<ORG_CODE>.<slug>`，平台指标只能引用不能改口径。
+5. **声明能力与指标。** `capabilities` 没有声明就没有权限，能声明的只有六条：`entries:write` / `entries:read:dept` / `entries:read:self` / `aggregate:read:dept` / `aggregate:read:company` / `entries:link:work_item`。词汇表里还有第七条 `export:dept`（导出本部门明细），**v1 没有实现，别写**——写了校验直接拒，错误码 `CAPABILITY_NOT_IMPLEMENTED`；需要导出就跟部门说用页面上的现有入口。部门自建指标命名必须是 `dept.<ORG_CODE>.<slug>`，平台指标只能引用不能改口径。
 6. **check → preview → 试填一遍。** 用一个代表性事项走完整流程：能不能 5 分钟填完；缺依据时是否被拦住；填完能不能进公司汇总（需要关联到工作项）。
 7. **提审。** 每一版都要过审，但审核看的是 **diff**；`pending` 期间旧版照常服务，不会中断部门使用。
 

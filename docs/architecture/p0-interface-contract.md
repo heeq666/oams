@@ -228,7 +228,7 @@ def validate_descriptor(descriptor, known_org_unit_codes=None,
 `require_recorded_approval`（默认 `False`）：为 `True` 时要求文档已带**系统写入的**批准记录（见 §4.1）。**只在两条没有审核过程的路上用**——「管理员直接建上线页」（`/setup/interfaces`）和 CLI 自检（`oams plugin check`）：这两处没有任何人签过字，文件必须自带批准，否则等于用导入绕开审核。部门新建、提交审核、升级自检（`upgrade.py`）**都不传**，走默认口径：校验判断的是「这份文档合不合规」，不是「它被没被批过」——后者是流程状态，不该藏在文档校验里。
 
 新增错误码（拒绝原因分类，写进 `meta.reject_codes` 文档用）：
-`FIELD_UNMAPPED` / `STATUS_UNMAPPED` / `METRIC_UNDEFINED` / `CAPABILITY_ESCALATION` / `MODULE_NOT_WHITELISTED` / `LAYOUT_TOO_DEEP` / `DATA_RULE_VIOLATION`。
+`FIELD_UNMAPPED` / `STATUS_UNMAPPED` / `METRIC_UNDEFINED` / `CAPABILITY_ESCALATION` / `CAPABILITY_NOT_IMPLEMENTED` / `MODULE_NOT_WHITELISTED` / `LAYOUT_TOO_DEEP` / `DATA_RULE_VIOLATION`。
 每条问题消息前缀必须带错误码，格式：`"[LAYOUT_TOO_DEEP] modules[root]: ..."`。
 
 ---
@@ -240,6 +240,10 @@ entries:write            entries:read:dept       entries:read:self
 aggregate:read:dept      aggregate:read:company  entries:link:work_item
 export:dept
 ```
+
+**`export:dept` 在本集合里，但 v1 没有实现，声明即拒。** 集合是冻结的（第三方 AI 照着它认识词汇），实现状态是另一件事：没有导出接口、没有对应范围、没有任何一行代码读它。留成「可声明、不可用」比不留更糟——页面会告诉部门负责人「可以导出本部门明细」，而这个承诺要等人真去点才发现是空的。
+
+`app/oams/descriptor.py:104` 的 `UNIMPLEMENTED_CAPABILITIES` 记着这份名单，校验时命中即报 `CAPABILITY_NOT_IMPLEMENTED`（`_check_capabilities`）。**将来谁真做出导出，就在同一笔里把它从 `UNIMPLEMENTED_CAPABILITIES` 删掉**——用例 `tests/test_descriptor_v02.py` 会盯着「名单里写的东西必须真在冻结集合里」，删反了会红。
 
 公司终审只看**三条判据**（`app/oams/review.py:207` `needs_company_review()`），满足任一条就不能由部门自己签完：
 

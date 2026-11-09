@@ -22,6 +22,7 @@ from oams.descriptor import (  # noqa: E402
     SCHEMA_VERSIONS,
     PLATFORM_DERIVED_FIELDS,
     STANDARD_FIELD_VOCAB,
+    UNIMPLEMENTED_CAPABILITIES,
     DescriptorError,
     assert_descriptor,
     layout_depth,
@@ -109,8 +110,14 @@ def test_constants_are_frozen():
     assert len(CAPABILITIES) == 7
     assert REJECT_CODES == (
         "FIELD_UNMAPPED", "STATUS_UNMAPPED", "METRIC_UNDEFINED", "CAPABILITY_ESCALATION",
+        "CAPABILITY_NOT_IMPLEMENTED",
         "MODULE_NOT_WHITELISTED", "LAYOUT_TOO_DEEP", "DATA_RULE_VIOLATION",
     )
+    # Whatever is marked unimplemented must still be a *declared* capability:
+    # otherwise the mark points at nothing, and a later removal from the frozen
+    # set would silently leave the rejection testing an empty string.
+    assert set(UNIMPLEMENTED_CAPABILITIES) <= set(CAPABILITIES)
+    assert UNIMPLEMENTED_CAPABILITIES, "the mark exists for a reason; an empty tuple means dead code"
 
 
 def test_reference_fixture_is_valid():
@@ -247,6 +254,43 @@ def test_unknown_capability_is_escalation():
     problems = validate_descriptor(broken)
     assert codes(problems) == ["CAPABILITY_ESCALATION"]
     assert "entries:delete:any" in problems[0]
+
+
+def test_export_capability_is_refused_because_nothing_implements_it():
+    """`export:dept` is in the frozen vocabulary and has no code behind it.
+
+    Declaring it used to validate clean, which is the worst of both worlds: the
+    page told a department head they may export the department's rows, and the
+    promise was discovered to be empty only when a human clicked it.  The frozen
+    set stays as it is (it is what a third-party AI reads the vocabulary from);
+    the declaration itself is refused, by name and with its own code.
+    """
+    broken = base(capabilities=["entries:write", "export:dept"])
+    problems = validate_descriptor(broken)
+    assert codes(problems) == ["CAPABILITY_NOT_IMPLEMENTED"]
+    assert "export:dept" in problems[0]
+    assert "no implementation" in problems[0]
+
+
+def test_the_other_six_capabilities_still_validate():
+    """The refusal must not become a blanket one: six of the seven are real."""
+    for capability in CAPABILITIES:
+        if capability in UNIMPLEMENTED_CAPABILITIES:
+            continue
+        problems = validate_descriptor(base(capabilities=[capability]))
+        assert problems == [], f"{capability} should validate clean, got {problems}"
+
+
+def test_every_unimplemented_capability_names_a_real_capability():
+    """Guard the marker itself: it must never name something that is not declared.
+
+    This is the failure mode that makes a gate useless -- a typo in the marker
+    list rejects nothing at all while reading as if it did.
+    """
+    for capability in UNIMPLEMENTED_CAPABILITIES:
+        assert capability in CAPABILITIES, f"{capability} is not in the frozen set"
+        descriptor = base(capabilities=[capability])
+        assert codes(validate_descriptor(descriptor)) == ["CAPABILITY_NOT_IMPLEMENTED"]
 
 
 def test_company_aggregate_is_a_flow_question_not_a_document_field():

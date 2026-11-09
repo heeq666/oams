@@ -87,6 +87,22 @@ CAPABILITIES: tuple[str, ...] = (
 #: Capabilities that need a recorded second-level approval (concept §4.5).
 REVIEWED_CAPABILITIES: tuple[str, ...] = ("aggregate:read:company",)
 
+#: Capabilities that are in the frozen set but have no implementation yet.
+#:
+#: `export:dept` was frozen into the vocabulary early (contract §4) and then
+#: never built: no exporter, no endpoint, no scope.  Leaving it merely
+#: *declarable* was worse than leaving it out -- a page could tell a department
+#: head "you may export this department's rows" while nothing anywhere could do
+#: it, and the failure only showed up when a human clicked the thing.
+#:
+#: So they stay in `CAPABILITIES` (the set is frozen, and the freeze is what
+#: tells a third-party AI what the vocabulary is) but are rejected at validation
+#: time with `CAPABILITY_NOT_IMPLEMENTED`.  When one of them is built for real,
+#: delete it from this tuple in the same change that ships the implementation.
+#: `tests/test_descriptor_v02.py` pins the invariant that this stays a subset of
+#: `CAPABILITIES`, so removing it from the vocabulary cannot silently orphan it.
+UNIMPLEMENTED_CAPABILITIES: tuple[str, ...] = ("export:dept",)
+
 #: Reject-reason codes (contract §3 / concept §4.4). Every v0.2 problem message
 #: starts with one of them, in brackets, before the path.
 REJECT_CODES: tuple[str, ...] = (
@@ -94,6 +110,7 @@ REJECT_CODES: tuple[str, ...] = (
     "STATUS_UNMAPPED",
     "METRIC_UNDEFINED",
     "CAPABILITY_ESCALATION",
+    "CAPABILITY_NOT_IMPLEMENTED",
     "MODULE_NOT_WHITELISTED",
     "LAYOUT_TOO_DEEP",
     "DATA_RULE_VIOLATION",
@@ -551,6 +568,11 @@ def _check_capabilities(problems: _Problems, descriptor: dict, version: str) -> 
             problems.add("CAPABILITY_ESCALATION", f"capabilities[{capability}]",
                          f"is not a declared capability; the frozen set is {list(CAPABILITIES)}")
             continue
+        if capability in UNIMPLEMENTED_CAPABILITIES:
+            problems.add("CAPABILITY_NOT_IMPLEMENTED", f"capabilities[{capability}]",
+                         "is in the frozen vocabulary but has no implementation in v1; "
+                         f"unimplemented: {list(UNIMPLEMENTED_CAPABILITIES)}")
+            continue
         if capability in declared:
             problems.add("DATA_RULE_VIOLATION", f"capabilities[{capability}]",
                          "is declared twice")
@@ -823,7 +845,8 @@ __all__ = [
     "MODULE_REGISTRY", "PLATFORM_DERIVED_FIELDS", "REJECT_CODES",
     "REQUIRED_TOP_LEVEL_KEYS",
     "REVIEWED_CAPABILITIES", "SCHEMA_VERSIONS", "STANDARD_FIELDS",
-    "STANDARD_FIELD_VOCAB", "STANDARD_STATUSES", "V02_ONLY_MODULE_KEYS",
+    "STANDARD_FIELD_VOCAB", "STANDARD_STATUSES", "UNIMPLEMENTED_CAPABILITIES",
+    "V02_ONLY_MODULE_KEYS",
     "V02_ONLY_TOP_LEVEL_KEYS", "VISIBILITIES", "assert_descriptor",
     "layout_depth", "recorded_approval_gaps", "validate_descriptor",
 ]

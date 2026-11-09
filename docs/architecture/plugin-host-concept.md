@@ -251,7 +251,7 @@ capabilities:
   - aggregate:read:dept      # 读本部门汇总
   - aggregate:read:company   # 读全公司汇总（高风险，需二级审批）
   - entries:link:work_item   # 把条目关联到公司级工作项
-  - export:dept              # 导出本部门明细
+  - export:dept              # 导出本部门明细（v1 未实现：写了会被拒，见契约 §4）
 ```
 
 **没有声明 = 没有权限**，不靠前端隐藏，靠后端拒绝。这样「部门做的插件会不会越权看别人数据」这个问题，在架构上就不存在了。
