@@ -109,7 +109,12 @@
 
   以前这句写的是「未实现」，那是错的，也有害——它让下一个人以为整个都没动，于是既不补管理面、也没人发现工作项面已经能用。实际形状是**两块**：
 
-  - **工作项一族：已做。** `security.effective_grants`（`app/oams/security.py:383`）支持两档——不传 `org_unit_id` 问「有没有这个权」，传了就只算全公司的加上正好这个部门的；另有 `company_only=True` 只认 `scope_type='all'`。用它收敛过的端点 6 个：`GET /v1/me`（`api.py:120`）、`GET /v1/work-items`（`:573`）、`POST /v1/work-items`（`:608`）、`PATCH /v1/work-items/{work_item_id}`（`:621`）、`GET /v1/work-items/{work_item_id}/reports`（`:703`）、`GET /v1/board/org-units/{org_unit_id}`（`:967`）。依据：逐路由函数 AST 扫描（按每个函数自己的 `end_lineno` 取函数体，字符串里出现 `has_company_scope` / `active_org_unit_ids` / `require_org_unit_access` / `granted_org_unit_ids` / `accessible_org_unit_ids` 即算有收敛）。
+  - **工作项一族：已做。** `security.effective_grants`（`app/oams/security.py:383`）支持两档——不传 `org_unit_id` 问「有没有这个权」，传了就只算全公司的加上正好这个部门的；另有 `company_only=True` 只认 `scope_type='all'`。用它收敛过的端点 **6 个**：`GET /v1/me`（`api.py:123`）、`GET /v1/work-items`、`POST /v1/work-items`、`PATCH /v1/work-items/{work_item_id}`、`GET /v1/work-items/{work_item_id}/reports`、`GET /v1/board/org-units/{org_unit_id}`。
+
+    依据与判据（写清楚，因为这组数会被照抄）：逐路由函数 AST 扫描，按每个函数自己的 `lineno..end_lineno` 取函数体（按行号粗切会把下一个函数的守卫算进来，我第一版就这么错过一次）。判据两条，**直接或间接都算**：
+    ① 函数体里出现 `has_company_scope` / `active_org_unit_ids` / `require_org_unit_access` / `granted_org_unit_ids` / `accessible_org_unit_ids` —— 命中 5 个；
+    ② 函数体里调了 `writable_org_units`（`api.py:71`，内部自己调 `has_company_scope` 与 `accessible_org_unit_ids`）—— 多命中 `GET /v1/me` 一个。
+    所以「6」这个数依赖②：**只数直接守卫是 5，加上间接的是 6**。别把 6 当成「6 处写了 SQL 过滤」。
   - **管理面：没做，而且缺的不是过滤，是「范围」这个概念本身。** 其余 26 个端点无任何收敛，`require_permission`（`security.py:821`）内部调 `has_permission` 不传 `org_unit_id`，等于问「他有没有这个权」而不问「在哪儿」。所以当前真相是：**读权 = 全公司读权**。实测（2026-11-09，C经理，开发库）：只授某部门范围 `workforce.members/read` 的成员打 `GET /v1/members` → 200，读到 3 人，其中含另一个部门的成员；同一张票打 `/v1/grants`、`/v1/audit-events`、`/v1/org-units` 是 403（权限本身不够），所以「有读权就看全公司」这条在 `list_members`（`api.py:264`，连 `scope` 参数都没有）上是实锤。同类还有 `GET /v1/grants`（`api.py:358`，返回全公司授权行）、`GET /v1/audit-events`（`api.py:1012`，返回全公司审计）。
 
   **结论：仍然不能向普通成员发令牌**，但理由要换——不是「一条都没做」，而是「管理面把读权当成了全公司读权」。扩第二个部门前要补的是管理面的范围收敛，不是重做工作项那一半。
