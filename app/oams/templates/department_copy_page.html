@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}照着做一版 · {{ unit.name }}{% endblock %}
+{% block content %}
+<nav class="page-tabs" aria-label="部门内页面">
+  {% for p in pages %}
+    {# 与工作台同一口径：一律用不随版本变化的地址，待审页也能打开。 #}
+    <a href="/pages/{{ unit.org_code }}/{{ p.slug }}" class="page-tab">
+      {{ p.name }}
+      {% if p.status == 'pending' %}<span class="badge decision">审核中</span>
+      {% elif p.status != 'active' %}<span class="badge vacant">待提交</span>{% endif %}
+    </a>
+  {% endfor %}
+  <a class="page-tab add on" aria-current="page" href="/departments/{{ unit.org_unit_id }}/new">＋ 新页面</a>
+</nav>
+
+<h1>照着「{{ source.name }}」做一版</h1>
+<p class="sub">来源：{{ source.org_name }}。会把这一页的字段、模块和版式照搬过来，<b>条目的内容不会跟过来</b>——那些是来源部门的数。新页照样是<b>待提交审核</b>。</p>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/departments/{{ unit.org_unit_id }}/copy">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="source_id" value="{{ source.interface_id }}">
+  <section class="card" style="margin-bottom:12px">
+    <div class="form-row">
+      <div class="field"><label for="name">页面名称</label>
+        <input id="name" name="name" required maxlength="200" value="{{ source.name }}"></div>
+      <div class="field"><label for="slug">页面标识</label>
+        <input id="slug" name="slug" required maxlength="80" value="{{ source.slug }}"
+               placeholder="如 design-weekly-sampling">
+        <p class="sub" style="margin:0">用英文小写与连字符；本部门已有同名页面时会被拦下。</p></div>
+      <div class="field"><label for="position_id">给哪个岗位填</label>
+        <select id="position_id" name="position_id" required>
+          {% for p in positions %}<option value="{{ p.position_id }}">{{ p.title }}（{{ p.position_code }}）</option>{% endfor %}
+        </select>
+        <p class="sub" style="margin:0">这一页只给选中的岗位看。来源页原来的岗位照不过来，得自己选。</p></div>
+    </div>
+  </section>
+  <button type="submit">复制到本部门</button>
+</form>
+
+<p class="sub" style="margin-top:16px">如果要改字段或模块，等这一版建好再在这页上改；也可以回<a href="/departments/{{ unit.org_unit_id }}/new?based_on={{ source.interface_id }}">建页页</a>自己写整份描述。</p>
+{% endblock %}
