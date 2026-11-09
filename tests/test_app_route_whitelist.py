@@ -236,6 +236,60 @@ def test_a_ticket_in_a_cookie_cannot_open_the_workbench(world):
 
 
 # ---------------------------------------------------------------------------
+# ③b 票只能断开它自己那条：白名单放行了「断开自己」，不等于放行「断开别人」
+# ---------------------------------------------------------------------------
+
+
+def test_a_ticket_can_only_revoke_its_own_authorization(world):
+    """只读票代表的人正好是公司管理员时，它能断掉谁的授权？
+
+    白名单把 `/api/apps/authorizations/{id}/revoke` 放给票了（票得能断开自己），
+    而共用实现 `revoke_authorization` 原本只判「本人或公司管理员」。于是这张只申请了
+    「读本部门条目」的票，凭它代表的那位管理员的身份，能把公司里任何一个人的授权断掉
+    ——票据范围在这一条上等于不存在（2026-11-09 实测）。
+    """
+
+    import psycopg
+
+    token = _read_only_ticket(world)
+
+    with psycopg.connect(world["url"], autocommit=True) as conn:
+        other = conn.execute(
+            """INSERT INTO oams.workforce_members (employee_code, display_name, employment_status)
+               VALUES ('PROBE02', '旁观者', 'active') RETURNING member_id""").fetchone()[0]
+        app_id = conn.execute("SELECT app_id FROM oams.connected_apps LIMIT 1").fetchone()[0]
+        foreign = conn.execute(
+            """INSERT INTO oams.app_authorizations (app_id, member_id, scopes, valid_until, approved_by)
+               VALUES (%s, %s, ARRAY['entries:read:dept'], now() + interval '7 days', %s)
+               RETURNING authorization_id""", (app_id, other, other)).fetchone()[0]
+
+    status, body = _call(world["base"], "POST",
+                         f"/api/apps/authorizations/{foreign}/revoke",
+                         {"reason": "票来断别人的"}, token)
+    assert status == 403, body
+    assert "只能断开它自己那条授权" in body["detail"], body
+
+    with psycopg.connect(world["url"], autocommit=True) as conn:
+        untouched = conn.execute(
+            "SELECT revoked_at FROM oams.app_authorizations WHERE authorization_id = %s",
+            (foreign,)).fetchone()
+    assert untouched[0] is None, "别人的授权被票断掉了"
+
+    # 同一张票断自己那条仍是通的——收窄不能收到「票连自己都断不了」。
+    status, body = _call(world["base"], "GET", "/v1/me", token=token)
+    assert status == 200, body
+    own = body["app"]["authorization_id"] if "authorization_id" in body.get("app", {}) else None
+    if own is None:
+        _, listed = _call(world["base"], "GET", "/api/apps/authorizations", token=token)
+        own = listed[0]["authorization_id"]
+    status, body = _call(world["base"], "POST",
+                         f"/api/apps/authorizations/{own}/revoke",
+                         {"reason": "断开自己"}, token)
+    assert status == 200, body
+    assert body["revoked"] is True, body
+
+
+# ---------------------------------------------------------------------------
 # ④ 人自己不受影响：普通会话票照旧能打管理面
 # ---------------------------------------------------------------------------
 

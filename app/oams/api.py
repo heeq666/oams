@@ -2262,11 +2262,16 @@ def list_app_authorizations(include_revoked: bool = False,
     return [dict(row) for row in rows]
 
 
-def revoke_authorization(conn, actor_member_id, authorization_id, reason: str) -> int:
+def revoke_authorization(conn, actor_member_id, authorization_id, reason: str, *,
+                         app_ticket: bool = False) -> int:
     """把一票断开，并吊销这个应用替这个人换出去的所有票；返回吊销了几张。
 
     「我的授权」那页与 JSON 出口共用这一条：断开这件事只有一个行为，不能两处各写一份。
     任何一刻都不留「票还没到期」的窗口——人点了断开，票就是断的。
+
+    `app_ticket=True` 是接入方自己拿票来断开：只许断**它自己那条**。不这么收的话，
+    一张只申请了「读本部门条目」的票，只要它代表的人恰好是公司管理员，就能把公司里
+    任何一个人的授权断掉——票据范围在这一条上等于不存在（2026-11-09 实测）。
     """
 
     row = conn.execute(
@@ -2275,8 +2280,13 @@ def revoke_authorization(conn, actor_member_id, authorization_id, reason: str) -
             WHERE a.authorization_id = %s""", (authorization_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="没有这条授权")
-    if row["member_id"] != actor_member_id and not has_company_scope(conn, actor_member_id):
-        raise HTTPException(status_code=403, detail="只有被代表的本人或公司管理员能撤销")
+    if row["member_id"] != actor_member_id:
+        if app_ticket:
+            raise HTTPException(
+                status_code=403,
+                detail="这张票只能断开它自己那条授权：别人的授权得那个人自己在工作台上断开")
+        if not has_company_scope(conn, actor_member_id):
+            raise HTTPException(status_code=403, detail="只有被代表的本人或公司管理员能撤销")
     if row["revoked_at"] is not None:
         return 0
     conn.execute(
@@ -2307,7 +2317,8 @@ def revoke_app_authorization(authorization_id: UUID, payload: AppRevokeRequest |
 
     reason = (payload.reason.strip() if payload and payload.reason else "") or "revoked from the API"
     with connection() as conn:
-        killed_count = revoke_authorization(conn, principal["member_id"], authorization_id, reason)
+        killed_count = revoke_authorization(conn, principal["member_id"], authorization_id, reason,
+                                            app_ticket=app_id_of(principal) is not None)
     return {"authorization_id": str(authorization_id), "revoked": True,
             "sessions_revoked": killed_count}
 
