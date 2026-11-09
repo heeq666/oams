@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 
 from oams.config import settings
 from oams.db import connection
+from oams.sensitive_fields import registry_rows, sensitive_keys_in
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -412,6 +413,41 @@ def has_permission(conn, member_id: Any, resource: str, action: str, *,
     if not grants:
         return False
     return not any(grant["effect"] == "deny" for grant in grants)
+
+
+#: 读人事敏感字段的权限。**不随「管理层」自动获得**：管理员是运维角色，技术权限不该
+#: 自动换成业务字段的读权（判据在 `sensitive_fields` 模块开头，六个字段全部要单独授权）。
+SENSITIVE_FIELD_RESOURCE = "employee.sensitive_field"
+
+
+def can_read_sensitive_field(conn, member_id: Any, field_key: str) -> bool:
+    """这一格敏感字段他能不能看明文。
+
+    判据两层，缺一不可：
+
+    1. 这一格**登记过**——没登记的敏感键一律不可读。不是「无所谓」，是「没人判过」；
+    2. 登记行说要单独授权（`requires_explicit_grant`）时，他得有
+       `employee.sensitive_field:read` 的授权。登记行说不必单独授权（这家公司不把它
+       当敏感），就按登记表放行——口径跟着库走，不跟着代码里的出厂设置走。
+    """
+    row = registry_rows(conn).get(field_key)
+    if row is None:
+        return False
+    if not row["requires_explicit_grant"]:
+        return True
+    return has_permission(conn, member_id, SENSITIVE_FIELD_RESOURCE, "read")
+
+
+def readable_sensitive_fields(conn, member_id: Any, columns) -> frozenset[str]:
+    """这些列里，他能看明文的那些敏感键。
+
+    没有敏感列时**不查库**（今天的人员表就是这种情况）——闸门还在，只是没有需要打码
+    的字段，别为了「看起来在跑」多打一次库。
+    """
+    keys = sensitive_keys_in(columns)
+    if not keys:
+        return frozenset()
+    return frozenset(key for key in keys if can_read_sensitive_field(conn, member_id, key))
 
 
 def shared_org_unit_ids(conn, member_id: Any) -> set[Any]:

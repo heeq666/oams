@@ -100,3 +100,94 @@ def registry_rows(conn) -> dict[str, dict[str, Any]]:
              FROM oams.sensitive_field_registry ORDER BY field_key"""
     ).fetchall()
     return {row["field_key"]: row for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# 人员表的列分类：闸门靠它判断「这个字段能不能出去」
+# ---------------------------------------------------------------------------
+
+#: 人员表。脱敏闸门只认这一张表——成员返回的每个字段都从这里的分类过一遍。
+PERSONNEL_TABLE = "workforce_members"
+
+#: 列 → 分类。**每一列都必须在这里有一行**：加列的人躲不过去，用例拿
+#: `information_schema` 双向核对（列没分类要红；分类里有已删的列也要红）。
+#:
+#: - `public`：不是个人信息，可以出现在返回里；
+#: - `internal`：内部字段（会话作废计数、时间戳），**永不返回**，连打码都不出现；
+#: - 其余：必须是一个**登记过的敏感键**（`sensitive_field_registry.field_key`）。
+#:
+#: 为什么由宿主分类、不由写页面的人声明：写页面的人是被闸的人。让他标「这一列敏感」，
+#: 他一个都不标就能拿明文——等于把钥匙交给被锁的人。
+PERSONNEL_COLUMNS: dict[str, str] = {
+    "member_id": "public",
+    "employee_code": "public",
+    "display_name": "public",
+    "employment_status": "public",
+    "token_version": "internal",
+    "joined_at": "public",
+    "departed_at": "public",
+    "created_at": "internal",
+    "updated_at": "internal",
+}
+
+#: `GET /v1/members` 返回的字段。它回答的是「我读得着谁」，不含任何人事敏感项。
+MEMBER_READ_FIELDS: tuple[str, ...] = (
+    "member_id",
+    "employee_code",
+    "display_name",
+    "employment_status",
+    "joined_at",
+    "departed_at",
+)
+
+_PUBLIC = "public"
+_INTERNAL = "internal"
+
+#: 打码后的样子。**不做「留前几位 / 后四位」的部分遮蔽**：薪资、身份证的后几位本身
+#: 就是可识别信息，部分遮蔽给的是「看起来安全」的假象。
+MASKED_VALUE = "***"
+
+
+class UnclassifiedPersonnelColumn(RuntimeError):
+    """人员表里有一列没分类——闸门不知道该不该放它出去，所以宁可报错也不返回。"""
+
+
+def sensitive_keys_in(columns) -> frozenset[str]:
+    """这些列里用到的敏感键（`public` / `internal` 不算）。列没分类直接抛错。"""
+    keys: set[str] = set()
+    for column in columns:
+        classification = PERSONNEL_COLUMNS.get(column)
+        if classification is None:
+            raise UnclassifiedPersonnelColumn(column)
+        if classification not in (_PUBLIC, _INTERNAL):
+            keys.add(classification)
+    return frozenset(keys)
+
+
+def mask_value(value):
+    """打码。`None` 保持 `None`——字段本来就没有值，打码不会多说明什么。"""
+    return None if value is None else MASKED_VALUE
+
+
+def project_member_row(row, *, readable=frozenset()) -> dict:
+    """把查出来的一行按分类投影成可以返回的样子。
+
+    这是**唯一的读取口**：`GET /v1/members` 的每一行都从这里出去，别处不再各写一遍
+    「要不要打码」。规则只有三条：
+
+    - 没分类的列 → 抛错（宁可 500，也不放一个没人判过的字段出去）；
+    - `internal` → 不出现（查询多选了也不出去）；
+    - 敏感键且不在 `readable` 里 → 打码。
+    """
+    out: dict = {}
+    for column, value in dict(row).items():
+        classification = PERSONNEL_COLUMNS.get(column)
+        if classification is None:
+            raise UnclassifiedPersonnelColumn(column)
+        if classification == _INTERNAL:
+            continue
+        if classification != _PUBLIC and classification not in readable:
+            out[column] = mask_value(value)
+        else:
+            out[column] = value
+    return out

@@ -24,8 +24,10 @@ from oams.security import (accessible_org_unit_ids, active_org_unit_ids,
                               has_all_scope_grant, current_principal,
                               has_company_scope, has_permission, issue_session, principal_for_token,
                               principal_from_request, readable_org_unit_ids,
+                              readable_sensitive_fields,
                               require_org_unit_access,
                               require_permission, revoke_session)
+from oams.sensitive_fields import MEMBER_READ_FIELDS, project_member_row
 
 app = FastAPI(title="Company OAMS API", version="0.1.0")
 
@@ -289,26 +291,32 @@ def list_members(actor: dict = Depends(require_permission("workforce.members", "
     部门级读者看不到：对他来说那是「范围外的人」，应当不出现，而不是打码。
     """
     with connection() as conn:
+        # 返回什么、要不要打码，只由 sensitive_fields 的那一个读取口决定。
+        # 今天六个字段全是 public，所以 readable 是空的、一行也不会打码；
+        # 但这一句必须在这里——它保证「以后加一列敏感字段」时不用再想起这件事。
+        readable = readable_sensitive_fields(conn, actor["member_id"], MEMBER_READ_FIELDS)
         units = readable_org_unit_ids(conn, actor["member_id"], "workforce.members", "read")
         if units is None:
-            return conn.execute(
+            rows = conn.execute(
                 """SELECT member_id, employee_code, display_name, employment_status, joined_at, departed_at
                    FROM oams.workforce_members ORDER BY display_name"""
             ).fetchall()
-        return conn.execute(
-            """SELECT m.member_id, m.employee_code, m.display_name, m.employment_status,
-                      m.joined_at, m.departed_at
-               FROM oams.workforce_members m
-               WHERE EXISTS (
-                     SELECT 1 FROM oams.position_assignments a
-                       JOIN oams.positions p USING (position_id)
-                      WHERE a.member_id = m.member_id
-                        AND a.status IN ('active', 'scheduled')
-                        AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)
-                        AND p.org_unit_id = ANY(%s))
-               ORDER BY m.display_name""",
-            (list(units),),
-        ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT m.member_id, m.employee_code, m.display_name, m.employment_status,
+                          m.joined_at, m.departed_at
+                   FROM oams.workforce_members m
+                   WHERE EXISTS (
+                         SELECT 1 FROM oams.position_assignments a
+                           JOIN oams.positions p USING (position_id)
+                          WHERE a.member_id = m.member_id
+                            AND a.status IN ('active', 'scheduled')
+                            AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at)
+                            AND p.org_unit_id = ANY(%s))
+                   ORDER BY m.display_name""",
+                (list(units),),
+            ).fetchall()
+        return [project_member_row(row, readable=readable) for row in rows]
 
 
 def insert_member(conn, payload: MemberCreate, actor_member_id: Any) -> dict[str, Any]:
