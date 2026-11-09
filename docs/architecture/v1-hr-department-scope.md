@@ -105,7 +105,16 @@
 
 ## 8. 前置阻塞（没做完不开 MCP 给员工用）
 
-- **行级范围过滤（当前缺口）**：`require_permission` 只认 `scope_type='all'`，工作项与看板接口对所有持 all-scope 读取权的人返回全量数据，**不能向普通成员发令牌**。第一版可粗粒度，扩部门前必须做通用
+- **行级范围过滤（做了一半，2026-11-09 按代码实际写实）**
+
+  以前这句写的是「未实现」，那是错的，也有害——它让下一个人以为整个都没动，于是既不补管理面、也没人发现工作项面已经能用。实际形状是**两块**：
+
+  - **工作项一族：已做。** `security.effective_grants`（`app/oams/security.py:383`）支持两档——不传 `org_unit_id` 问「有没有这个权」，传了就只算全公司的加上正好这个部门的；另有 `company_only=True` 只认 `scope_type='all'`。用它收敛过的端点 6 个：`GET /v1/me`（`api.py:120`）、`GET /v1/work-items`（`:573`）、`POST /v1/work-items`（`:608`）、`PATCH /v1/work-items/{work_item_id}`（`:621`）、`GET /v1/work-items/{work_item_id}/reports`（`:703`）、`GET /v1/board/org-units/{org_unit_id}`（`:967`）。依据：逐路由函数 AST 扫描（按每个函数自己的 `end_lineno` 取函数体，字符串里出现 `has_company_scope` / `active_org_unit_ids` / `require_org_unit_access` / `granted_org_unit_ids` / `accessible_org_unit_ids` 即算有收敛）。
+  - **管理面：没做，而且缺的不是过滤，是「范围」这个概念本身。** 其余 26 个端点无任何收敛，`require_permission`（`security.py:821`）内部调 `has_permission` 不传 `org_unit_id`，等于问「他有没有这个权」而不问「在哪儿」。所以当前真相是：**读权 = 全公司读权**。实测（2026-11-09，C经理，开发库）：只授某部门范围 `workforce.members/read` 的成员打 `GET /v1/members` → 200，读到 3 人，其中含另一个部门的成员；同一张票打 `/v1/grants`、`/v1/audit-events`、`/v1/org-units` 是 403（权限本身不够），所以「有读权就看全公司」这条在 `list_members`（`api.py:264`，连 `scope` 参数都没有）上是实锤。同类还有 `GET /v1/grants`（`api.py:358`，返回全公司授权行）、`GET /v1/audit-events`（`api.py:1012`，返回全公司审计）。
+
+  **结论：仍然不能向普通成员发令牌**，但理由要换——不是「一条都没做」，而是「管理面把读权当成了全公司读权」。扩第二个部门前要补的是管理面的范围收敛，不是重做工作项那一半。
+
+- **票据范围不收窄（2026-11-09 记，已派给后端）**：`api.require_app_scope()` 在 `app/oams/web.py` 有 12 处调用、在 `app/oams/api.py` **0 处**（`api.py:1963` 只有定义）。实测只申请 `entries:read:dept` 的票能 `POST /v1/org-units` 建部门、`POST /v1/members` 建成员、`POST /v1/grants` 发 company 级授权。与上一条同源（管理面不认范围），但修复要分开做：这条要求白名单式收窄，上一条要求范围收敛。
 - 敏感字段脱敏与逐条审计
 - ~~迁移 0002 的四个补齐项~~ ✅ 已完成并实测
 - ~~服务器上建独立库、专用账号~~ ✅ 已完成，迁移已应用，首管理员已建

@@ -324,7 +324,16 @@ draft ──提交──▶ pending ──通过──▶ active ──新版本
 - **能力**（capability）：能做什么。如 `workforce.reports/submit`
 - **范围**（scope）：对谁做。`company` / `org_unit:子树` / `self`
 
-判定顺序：**先能力，再范围，最后行级过滤**。行级过滤必须下沉到数据层（SQL 的 WHERE），不能只靠路由层挡住——现有代码里 `security.py` 的 `effective_grants` 只认 `scope_type='all'`，行级判断散落在 `api.py:473-475`、`web.py:891+` 各处，这是要在重做时一并修掉的。
+判定顺序：**先能力，再范围，最后行级过滤**。行级过滤必须下沉到数据层（SQL 的 WHERE），不能只靠路由层挡住。
+
+**现状（2026-11-09 按代码与实测写实，取代原先「`effective_grants` 只认 `scope_type='all'`」的说法）：**
+
+- `security.effective_grants`（`app/oams/security.py:383`）**已经支持两档范围**——不传 `org_unit_id` 问「有没有这个权」，传了只算全公司的加正好这个部门的；`company_only=True` 时只认 `scope_type='all'`。所以「只认 all」这句不成立了。
+- **工作项一族已按它收敛**（6 个端点：`/v1/me`、`/v1/work-items` 读写、`/v1/work-items/{id}/reports` 读、`/v1/board/org-units/{id}`）。
+- **管理面没有收敛，而且缺的不是行级 WHERE，是「范围」这个维度本身**：`require_permission`（`security.py:821`）内部调 `has_permission` 不传 `org_unit_id`，等于只问「他有没有这个权」而不问「在哪儿」。结果是**读权 = 全公司读权**。实测（开发库）：只授某部门 `workforce.members/read` 的成员 `GET /v1/members` 返回 200 且含别部门成员。
+- 另有一条同期发现、与本节同源但修法不同：**票据范围不收窄**——`api.require_app_scope()` 在 `app/oams/web.py` 有 12 处调用、`app/oams/api.py` 0 处（`api.py:1963` 只有定义），只申请 `entries:read:dept` 的票能建部门、建成员、发 company 级授权。这条要白名单式收窄，上面那条要范围收敛，别当成一件事修。
+
+所以重做时要做的是**给管理面引入范围**，不是重写工作项那一半。
 
 ### 5.2 数据主权矩阵
 

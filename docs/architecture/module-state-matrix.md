@@ -2,7 +2,7 @@
 
 > 状态：**已定稿，可当验收口径用**（2026-10-30）。
 > 口径来源：`docs/design/module-refinement-checklist.md`（277 行，G1–G17 + 20 模块逐条）。清单里的 8 条待拍板**已全拍**（§1.2），复核时又追加的 6 条也已拍完（§5），本文件一律按拍板后的口径写，**不按清单里的「待拍板」原文**。
-> 怎么用：§3 的三张表就是验收表。逐格对照——格子里的文案要一字不差，状态缺失、文案不对、多出「加载失败」列、模块上冒出汇总角标，都算不通过。§4.1 是模板还欠的文案改动清单，交给界面在 B2 / B3 批改。
+> 怎么用：§3 的三张表就是验收表。逐格对照——格子里的文案要一字不差，状态缺失、文案不对、多出「加载失败」列、模块上冒出汇总角标，都算不通过。§4.1 的文案清单已于 2026-11-09 核对完毕作废（仅余两条未落地，见该节）。
 >
 > **画布指针说明（2026-11-01）**：文中出现的 Figma 页名与节点 id 指的是内部设计画布，该画布已随内部件搬出本仓（`316cf3a`）；这些名字保留作历史记录，**界面口径以 `docs/design/design-system-v1.md` 为准**。
 
@@ -18,7 +18,7 @@
 
 preview 不是「只读 + 角标」——那套旧方案**整体作废**，不是只把只读换成可填。审核审的是**这页的定义**：字段对不对、控件类型对不对、表列够不够，只读态看不出来。`disabled` 不参与提交，安全性不降。
 
-「进汇总 / 不进汇总」是 **descriptor 的属性**，不是模块长出来的东西：它出现在 `preview_descriptor` 返回的 `aggregates_preview` 里；**网页端目前没有预览页**，审核要看定义走 MCP 或 CLI，模块自身不画（2026-10-30 拍板，见 §5 第 6 条）。
+「进汇总 / 不进汇总」是 **descriptor 的属性**，不是模块长出来的东西：它出现在 `preview_descriptor` 返回的 `aggregates_preview` 里；网页端已有预览页（`app/oams/web.py:2327`，见 §4.3），但**还没显示这个判定**，模块自身仍不画（2026-10-30 拍板，见 §5 第 6 条）。
 
 ### 1.2 八条拍板（2026-10-30 定）
 
@@ -43,7 +43,7 @@ preview 不是「只读 + 角标」——那套旧方案**整体作废**，不�
 
 ### 1.4 文案与符号
 
-- 空态统一句式 **「还没有 X。」**（清单里 `rank_list` 的「暂无排行数据。」、`activity_feed` 的「暂无动态。」按此改写；模板原文见 §4.1 文案清单）。
+- 空态统一句式 **「还没有 X。」**（`rank_list` 的「还没有排行数据。」、`activity_feed` 的「还没有动态。」均已按此改写，2026-11-09 核）。
 - 字段缺的占位固定三个：**「未填写标题」「未排期」「未指定」**，其余一律 `—`。
 - `—` 是 U+2014。**G5 已在代码里收口**：`render.py:226` 是 `EMPTY = "\u2014"`，`aggregate()`（`:497`）与 `format_number()`（`:229`）空值都返回 `EMPTY`，不再有 `--`；模板里剩下的 `&mdash;`（如 `progress_row.html:16`）渲染出来就是 `—`，等价，不用改。
 - **空值与 0 必须分开**：未填的进度是 `—` + 空轨道，不是 0% + 空条。**G4 也已收口**：`progress_percent()`（`render.py:394-402`）空值返回 `None`，`progress_row.html:16` 已按 `{% if pct is none %}&mdash;{% endif %}` 分支。
@@ -149,7 +149,7 @@ preview 不是「只读 + 角标」——那套旧方案**整体作废**，不�
 
 ### 3.3 preview 视图（`preview`）
 
-preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块上**不画角标**——「进汇总 / 不进汇总」属 descriptor，归 `preview_descriptor` 返回的 `aggregates_preview`（§5 第 6 条）；网页端没有预览页，看预览走 MCP 或 CLI。
+preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块上**不画角标**——「进汇总 / 不进汇总」属 descriptor，归 `preview_descriptor` 返回的 `aggregates_preview`（§5 第 6 条）；网页端预览页已存在（§4.3），但尚未显示这个判定，要看判定仍走 MCP 或 CLI。
 
 唯一例外是 `tabs` 的 tab 条：它是**切换控件不是数据控件**，只换面板不动数据，edit / readonly / preview 三视图都保持可操作（§5 第 1 条）；面板里的字段控件才跟 mode 走。
 
@@ -180,40 +180,37 @@ preview = **可填形态 + 假值 + 控件 `disabled tabindex="-1"`**。模块�
 
 ## 4. 缺口与待改文案
 
-### 4.1 文案清单（交给界面，B2 / B3 批次一起改）
+### 4.1 文案清单（2026-11-09 作废）
 
-矩阵按「目标文案」写，下面这些模板还是旧文案或压根没有空态。表里的路径都在 `app/oams/templates/modules/` 下，行号按 2026-10-30 的工作区版本。**改完这张表就作废**。
+原表 14 行，按本节自己的约定「**改完这张表就作废**」已于 2026-11-09 逐行核对后删除。核对方式：`grep` 每行「目标文案」在 `app/oams/templates/modules/` 下是否命中，命中即视为落地；判据是模板里的字面文案，不是 §3 的表格。
 
-| 模块 | 视图 | 目标文案 | 模板位置 | 动作 |
-| --- | --- | --- | --- | --- |
-| `rank_list` | 空 | 还没有排行数据。 | `rank_list.html:19` | 改（现为「暂无排行数据。」） |
-| `activity_feed` | 空 | 还没有动态。 | `activity_feed.html:17` | 改（现为「暂无动态。」） |
-| `blocker_list` | 空 | 当前没有阻塞。 | `blocker_list.html:14` | 改：`.wh-note` → `.wh-empty`，且只在「确实没有阻塞」时出 |
-| `blocker_list` | 不全 | 未填写原因 | `blocker_list.html:14` | 新增：`blocked_reason` 空但状态是 blocked 时出这句，**与空态分开**（现在两者共用一个 `or`，缺原因会错显示「当前没有阻塞」） |
-| `table` | 空 | 还没有明细。+「加第一行」 | `table.html:27` | 改（现为「这个明细表还没有配置列。」——把配置错文案给了终端用户） |
-| `table` | 配置错 | 缺列配置：这个表还没声明列 | `table.html:27` | 新增：`columns` 空时用这句，只走 `check` / preview，不进空态 |
-| `timeline` | 空 | 还没有里程碑。+「加第一个节点」 | `timeline.html:25` 前插入 | 新增（现在 `milestones` 空时啥也不渲染） |
-| `metric_input` | 空 | 未填 | `metric_input.html:15` | 新增：`format_number()` 返回 `EMPTY` 时值位显示「未填」（12 号 `text/muted`），不是 `—`——这里表达的是「这个指标这期没报」 |
-| `evidence_gallery` | 空（填报） | 还没有上传证据。 | `evidence_gallery.html:14` 前插入 | 新增（现在无空态） |
-| `evidence_gallery` | 空（只读） | —（整块不渲染） | — | 不写：只读剔除，这句只在 `preview` 空态用（§3.3 第 13 行已改） |
-| `status_chart` | 空 | 还没有状态数据。 | `status_chart.html:6` 前插入 | 新增：`rows` 空时不画空轨道 |
-| `note_block` | 空 | （无文案，整块隐藏） | `note_block.html:3` | 改：`text` 空 → `<section>` 整个不渲染（现在是空框） |
-| `progress_row` | 不全 | 未填写标题 | `progress_row.html:14` | 保留 |
-| `timeline` | 不全 | 未填写里程碑 / 未排期 | `timeline.html:25` / `:27` | 保留 |
+**14 行里 12 行已落地**（依据：逐文件读模板，行号为 2026-11-09 版本）：
+`rank_list.html:18`「还没有排行数据。」、`activity_feed.html:17`「还没有动态。」、`blocker_list.html:18`「当前没有阻塞。」（且 `:16` 的「未填写原因」与空态已用 `{% if %}/{% elif %}/{% else %}` 分开，不再是原来的 `or` 共用一个条件）、`table.html:34` 三态已分（`inline_widgets()` 出「缺列配置：这个表还没声明列。」否则「还没有明细。」）、`timeline.html:16`「还没有里程碑。」、`metric_input.html:14` 出「未填」、`status_chart.html:9`「还没有状态数据。」、`note_block.html` `{% if p.get('text') %}` 空则整块不渲染（不再是空框）、`progress_row.html:13`「未填写标题」、`timeline.html:26`「未填写里程碑」/`:28`「未排期」。
+
+**剩两条没落地，留在这里备查**（依据：`grep "还没有上传证据"` 全仓只命中两份文档、`grep "加第一行"` / `grep "加第一个节点"` 在 `app/oams/templates/` 下 0 命中）：
+
+| 模块 | 视图 | 目标文案 | 现状 |
+| --- | --- | --- | --- |
+| `evidence_gallery` | 空（填报 / preview） | 还没有上传证据。 | 无空态：`evidence_gallery.html` 在 `url` 为空时不渲染任何替代文案，整块只剩标题输入与「没有数据」的空白 |
+| `table` / `timeline` | 空 | 空态后缀「加第一行」/「加第一个节点」（`plus`） | 空态句子在，**动作后缀不在**；`grep` 确认 `plus` 这个动作在模块层模板里没有任何实现（全仓 `wh-plus` 0 命中）。§3.1 第 9、10 行写的动作后缀是**目标**，不是现状 |
 
 `.wh-empty` 的样式口径：一行 13 号 `text/muted`，模块高度 ≤48、不塌不涨（§1.3）；需要动作时后缀一句可点文字，不加按钮。
 
-### 4.2 模块层零图标（临时记录）
+### 4.2 模块层图标（2026-11-09 按代码改）
 
-模块层现在**零图标**（`templates/modules/` 全目录 grep 无 `svg` / `wh-icon`），且 `flow_strip.html:8` 拿 `&rarr;` 当箭头、`evidence_gallery` 的 `↗` 是 Figma 描述里有、代码里没有。收口口径按拍板 5：只上 4 枚动作/方向图标（§1.5），不给每个模块配语义图标。
+原记录写「模块层现在**零图标**（`templates/modules/` 全目录 grep 无 `svg` / `wh-icon`）」，**这句已不成立**。实测（2026-11-09，`grep -rn "wh-icon" app/oams/templates/modules/`）：
+- `flow_strip.html:7`：段间一个右箭头，内联 `<svg class="wh-icon wh-icon-arrow">`，`arrow-right` 几何，随手画、不依赖数据（**换行处 `{% if not loop.first %}` 已跳过，符合 §3.1 第 16 行「换行处不渲染箭头」**）。
+- `evidence_gallery.html:12`：链接右侧 `external-link` 一枚，内联 `<svg class="wh-icon wh-icon-external">`，16 见方。
 
-> 这条是**临时缺口记录**，4 枚图标落地（B4 批）后删掉本节。
+也就是说收口口径（拍板 5：只上 4 枚动作/方向图标，不给每个模块配语义图标）**已经落地了两枚**，且都是内联 path、没有走 `224:14183` 的 Figma 单源。剩下两枚与「path 与 Figma 同源」这条仍按 §1.5 待办；本节不再是「零图标」，改成「已落 2 / 目标 4，path 未与 Figma 同源」。
 
-### 4.3 网页端缺一个审核预览页（2026-10-30 记，**未实现**）
+### 4.3 审核预览页（2026-10-30 记「未实现」，**2026-11-09 更正：已实现**）
 
-审核要看的是「这页的定义」，现在只有两个出口：MCP 的 `preview_descriptor` 工具（`app/oams/mcp/tools.py:484`）和 CLI 的 `oams plugin` 子命令（`app/oams/plugin_cli.py:88`，离线预览）。**`web.py` 里没有任何 preview 路由**，`reviews.html` 也不渲染预览——本文档原先写的「`/preview` 页面 / 侧栏」是不存在的页面，2026-10-30 已按实话改掉。
+原记录写「**`web.py` 里没有任何 preview 路由**」——**这句已过时**。实测：`app/oams/web.py:2327` 起有 `@router.get("/reviews/{interface_id}/preview")`（函数 `review_preview`），提交 `8330ebe`（`feat(review): 待审页可以看「这一页长什么样」，只吃 descriptor`）。
 
-缺的是一页：网页里选一个 descriptor、按 `render_preview` 渲染（真实控件 `disabled`、假值），旁边一栏显示 `aggregates_preview` 的「进汇总 / 不进汇总」判定。在那之前，审核走 MCP 或 CLI，别按有预览页来设计。
+它的行为：只吃 descriptor、**不读 `interface_entries`**（所以预览里没有任何真实数据泄漏面），按 `render_preview` 渲染真实控件 `disabled` + 假值，与当初设想的「选一个 descriptor、按 `render_preview` 渲染、旁边一栏显示 `aggregates_preview` 判定」一致。
+
+仍缺的一小半：`aggregates_preview` 的「进汇总 / 不进汇总」判定栏**没有跟着上**——拍板 6 把「进汇总」角标从模块上删掉了，并规定它该出现在 `preview_descriptor` 的返回里，所以网页端这栏要读描述符级判定，不是模块级。今天预览页只有渲染结果。审核主路径不再只有 MCP 与 CLI。
 
 ## 5. 已拍板（2026-10-30）
 
