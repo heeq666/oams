@@ -205,6 +205,20 @@ class OamsLive:
     def submit_interface(self, interface_id: str) -> dict[str, Any]:
         return self.request("POST", f"/v1/interfaces/{interface_id}/submit")
 
+    def my_work_items(self) -> list[dict[str, Any]]:
+        # 列表端点回的是 JSON 数组，`request` 会包成 {"value": [...]}。
+        payload = self.request("GET", "/v1/work-items?mine=true&open_only=true")
+        items = payload.get("value")
+        return items if isinstance(items, list) else []
+
+    def submit_report(self, work_item_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self.request("POST", f"/v1/work-items/{work_item_id}/reports", body)
+
+    def list_reports(self, work_item_id: str) -> list[dict[str, Any]]:
+        payload = self.request("GET", f"/v1/work-items/{work_item_id}/reports")
+        items = payload.get("value")
+        return items if isinstance(items, list) else []
+
 
 def _client() -> OamsLive:
     return OamsLive(load_config())
@@ -492,6 +506,78 @@ def _submit_page(context: Any, arguments: dict[str, Any]) -> ToolResult:
                created=created is not None)
 
 
+_STATUS_LABELS = {"planned": "计划中", "in_progress": "进行中", "blocked": "卡住了", "done": "已完成"}
+
+
+@_guarded
+def _my_work_items(context: Any, arguments: dict[str, Any]) -> ToolResult:
+    items = _client().my_work_items()
+    if not items:
+        return _ok(summary="你现在没有还开着的工作项——要么都做完了，要么这件事压根没派给你。"
+                           "别自己造工作项，那一步得人来做。", work_items=[])
+    lines = [f"你（这张票代表的人）现在有 {len(items)} 件还开着的事项："]
+    for item in items:
+        status = _STATUS_LABELS.get(str(item.get("status")), str(item.get("status")))
+        lines.append(f"- {item.get('title')}（{status}）｜work_item_id: {item.get('work_item_id')}")
+    lines.append("要报进度就调 oams_submit_progress，work_item_id 照抄上面那一长串；"
+                 "evidence 一定要写，写清楚凭什么是这个进度。")
+    return _ok(summary="\n".join(lines), work_items=items)
+
+
+@_guarded
+def _submit_progress(context: Any, arguments: dict[str, Any]) -> ToolResult:
+    work_item_id = str(arguments.get("work_item_id") or "").strip()
+    if not work_item_id:
+        return _fail(ERR_INVALID_ARGUMENTS,
+                     "要报哪一条？给 work_item_id。不知道是哪条就先调 oams_my_work_items。")
+    evidence = str(arguments.get("evidence") or "").strip()
+    if not evidence:
+        return _fail(ERR_INVALID_ARGUMENTS,
+                     "evidence 不能空：这一条要留在记录里，日后有人问「这个进度凭什么是真的」，"
+                     "答案就在这段文字里。写人话，写清看什么能核出来。")
+    body: dict[str, Any] = {"evidence": evidence}
+    progress = arguments.get("progress_value")
+    if progress is not None:
+        try:
+            progress_int = int(progress)
+        except (TypeError, ValueError):
+            return _fail(ERR_INVALID_ARGUMENTS, "progress_value 要是 0 到 100 之间的整数。")
+        if not 0 <= progress_int <= 100:
+            return _fail(ERR_INVALID_ARGUMENTS, "progress_value 要是 0 到 100 之间的整数。")
+        body["progress_value"] = progress_int
+    note = str(arguments.get("note") or "").strip()
+    if note:
+        body["note"] = note
+
+    client = _client()
+    try:
+        written = client.submit_report(work_item_id, body)
+    except LiveApiError as error:
+        return _fail(ERR_LIVE_API, f"这条进展没记上：{error.message}",
+                     status=error.status, work_item_id=work_item_id,
+                     **{k: v for k, v in (error.payload or {}).items()
+                        if k not in {"status", "work_item_id"}})
+
+    # 站点说成不算成：回读一次，看库里那条是不是真在，记的又是谁填的。
+    try:
+        reports = client.list_reports(work_item_id)
+    except (LiveConfigError, LiveApiError) as error:
+        return _ok(summary=f"进展提交了，但回读没成功（{error.message}）——"
+                           "去页面上的看板或汇报中心确认一眼再当它成了。",
+                   work_item_id=work_item_id, verified=False)
+    latest = reports[0] if reports else None
+    if latest is None or str(latest.get("report_id")) != str(written.get("report_id")):
+        return _ok(summary=f"提交回了 {written.get('report_id')}，但回读到的最新一条不是它——"
+                           "别当成已经记上了，去页面上看一眼。",
+                   work_item_id=work_item_id, verified=False)
+    via = "接入方（AI 代笔）" if str(latest.get("submitted_via")) == "agent" else "网页表单"
+    return _ok(summary=f"回读确认：进度已记上，这是第 {written.get('report_id')} 条，"
+                       f"记录里标的是「{via}」。进度不改变事项状态——改状态要人来做。",
+               work_item_id=work_item_id, verified=True,
+               report_id=latest.get("report_id"), submitted_via=latest.get("submitted_via"),
+               progress_value=latest.get("progress_value"))
+
+
 #: The three tools. `capability=""` is deliberate: these are guarded by the ticket
 #: on the site, not by the sandbox capability tokens the other tools use.
 LIVE_TOOL_SPECS: tuple[ToolSpec, ...] = (
@@ -536,6 +622,33 @@ LIVE_TOOL_SPECS: tuple[ToolSpec, ...] = (
         }),
         capability="",
         handler=_submit_page,
+    ),
+    ToolSpec(
+        name="oams_my_work_items",
+        description=(
+            "看你自己（这张票代表的人）现在还有哪些开着的工作项，拿到 work_item_id。"
+            "报进度之前先调它；它只列你已经坐着的岗位上的事，别去猜编号。"),
+        input_schema=_schema({}),
+        capability="",
+        handler=_my_work_items,
+        read_only=True,
+    ),
+    ToolSpec(
+        name="oams_submit_progress",
+        description=(
+            "替这个人报一条工作进展：work_item_id + progress_value(0-100) + note + evidence。"
+            "evidence 必填，写清凭什么。写完会回读一次确认。"
+            "它只记进展、不改事项状态，也不能新建工作项。"),
+        input_schema=_schema({
+            "work_item_id": {"type": "string", "description": "要报的那条事项编号，从 oams_my_work_items 取"},
+            "progress_value": {"type": "integer", "minimum": 0, "maximum": 100,
+                               "description": "现在做到百分之几；说不清就别给"},
+            "note": {"type": "string", "description": "一句话说这一条在做什么"},
+            "evidence": {"type": "string",
+                         "description": "凭什么说到了这个进度：链接、文档位置、做了什么，必须写"},
+        }, required=["work_item_id", "evidence"]),
+        capability="",
+        handler=_submit_progress,
     ),
 )
 

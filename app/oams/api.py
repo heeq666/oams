@@ -660,9 +660,20 @@ WORK_ITEM_SELECT = """w.work_item_id, w.org_unit_id, w.position_id, w.title, w.k
 
 @app.get("/v1/work-items")
 def list_work_items(org_unit_id: UUID | None = None, position_id: UUID | None = None, open_only: bool = False,
+                    mine: bool = False,
                     _actor: dict = Depends(require_permission("workforce.work_items", "read"))):
+    require_app_scope(_actor, "work_items:read:dept")
     filters = []
     params: list[Any] = []
+    if mine:
+        # 「我现在坐在哪个岗位上」——跟 company_seat 同一套起止时间判据，
+        # 不另起一套，免得任期边界两处不一样。
+        filters.append(
+            """w.position_id IN (SELECT a.position_id FROM oams.position_assignments a
+                                 WHERE a.member_id = %s AND a.status IN ('active', 'scheduled')
+                                   AND a.starts_at <= now() AND (a.ends_at IS NULL OR now() < a.ends_at))"""
+        )
+        params.append(_actor["member_id"])
     if org_unit_id is not None:
         filters.append("w.org_unit_id = %s")
         params.append(org_unit_id)
@@ -750,11 +761,30 @@ def update_work_item(work_item_id: UUID, payload: WorkItemUpdate,
 @app.post("/v1/work-items/{work_item_id}/reports", status_code=status.HTTP_201_CREATED)
 def submit_report(work_item_id: UUID, payload: ReportCreate,
                   actor: dict = Depends(require_permission("workforce.reports", "submit"))):
-    return create_report(work_item_id, payload, actor["member_id"])
+    require_app_scope(actor, "reports:submit")
+    return create_report(work_item_id, payload, actor["member_id"],
+                         submitted_via=submitted_via_for(actor))
 
 
-def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: Any):
-    """Share the audited write between the browser and JSON API."""
+def submitted_via_for(principal: dict[str, Any] | None) -> str:
+    """这条进展是谁填的，由**服务端**说了算。
+
+    'agent' 是成绩单上的分子，不是自谦的话：客户端能传就等于能往好看的方向编，
+    于是整个「AI 到底替人填了多少」这个数就废了。判据只有一条——这张票是不是
+    接入方换来的。人自己在浏览器里点，走到这里一定是 None。
+    """
+    return "agent" if app_id_of(principal) is not None else "human"
+
+
+def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: Any, *,
+                  submitted_via: str):
+    """Share the audited write between the browser and JSON API.
+
+    `submitted_via` 故意做成必填的关键字参数：每个调用点都得自己说清这条路是谁
+    在填，不留默认值——留了默认值，下一个新入口就会悄悄记成 'human'。
+    """
+    if submitted_via not in ("human", "agent"):
+        raise HTTPException(status_code=422, detail="submitted_via must be human or agent")
     try:
         with connection() as conn:
             item = conn.execute(
@@ -782,12 +812,12 @@ def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: An
                    VALUES (%s, %s, %s, %s, %s, %s)
                    RETURNING report_id, work_item_id, reported_by_member_id, submitted_via, progress_value,
                              note, evidence, status, reported_at""",
-                (work_item_id, actor_member_id, payload.submitted_via, payload.progress_value,
+                (work_item_id, actor_member_id, submitted_via, payload.progress_value,
                  payload.note, payload.evidence),
             ).fetchone()
             conn.execute("UPDATE oams.work_items SET updated_at = now() WHERE work_item_id = %s", (work_item_id,))
             audit(conn, actor_member_id, "work_item_report.created", "work_item_report", row["report_id"],
-                  f"通过 {_submitted_via_label(payload.submitted_via)} 提交了进展", row)
+                  f"通过 {_submitted_via_label(submitted_via)} 提交了进展", row)
             return row
     except CheckViolation:
         raise HTTPException(status_code=422, detail="evidence is required and progress_value must be between 0 and 100")
@@ -796,6 +826,8 @@ def create_report(work_item_id: UUID, payload: ReportCreate, actor_member_id: An
 @app.get("/v1/work-items/{work_item_id}/reports")
 def list_work_item_reports(work_item_id: UUID,
                            actor: dict = Depends(require_permission("workforce.reports", "read"))):
+    # 读进展与读工作项是同一件事的两面，票上给同一个范围，别让人去猜该申请哪个。
+    require_app_scope(actor, "work_items:read:dept")
     with connection() as conn:
         exists = conn.execute("SELECT org_unit_id FROM oams.work_items WHERE work_item_id = %s", (work_item_id,)).fetchone()
         if not exists:
@@ -2027,6 +2059,8 @@ APP_SCOPE_LABELS = {
     "interfaces:draft": "新建草稿页面并送审",
     "entries:write": "往本部门页面里填报条目",
     "interfaces:review": "替你签页面审核",
+    "work_items:read:dept": "读本部门的工作项",
+    "reports:submit": "替你申报进度",
 }
 
 
@@ -2097,6 +2131,12 @@ APP_ROUTE_WHITELIST: tuple[tuple[str, str], ...] = (
     ("POST", "/v1/interfaces/{interface_id}/review"),
     ("GET", "/v1/interfaces/{interface_id}/entries"),
     ("POST", "/v1/interfaces/{interface_id}/entries"),
+    # 工作项与进展：让 AI 能替人报进度。**只读工作项、只写进展**——
+    # `POST /v1/work-items`（建工作项）故意留在外面：工作项是组织对「该做什么」的
+    # 判断，放进票里，看板就会长出一个 AI 自己想象出来的任务清单。
+    ("GET", "/v1/work-items"),
+    ("GET", "/v1/work-items/{work_item_id}/reports"),
+    ("POST", "/v1/work-items/{work_item_id}/reports"),
     # 工作台表单那六个出口：历史上就是应用票能走的（也各自 require_app_scope）。
     # 票若被塞进 cookie 去开页面，能到的地方与这里一模一样，不多一分。
     ("POST", "/departments/{org_unit_id}/new"),

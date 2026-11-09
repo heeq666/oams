@@ -197,9 +197,12 @@ def test_the_whitelist_itself_names_no_admin_endpoint(world):
         assert not template.startswith("/v1/members"), template
         assert not template.startswith("/v1/positions"), template
         assert not template.startswith("/v1/assignments"), template
-        assert not template.startswith("/v1/work-items"), template
         assert not template.startswith("/v1/audit-events"), template
         assert not template.startswith("/v1/board"), template
+        # 工作项只开了「读列表 / 读进展 / 写进展」三扇门，**建工作项那一步必须关着**：
+        # 工作项是组织对「该做什么」的判断，给票开了，看板就会长出 AI 自己想象的任务。
+        assert (method.upper(), template) != ("POST", "/v1/work-items"), template
+        assert not template.startswith("/v1/work-items/{work_item_id}/retract"), template
 
 
 # ---------------------------------------------------------------------------

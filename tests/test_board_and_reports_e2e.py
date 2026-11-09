@@ -257,10 +257,13 @@ def _script(base: str, url: str) -> None:
     code, second = api("POST", f"/v1/work-items/{new_item}/reports",
                        {"submitted_via": "agent", "progress_value": 50, "note": "AI 汇总", "evidence": "邮箱导出"}, token)
     if not isinstance(second, dict):
-        check("submit agent report", False, f"{code} {str(second)[:400]}")
+        check("a session cannot claim to be an agent", False, f"{code} {str(second)[:400]}")
         failed = [item for item in results if not item[1]]
         assert not failed, f"{len(failed)}/{len(results)} checks failed: {failed}"
-    check("submit agent report", code == 201 and second["submitted_via"] == "agent", str(code))
+    # 这一条原来断言「能自报 agent」。那正是洞：谁都会说自己填的，客户端能传就等于
+    # 这张成绩单没有。现在由服务端按「是不是接入方换来的票」判，人会话里怎么传都是 human。
+    check("a session cannot claim to be an agent",
+          code == 201 and second["submitted_via"] == "human", f"{code} {second.get('submitted_via')}")
 
     code, board_before = api("GET", f"/v1/board/org-units/{fixtures['dept']}", token=token)
     check("board responds", code == 200, str(code))

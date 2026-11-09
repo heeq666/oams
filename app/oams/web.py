@@ -2948,12 +2948,13 @@ def submit_department_report(request: Request, work_item_id: UUID,
         if not owns_position:
             return _denied(request, "只能汇报自己负责岗位的事项。")
     try:
-        payload = ReportCreate(submitted_via="human", progress_value=int(progress_value) if progress_value.strip() else None,
+        payload = ReportCreate(progress_value=int(progress_value) if progress_value.strip() else None,
                                note=note.strip() or None, evidence=evidence.strip())
     except (ValueError, ValidationError):
         return RedirectResponse(url=f"/reports?org={item['org_unit_id']}&error=invalid", status_code=303)
     try:
-        api.create_report(work_item_id, payload, principal["member_id"])
+        # 浏览器表单这条路永远是人在填：票走的是上面的 JSON 端点，不到这里。
+        api.create_report(work_item_id, payload, principal["member_id"], submitted_via="human")
     except HTTPException as exc:
         if exc.status_code in (409, 422):
             return RedirectResponse(url=f"/reports?org={item['org_unit_id']}&error=invalid", status_code=303)

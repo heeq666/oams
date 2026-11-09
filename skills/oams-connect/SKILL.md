@@ -56,8 +56,16 @@ Content-Type: application/json
 | 把草稿送审 | `POST {base}/v1/interfaces/{interface_id}/submit`，不需要请求体（只有草稿能送） |
 | 回读一页现在什么状态 | `GET {base}/v1/interfaces/{interface_id}` → `status`、`review_stage`、`versions` |
 | 替人签一版页面 | `POST {base}/v1/interfaces/{interface_id}/review`，体是 `{"decision": "approve"\|"reject", "note": "..."}`（退回必须写 note） |
+| 看我手上还有哪些事 | `GET {base}/v1/work-items?mine=true&open_only=true` → 每条带 `work_item_id`、`title`、`status` |
+| 替人报一条进展 | `POST {base}/v1/work-items/{work_item_id}/reports`，体是 `{"progress_value": 0-100, "note": "...", "evidence": "...必填"}` |
+| 回读这条进展记上没有 | `GET {base}/v1/work-items/{work_item_id}/reports` → 最新一条的 `submitted_via` 就是它被记成谁填的 |
 
-`interface_id` 从哪来：用户给你，或者你先按部门问用户要哪一页——**别自己编**。
+`interface_id`、`work_item_id` 从哪来：用户给你，或者用上面「看我手上还有哪些事」查出来——**别自己编**。
+
+**报进展这件事有三条硬边界**：
+- `evidence` 必填，写清凭什么（链接、文档位置、做了什么）。空着会被 422 打回。
+- 报进展**不改事项状态**，也**不能新建工作项**（`POST /v1/work-items` 对票一律 403）。要改状态、要新派事，请人自己来。
+- **`submitted_via` 由服务端判定**，你在请求体里写什么都不算：票报的就是 `agent`，人自己点的是 `human`。别试着写 `"human"`——那不会生效，而这条记录会一直显示「AI 代笔」。
 
 **先看自己能给哪个部门建页**：`GET {base}/v1/me` 的 `writable_org_units` 就是这些部门，每条带 `org_code`、`name`、`positions`（岗位码写进 descriptor 的 `position_codes`）；`writable_all` 为真表示这个人是公司级、哪个在用部门都能建。票里没有 `interfaces:draft` 时它会明说。
 
@@ -98,6 +106,8 @@ OAMS 自带 MCP 服务（`oams-interface`）。下面三个工具**不连数据�
 | `interfaces:draft` | 新建草稿页面并送审 | 只能建草稿、送审，不能直接上线 |
 | `entries:write` | 往本部门页面里填报条目 | 能写条目 |
 | `interfaces:review` | 替你签页面审核 | 替你点「通过 / 退回」 |
+| `work_items:read:dept` | 读本部门的工作项 | 只能读，看得到自己岗位上的事 |
+| `reports:submit` | 替你申报进度 | 只能往已有的工作项里记进展 |
 
 **默认一个写权限都不给**：没勾就是没给。
 

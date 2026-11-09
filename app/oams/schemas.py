@@ -124,7 +124,9 @@ class ReportCreate(BaseModel):
     # 'human' or 'agent' is provenance, not trust: when a number turns out wrong we
     # need to know how it was produced. The reporter is always the authenticated
     # member; an AI is the member's pen, so the member stays accountable.
-    submitted_via: Literal["human", "agent"]
+    #
+    # 这一档**不在这里**：它是成绩单（看板上人填/代填之比），谁都会说自己填的，
+    # 客户端能传就等于没有。由 create_report 按「这张票是不是接入方换来的」判定。
     progress_value: int | None = Field(default=None, ge=0, le=100)
     note: str | None = None
     evidence: str = Field(min_length=1, max_length=4000)
@@ -141,7 +143,7 @@ class ReportRetract(BaseModel):
 # 范围是**动作**（能做什么），不是**数据**（能看到几个部门）：部门边界永远由人
 # 的任职决定，应用只是替这个人动手。所以这里没有「全公司」这种范围。
 APP_SCOPES = ("entries:read:dept", "interfaces:draft", "entries:write",
-              "interfaces:review")
+              "interfaces:review", "work_items:read:dept", "reports:submit")
 
 
 class AppCodeCreate(BaseModel):
