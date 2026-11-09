@@ -329,6 +329,8 @@ draft ──提交──▶ pending ──通过──▶ active ──新版本
 **现状（2026-11-09 按代码与实测写实，取代原先「`effective_grants` 只认 `scope_type='all'`」的说法）：**
 
 - `security.effective_grants`（`app/oams/security.py:383`）**已经支持两档范围**——不传 `org_unit_id` 问「有没有这个权」，传了只算全公司的加正好这个部门的；`company_only=True` 时只认 `scope_type='all'`。所以「只认 all」这句不成立了。
+  - **但别把 `scope_type='all'` 读成「全公司范围」**：这套数据里它是**权限标记**。全套种子 67 条授权（`scripts/load_department_data.py` 默认发 all）全部是 `all` 档，一条 `org_unit` 都没有，于是「有 all = 全公司读者」会把每个部门负责人都判成全公司读者（2026-11-09 实测：6 人里 6 人）。判「全公司读者」只能看**座位挂在哪一级部门**（`security.company_seat`，`app/oams/security.py:536`，`unit_type='company'`）；`readable_org_unit_ids`（`app/oams/security.py:561`）就是这么判的。
+  - `has_company_scope`（`app/oams/security.py:456`）仍走 `company_only=True`，今天能区分开，只因为 `workforce.grants/manage` 这件事在种子里只发给公司本级岗位——**换个资源就不再成立**，新写「是不是公司级」的判断别抄它的形状，抄 `company_seat`。
 - **工作项一族已按它收敛**（6 个端点：`/v1/me`、`/v1/work-items` 读写、`/v1/work-items/{id}/reports` 读、`/v1/board/org-units/{id}`）。
 - **管理面没有收敛，而且缺的不是行级 WHERE，是「范围」这个维度本身**：`require_permission`（`security.py:821`）内部调 `has_permission` 不传 `org_unit_id`，等于只问「他有没有这个权」而不问「在哪儿」。结果是**读权 = 全公司读权**。实测（开发库）：只授某部门 `workforce.members/read` 的成员 `GET /v1/members` 返回 200 且含别部门成员。
 - **票据范围：已修（2026-11-09，`b7961ad`）**，与上一条是两个轴。原状是 `api.require_app_scope()` 只在 `app/oams/web.py` 12 处调用、`app/oams/api.py` 0 处，只申请 `entries:read:dept` 的票能建部门、建成员、发 company 级授权。修法改成**默认拒绝**：`APP_ROUTE_WHITELIST`（`api.py:2013`）列出票能碰的路由，不在表里的一律 403，新路由默认对票不可见；`tests/test_app_route_whitelist.py` 里有一条穷举闸门守着它。**这条修的是「票」，上面那条修的是「人」，别当成一件事。**

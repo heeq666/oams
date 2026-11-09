@@ -11,7 +11,7 @@
 - `app/oams/cli.py`：迁移、一次性首管理员引导、受控运维令牌签发和 API 服务命令。SQL 迁移作为 Python 包数据随发布包分发。
 - `db/migrations/0001_workforce_identity_position_permission.sql`：专用 OAMS schema 的首个迁移。
 
-首管理员从可信运维 shell 建立，账号中心未接入前不允许伪造外部账号登录。当前管理 API 仅通过 `scope_type = 'all'` 授权；工作项/看板/汇报路径已按有效任职做范围过滤，其他管理资源仍不能向普通成员开放。
+首管理员从可信运维 shell 建立，账号中心未接入前不允许伪造外部账号登录。当前管理 API 的读权还没有按部门收窄（`require_permission` 不传 `org_unit_id`），持部门级授权的成员能读到全公司的人与授权——2026-11-09 实测：只授行政部 `workforce.members/read` 的成员打 `/v1/members` 仍是 200、含人事部的人。工作项/看板/汇报路径已按有效任职做范围过滤（`security.readable_org_unit_ids`）。**别把 `scope_type='all'` 当全公司范围**——这套数据里它是权限标记（种子 67 条授权全是 all 档），判全公司读者看公司本级岗位座位（`security.company_seat`，`app/oams/security.py:536`）。
 
 ## 2. 数据模型
 

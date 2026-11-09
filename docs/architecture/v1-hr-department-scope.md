@@ -109,7 +109,7 @@
 
   以前这句写的是「未实现」，那是错的，也有害——它让下一个人以为整个都没动，于是既不补管理面、也没人发现工作项面已经能用。实际形状是**两块**：
 
-  - **工作项一族：已做。** `security.effective_grants`（`app/oams/security.py:383`）支持两档——不传 `org_unit_id` 问「有没有这个权」，传了就只算全公司的加上正好这个部门的；另有 `company_only=True` 只认 `scope_type='all'`。用它收敛过的端点 **6 个**：`GET /v1/me`（`api.py:123`）、`GET /v1/work-items`、`POST /v1/work-items`、`PATCH /v1/work-items/{work_item_id}`、`GET /v1/work-items/{work_item_id}/reports`、`GET /v1/board/org-units/{org_unit_id}`。
+  - **工作项一族：已做。** `security.effective_grants`（`app/oams/security.py:383`）支持两档——不传 `org_unit_id` 问「有没有这个权」，传了就只算全公司的加上正好这个部门的；另有 `company_only=True` 只认 `scope_type='all'`。**注意这个 `all` 是权限标记，不是范围标记**：种子 67 条授权全是 `all` 档，拿它判「全公司范围」会把每个部门负责人都算成全公司读者；「全公司读者」只认公司本级座位（`security.company_seat`，`app/oams/security.py:536`）。用它收敛过的端点 **6 个**：`GET /v1/me`（`api.py:123`）、`GET /v1/work-items`、`POST /v1/work-items`、`PATCH /v1/work-items/{work_item_id}`、`GET /v1/work-items/{work_item_id}/reports`、`GET /v1/board/org-units/{org_unit_id}`。
 
     依据与判据（写清楚，因为这组数会被照抄）：逐路由函数 AST 扫描，按每个函数自己的 `lineno..end_lineno` 取函数体（按行号粗切会把下一个函数的守卫算进来，我第一版就这么错过一次）。判据两条，**直接或间接都算**：
     ① 函数体里出现 `has_company_scope` / `active_org_unit_ids` / `require_org_unit_access` / `granted_org_unit_ids` / `accessible_org_unit_ids` —— 命中 5 个；
