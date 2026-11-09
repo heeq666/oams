@@ -393,27 +393,17 @@ def test_member_responses_never_carry_internal_columns(served_members):
         "member_id", "display_name", "employment_status", "departed_at"
     }, updated
 
-
-def test_activate_member_helper_returns_only_public_columns(served_members):
-    """`activate_member` 现在没有任何调用方，它的 `RETURNING` 一样得干净。
-
-    死代码最容易被下一个接线的人当成现成实现直接接上——那时候漏出去的
-    `token_version` 就不是「没人用」，而是「刚上线」。
-    """
-
-    import psycopg
-    from psycopg.rows import dict_row
-
-    from oams.api import activate_member
-
-    with psycopg.connect(served_members["url"], autocommit=True, row_factory=dict_row) as conn:
-        target = conn.execute(
-            """INSERT INTO oams.workforce_members (employee_code, display_name, employment_status)
-               VALUES ('ACT001', '待激活', 'suspended') RETURNING member_id""").fetchone()["member_id"]
-        updated = activate_member(conn, target, _member(served_members["url"], "ADMIN001"), "验证响应体")
-    assert set(updated) == {
+    # 「重新启用」这条路也得走一遍：原来那个 activate_member 死代码删掉之后，
+    # 它就是唯一的重新启用入口，不能只验「停用」那一半。
+    status, reactivated = _call(
+        served_members["base"], "PATCH", f"/v1/members/{created['member_id']}/status", token,
+        {"employment_status": "active", "reason": "重新启用"})
+    assert status == 200, reactivated
+    assert reactivated["employment_status"] == "active", reactivated
+    assert reactivated["departed_at"] is None, reactivated
+    assert set(reactivated) == {
         "member_id", "display_name", "employment_status", "departed_at"
-    }, updated
+    }, reactivated
 
 
 # ---------------------------------------------------------------------------
@@ -422,8 +412,9 @@ def test_activate_member_helper_returns_only_public_columns(served_members):
 #
 # 脱敏闸门只装在一个门上（`GET /v1/members` 的返回经 `project_member_row`）。
 # 只要别处还能把整行取出来塞进响应，分类里写的「internal 永不返回」就是空话——
-# 2026-11-09 就是这么发现 `activate_member` / `update_member_status` 的
-# `RETURNING` 里带着 `token_version` 的：闸门装好了，旁边那扇窗没关。
+# 2026-11-09 就是这么发现两处 `RETURNING` 里带着 `token_version` 的：闸门装好了，
+# 旁边那扇窗没关。其中 `activate_member` 是死代码（没人调），已连同它的用例一起删掉；
+# 留着的 `update_member_status` 只返回公开列。
 #
 # 所以这里把「谁碰这张表」列成清单，由机器对账，不靠人记得住：
 #   · 扫 `app/oams/**.py` 里所有**带限定表名** `oams.workforce_members` 的字符串常量
@@ -441,7 +432,6 @@ PERSONNEL_ACCESS_POINTS: dict[str, tuple[int, str]] = {
     "api.py::list_members": (2, "全公司 / 部门范围两条查询，返回前统一过 project_member_row（唯一读取口）"),
     "api.py::insert_member": (1, "INSERT RETURNING 五个公开列"),
     "api.py::update_member_status": (2, "SELECT * FOR UPDATE 取整行给审计 before_state；UPDATE RETURNING 只取公开列"),
-    "api.py::activate_member": (2, "同上；该函数目前没有任何调用方，留着就得同样干净"),
     "api.py::insert_assignment": (2, "读在职状态判能不能派岗；UPDATE 自增 token_version 作废旧会话，不返回行"),
     "api.py::end_assignment": (1, "UPDATE 自增 token_version 作废旧会话，不返回行"),
     "api.py::list_assignments": (1, "联表取 display_name 做展示"),

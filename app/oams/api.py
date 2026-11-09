@@ -335,23 +335,6 @@ def insert_member(conn, payload: MemberCreate, actor_member_id: Any) -> dict[str
         raise _conflict(CONFLICT_EMPLOYEE_CODE, "employee code already exists")
 
 
-def activate_member(conn, member_id: Any, actor_member_id: Any, reason: str) -> dict[str, Any]:
-    """Restore a pending or suspended account to active and invalidate old sessions."""
-    member = conn.execute("SELECT * FROM oams.workforce_members WHERE member_id = %s FOR UPDATE", (member_id,)).fetchone()
-    if not member:
-        raise HTTPException(status_code=404, detail="member not found")
-    updated = conn.execute(
-        """UPDATE oams.workforce_members SET employment_status = 'active', departed_at = NULL,
-                  token_version = token_version + 1, updated_at = now()
-           WHERE member_id = %s
-           RETURNING member_id, display_name, employment_status, departed_at""",
-        (member_id,),
-    ).fetchone()
-    conn.execute("UPDATE oams.workforce_sessions SET revoked_at = now() WHERE member_id = %s AND revoked_at IS NULL", (member_id,))
-    audit(conn, actor_member_id, "member.status_changed", "member", member_id, reason, updated, member)
-    return updated
-
-
 @app.post("/v1/members", status_code=status.HTTP_201_CREATED)
 def create_member(payload: MemberCreate, actor: dict = Depends(require_permission("workforce.members", "manage"))):
     with connection() as conn:
