@@ -46,9 +46,10 @@ LIVE_SLUG = "design-sampling"
 #: 冒充得了真实数据。canary 反过来挑一个**只存在于条目、descriptor 里没有**的值：
 #: 真实条目的 evidence 是「样衣确认单 SY-2410」，descriptor 的 example 只有「SY-2410」。
 LIVE_ENTRY_CANARY = "样衣确认单 SY-2410"
-#: `_SAMPLE_BY_FIELD["title"]`，预览画出来的样本款号。两个值必须长得不一样，
-#: 否则「样本值在场」和「真实值不在场」会互相冒充。
-SAMPLE_TITLE = "AW26-001"
+#: 预览画的是 descriptor 自己写的 `example`（通用样本只给没写 example 的字段兜底）。
+#: DESIGN 那版写的是 AW24-001；它必须和条目里填的款号长得不一样，否则「样本在场」
+#: 与「真实值不在场」会互相冒充。
+SAMPLE_TITLE = "AW24-001"
 
 # 一个页面声明的指标：预览要画出 128 —— 这个数字既不来自数据库，也不来自条目，
 # 而是 `_sample_aggregates` 给本页自产指标的中性样本值。

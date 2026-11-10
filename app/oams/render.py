@@ -1120,12 +1120,15 @@ def _sample_values(descriptor: dict) -> dict:
         map_to = str(field.get("map_to") or "")
         if map_to == "status" and status_words:
             values[key] = status_words[min(1, len(status_words) - 1)]
-        elif map_to in _SAMPLE_BY_FIELD and _SAMPLE_BY_FIELD[map_to]:
-            values[key] = _SAMPLE_BY_FIELD[map_to]
         elif field.get("options"):
             values[key] = str(field["options"][0])
         elif field.get("example"):
+            # 页面自己写的例子优先：预览是给这一页的作者和审核人看的，衣服款号
+            # 那种通用样本放在请假页上只会让人以为页写错了。通用样本只给没写
+            # example 的字段兜底。
             values[key] = str(field["example"])
+        elif map_to in _SAMPLE_BY_FIELD and _SAMPLE_BY_FIELD[map_to]:
+            values[key] = _SAMPLE_BY_FIELD[map_to]
         else:
             values[key] = "示例内容"
     return values
