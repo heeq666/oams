@@ -499,7 +499,7 @@ def progress_text() -> str:
 
 
 def inline_widgets() -> bool:
-    """True when this viewpoint still shows widgets (edit live, preview disabled)."""
+    """True when this viewpoint shows widgets (edit and preview both live)."""
     return _state().mode in INLINE_MODES
 
 
@@ -527,15 +527,18 @@ def _input_html(field: dict, value: Any, *, textarea: bool = False,
         static_label = f'<span class="wh-field-label">{label}</span>' if labelled else ""
         return Markup(f'<div class="wh-field wh-field-static">{static_label}'
                       f'<span class="wh-field-value">{shown}</span></div>')
-    # preview renders the same widgets with sample values, but dead: 审核看的是这页
-    # 的定义，能不能填、填完长什么样，所以控件要在场而不能提交。
-    dead = state.mode != "edit"
-    # 浏览器层面的 required 在这里是错的：一个填报页有三块模块、每块各一行，
+    # preview 的控件是活的（老大 2026-11-10 拍板：预览要能试填，否则启用前没法
+    # 拿它做测试）。它仍然不提交、不写库——预览页没有表单动作，顶上还有一条横幅
+    # 说明「填写不会保存」，所以填了也不会被谁当真。
+    #
+    # 浏览器层面的 required 只在 edit 里出现：一个填报页有三块模块、每块各一行，
     # 只填一行的用户会被另外两行空控件的 required 拦死（端到端试用 R2：按钮
     # 点了毫无反应）。必填只留 aria-required 给读屏，真正的校验在服务端
-    # （web.py 的 _read_entry_form 只对主记录字段强制）。
-    required = "" if dead or not field.get("required") else ' aria-required="true"'
-    inert = ' disabled tabindex="-1"' if dead else ""
+    # （web.py 的 _read_entry_form 只对主记录字段强制）。预览根本不收数据，
+    # 标必填只会让人以为「不填完就过不去」。
+    required = (' aria-required="true"'
+                if state.mode == "edit" and field.get("required") else "")
+    inert = ""
     if textarea:
         return Markup(f'<div class="wh-field">{label_html}'
                       f'<textarea class="wh-input" id="{fid}" name="{_text(key)}" rows="2"{aria}{required}{inert}>'
@@ -886,8 +889,15 @@ def _aggregatable(module: dict, spec: Any) -> Any:
 
 
 def _hidden_in_readonly(module: dict, spec: Any = None) -> bool:
-    """Readonly drops department-private leaves, and containers left empty."""
+    """Readonly drops containers left empty; evidence keeps showing as text.
+
+    证据区（evidence_gallery）虽然不进公司汇总，只读视角照旧给看：看别人部门
+    的页面时也得能点开那份凭证，只是不能改。它没有数字可汇总，藏掉只会让人
+    以为这页没有凭证（老大 2026-11-10 定）。
+    """
     spec = spec or resolve_spec(module.get("type"))
+    if str(module.get("type")) == "evidence_gallery":
+        return False
     if spec is not None and getattr(spec, "layer", "") == "container":
         children = [c for c in _as_list(module.get("children")) if isinstance(c, dict)]
         if not children:
@@ -1048,12 +1058,15 @@ def _render(descriptor: dict, values: dict | None, aggregates: dict | None,
         _STACK.reset(token_stack)
         _DEPTH.reset(token_depth)
         _STATE.reset(token_state)
+    hint = ('' if mode != "preview" else
+            '<p class="wh-preview-hint">预览：控件能点、能填、能选，方便先试一遍；'
+            '填的东西不会保存。</p>')
     return (f'<div class="wh-interface wh-interface-{mode}" '
             f'data-interface="{_text(descriptor.get("interface_id"))}" '
             f'data-org="{_text(descriptor.get("org_unit_code"))}" data-mode="{mode}">'
             f'<h2 class="wh-interface-title">{_text(descriptor.get("name"))}'
             + (_SHARED_ICON.format(note=_text(title_note)) if title_note else "")
-            + '</h2>'
+            + '</h2>' + hint +
             f'<div class="wh-interface-body">{blocks}</div></div>')
 
 
@@ -1080,10 +1093,12 @@ def render_read_only(descriptor: dict, values: dict | None = None,
 
 
 def render_preview(descriptor: dict, sample: bool = True) -> str:
-    """Review viewpoint: sample data, widgets present but disabled.
+    """Preview viewpoint: sample data, widgets live but writing nowhere.
 
-    审的是这页的定义（字段、密度、空态），不写库。角标已下线；机器可读的汇总
-    口径走 MCP 的 `preview_descriptor` → `aggregates_preview`（mcp/tools.py）。
+    审的是这页的定义（字段、密度、空态），也是部门启用前亲手试一遍的地方：
+    控件真能填，但这一页没有表单动作、不写库，顶上横幅写着「填写不会保存」
+    （老大 2026-11-10 定）。机器可读的汇总口径走 MCP 的 `preview_descriptor`
+    → `aggregates_preview`（mcp/tools.py）。
     """
     if not isinstance(descriptor, dict):
         raise RenderError("descriptor: 必须是 JSON 对象")

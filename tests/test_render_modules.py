@@ -226,13 +226,11 @@ def test_every_module_renders_in_the_preview_viewpoint(key):
     assert f'data-type="{key}"' in html
 
 
-@pytest.mark.parametrize("key", sorted(set(ALL_KEYS) - {"evidence_gallery", "lookup_box"}))
+@pytest.mark.parametrize("key", sorted(set(ALL_KEYS) - {"lookup_box"}))
 def test_every_visible_module_renders_in_the_readonly_viewpoint(key):
-    # evidence_gallery is department-private, so the manager view drops it by
-    # design; test_readonly_skips_department_private_modules covers that case.
-    # lookup_box has aggregatable=False, which is the same signal the read-only
-    # view uses to drop a block -- it is a lookup widget, not this department's
-    # data, so it never appears in the company-wide view.
+    # evidence_gallery 现在也进只读视角（老大 2026-11-10 定），由
+    # test_readonly_keeps_the_evidence_gallery_without_widgets 单独锁形态。
+    # lookup_box 在这条规则外：它是查询工具，不是这个部门的数据，公司视图里不出现。
     html = render_read_only(one(key), VALUES, AGGREGATES)
     assert f'data-type="{key}"' in html
 
@@ -305,20 +303,20 @@ def test_edit_renders_live_widgets(key):
 # （aggregates_preview 字段）。要不要在审核页补一块汇总面板属于新功能，
 # 等模块细化 B0–B4 走完再评估（负责人 2026-10-30 定），这里不锁。
 @pytest.mark.parametrize("key", sorted(INPUT_KEYS))
-def test_preview_renders_disabled_widgets(key):
-    """审核视角：控件在场，让人看见这页会长什么样，但一格都提交不了。
+def test_preview_renders_usable_widgets(key):
+    """预览视角：控件在场而且真能操作——这是启用前试填的地方（老大 2026-11-10）。
 
-    三条一起断言，缺一条都不算数：控件必须出现、必须 disabled、必须
-    tabindex="-1"（键盘也 tab 不进去）；而且**不许**带 required——审核的人
-    没有被要求填任何东西。
+    四条一起断言：控件必须出现、不许 disabled、不许 tabindex="-1"（键盘要能
+    tab 进去）、不许带 required（预览不收数据，标必填只会让人以为填不完就
+    过不去）。「填了不保存」由页面顶上的横幅一句话说清，不靠锁控件来防。
     """
     html = render_preview(one(key))
     found = widgets(html)
-    assert found, f"{key}: 审核视角要看得见控件"
+    assert found, f"{key}: 预览视角要看得见控件"
     for tag in found:
-        assert "disabled" in tag, f"{key}: {tag}"
-        assert 'tabindex="-1"' in tag, f"{key}: {tag}"
-        assert "required" not in tag, f"{key}: 审核视角不该要求填写 —— {tag}"
+        assert "disabled" not in tag, f"{key}: {tag}"
+        assert 'tabindex="-1"' not in tag, f"{key}: {tag}"
+        assert "required" not in tag, f"{key}: 预览不该要求填写 —— {tag}"
 
 
 @pytest.mark.parametrize("key", sorted(INPUT_KEYS))
@@ -367,16 +365,20 @@ def test_containers_carry_no_data_binding_of_their_own(key):
     assert 'class="wh-input"' not in html
 
 
-def test_readonly_skips_department_private_modules():
+def test_readonly_keeps_the_evidence_gallery_without_widgets():
+    # 证据区不进公司汇总，但只读视角要有它：看得见、点得开，一个控件都没有。
     html = render_read_only(one("evidence_gallery"), VALUES, AGGREGATES)
-    assert 'data-type="evidence_gallery"' not in html
-    assert "sheet.pdf" not in html
-    assert render_interface(one("evidence_gallery"), VALUES, AGGREGATES)
+    assert 'data-type="evidence_gallery"' in html
+    assert "sheet.pdf" in html
+    assert not ANY_WIDGET.findall(html)
 
 
-def test_readonly_drops_a_container_whose_children_are_all_private():
+def test_readonly_keeps_a_container_that_only_holds_private_leaves():
+    # 容器本身没被摘掉：它下面还剩证据区要显示，摘了就等于替人把凭证藏起来。
     tree = {"type": "card", "params": {"title": "证据"}, "children": [MODULES["evidence_gallery"]]}
-    assert "sheet.pdf" not in render_read_only(page(tree), VALUES, AGGREGATES)
+    html = render_read_only(page(tree), VALUES, AGGREGATES)
+    assert "sheet.pdf" in html
+    assert not ANY_WIDGET.findall(html)
 
 
 # --------------------------------------------------------------------------- #
@@ -628,14 +630,13 @@ def test_table_honours_a_flat_rows_count():
     assert render_interface(page(clamped), VALUES, AGGREGATES).count("<tr>") == 6
 
 
-def test_readonly_drops_the_evidence_gallery_before_any_empty_state():
-    # 证据件不进公司汇总，经理视角在 render_module 里就被 _hidden_in_readonly
-    # 整块摘掉了（见 app/oams/render.py:755），所以只读视角没有「证据」这一块，
-    # 也不该有「没有提供证据」这类空态文案——那句话原本永远到不了，已按裁决删掉。
-    # 这里锁的是「整块不出现」，别拿空态文案当只读的验收点。
+def test_readonly_evidence_says_so_when_nothing_is_pasted():
+    # 只读视角留着证据区（老大 2026-11-10 定），所以「没贴凭证」这句话现在
+    # 真的会被人看见：必须是一句人话，而且只出现一次。
     html = render_read_only(one("evidence_gallery"), {}, {})
-    assert "wh-evidence-gallery" not in html
-    assert empty_lines(html) == []
+    assert "wh-evidence-gallery" in html
+    assert not ANY_WIDGET.findall(html)
+    assert empty_lines(html) == ["还没有贴凭证。"]
 
 
 def test_blocker_list_tells_a_missing_reason_from_no_blocker_at_all():

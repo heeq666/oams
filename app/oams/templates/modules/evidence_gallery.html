@@ -1,15 +1,24 @@
-{#- Input: evidence links. Never aggregated -- the links leave the building.
-    证据区只在 edit / preview 渲染；readonly 整块被 _hidden_in_readonly 剔除，
-    所以这里不需要「无控件」分支。 -#}
+{#- Input: evidence links. Never aggregated -- the links leave the building, so
+    no number here ever enters a company total.
+    Three viewpoints:
+      edit      --可以填，也可以点开已有的凭证；
+      preview   --同样的控件（能试填，不保存）；
+      readonly  --只读展示：标题、链接、备注都是静态文字，一个控件都没有
+                 （老大 2026-11-10 定：藏起来会让人以为这页没凭证）。 -#}
 <section class="wh-m wh-input wh-evidence-gallery" data-type="evidence_gallery">
   {% if inline_widgets() %}
   {{ input_for('title') }}
   {{ input_for('evidence_url') }}
   {{ input_for('note', textarea=True) }}
+  {% elif value_of('title') %}
+  <p class="wh-evidence-title">{{ value_of('title') }}</p>
   {% endif %}
   {% set url = safe_url(value_of('evidence_url')) %}
   {% if url %}
   <a class="wh-link" href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ value_of('evidence') or url }}<svg class="wh-icon wh-icon-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>
+  {% else %}
+  <p class="wh-empty">还没有贴凭证。</p>
   {% endif %}
+  {% if not inline_widgets() and value_of('note') %}<p class="wh-meta">{{ value_of('note') }}</p>{% endif %}
   {{ private_note(module, spec) }}
 </section>

@@ -2,7 +2,7 @@
 {% block title %}无权限 · OAMS{% endblock %}
 {% block content %}
 <h1>没有权限</h1>
-<div class="flash error">{{ message }}</div>
+<div class="flash error flash-inline">{{ message }}</div>
 <p class="sub">这个账号的岗位没有被授予这项权限。需要变更的话，找管理员在授权里加一条，改动会记进审计。</p>
 <p><a class="btn" href="/board">回看板</a></p>
 {% endblock %}

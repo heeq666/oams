@@ -154,10 +154,12 @@ def test_readonly_view_shows_data():
     assert "AW24-001" in render_read_only(base(), values={"title": "AW24-001"})
 
 
-def test_readonly_hides_department_private_module():
-    # evidence_gallery never leaves the department, in either direction
-    html = render_read_only(base(), values={"evidence_url": "https://example.com/secret.pdf"})
-    assert "secret.pdf" not in html
+def test_readonly_shows_evidence_as_plain_text():
+    # 证据区不进公司汇总，但只读视角照旧给看（老大 2026-11-10 定）：看别人部门
+    # 的页面时也得能点开那份凭证——只读的意思是「没有控件」，不是「没有这一块」。
+    html = render_read_only(base(), values={"evidence_url": "https://example.com/sheet.pdf"})
+    assert "sheet.pdf" in html
+    assert "<input" not in html
 
 
 def test_readonly_has_no_inputs():
@@ -235,15 +237,23 @@ def test_preview_marks_its_viewpoint():
     assert 'data-mode="preview"' in html
 
 
-def test_preview_renders_disabled_widgets():
-    # preview 是这页的图纸：控件要在场（看清长什么样），但一格都提交不了
+def test_preview_renders_live_widgets():
+    # 预览是启用前亲手试一遍的地方（老大 2026-11-10 定）：控件得真能填、能选，
+    # 「填了不保存」交给横幅一句话说清，不靠把控件锁死来防误提交。
     html = render_preview(base())
     found = re.findall(r'<(?:input|select|textarea)\b[^>]*class="wh-input"[^>]*>', html)
-    assert found, "审核视角要看得见控件"
+    assert found, "预览要看得见控件"
     for tag in found:
-        assert "disabled" in tag, tag
-        assert 'tabindex="-1"' in tag, tag
+        assert "disabled" not in tag, tag
+        assert 'tabindex="-1"' not in tag, tag
+        # 预览不收数据：标 required 会让人以为填不完就过不去。
         assert "required" not in tag, tag
+
+
+def test_preview_says_what_it_fills_here_is_not_saved():
+    html = render_preview(base())
+    assert "wh-preview-hint" in html
+    assert "不会保存" in html
 
 
 def test_every_registered_module_has_a_template():

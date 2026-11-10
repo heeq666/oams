@@ -46,6 +46,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 预览横幅：预览里的控件是真能填的（老大 2026-11-10 定），所以必须当场说清
+   「填了不保存」，否则试填的人会以为已经提交。与标题同宽、压在标题下面一行。 */
+.wh-preview-hint {
+  margin: -4px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--oams-line);
+  border-radius: var(--oams-radius);
+  background: var(--oams-bg);
+  color: var(--oams-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .wh-interface-title {
   font-size: 15px;
   font-weight: 600;
