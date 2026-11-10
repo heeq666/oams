@@ -85,6 +85,19 @@
 
 ### 容器层（7）
 
+**B1 已落地（2026-11-10）。** 本节写作时的 7 处 ❌ 现在都收了口，代码在
+`app/oams/render.py`（`rendered_children` / `layout_children` / `tab_panes` /
+`tab_orphan_labels`）与 `app/oams/static/oams-modules.css`，用例在
+`tests/test_render_modules.py` 末尾「B1 容器」那一组：
+
+- 空壳不画：card / columns / rows / grid / tabs 的子件全画不出东西时，连壳都不渲染
+  （原来是「只有标题的卡」和「纯灰空框」）。
+- 边缘留白不算数：容器首尾的 spacer 不再渲染（父容器自己已有 gap），中间的不动。
+- tabs：radio 换面板零 JS，标签与面板按位对齐；标签多于面板时多出来的 chip 置灰
+  `aria-disabled="true"`，不冒充开关。
+- divider 标签单行截断；grid / columns 同行等高（`align-items: stretch`）。
+- 间距与断点本来就已经是收口状态（`lg` = 16、5 列退 2 列、900/1100 两档），本次只复核。
+
 #### 1. `card` 卡片 — 内容高 166
 
 - **三视图**：三档同形（标题 + body）。❌ 缺：**body 为空时的形态**——现在照样渲染一个空 `.wh-card-body`，得到「只有标题的卡」或「纯灰空框」。

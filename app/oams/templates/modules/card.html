@@ -1,11 +1,12 @@
 {#- Container: a titled surface. The title is the only string a container may carry. -#}
 {% set p = params_of(module) %}
 {% set title = p.get('title') %}
+{% set kids = layout_children(module) %}
+{% if kids %}
 <section class="wh-m wh-container wh-card" data-type="card">
   {% if title %}<h3 class="wh-card-title">{{ title }}</h3>{% endif %}
   <div class="wh-card-body">
-    {% for child in children_of(module) %}
-    {{ render_module(child) }}
-    {% endfor %}
+    {% for child, html in kids %}{{ html }}{% endfor %}
   </div>
 </section>
+{% endif %}

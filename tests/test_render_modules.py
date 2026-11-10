@@ -873,3 +873,50 @@ def test_an_aggregate_of_zero_renders_as_zero_not_a_dash():
     values = re.findall(r'<span class="wh-metric-value">(.*?)</span>', html)
     assert values == ["0"], values
     assert render.EMPTY not in values
+
+
+# --------------------------------------------------------------------------- #
+# B1 容器：空壳不画、边上的留白不算数、标签与面板一一对应
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("key", sorted(CONTAINER_KEYS - {"divider", "spacer"}))
+def test_container_without_children_draws_nothing(key):
+    """没有子件的容器连壳都不画：一张只有标题的卡比没有卡更让人误会。"""
+    tree = {"type": key, "params": MODULES[key].get("params", {}), "children": []}
+    assert f'data-type="{key}"' not in render_interface(page(tree), VALUES, AGGREGATES)
+
+
+def test_card_of_only_edge_whitespace_draws_nothing():
+    # 卡片里只剩一块留白，等于没有内容：标题也不该孤零零出现。
+    tree = {"type": "card", "params": {"title": "本周打样"}, "children": [{"type": "spacer"}]}
+    html = render_interface(page(tree), VALUES, AGGREGATES)
+    assert "wh-card" not in html
+    assert "本周打样" not in html
+
+
+def test_edge_spacers_collapse_into_the_container_gap():
+    tree = {"type": "rows", "children": [{"type": "spacer"}, LEAF, {"type": "spacer"}]}
+    html = render_interface(page(tree), VALUES, AGGREGATES)
+    assert "wh-spacer" not in html
+    assert "说明" in html
+
+
+def test_an_interior_spacer_still_draws():
+    # 中间的留白是作者在隔开两件事，不能被当成首尾留白吃掉。
+    tree = {"type": "rows", "children": [LEAF, {"type": "spacer"}, LEAF]}
+    html = render_interface(page(tree), VALUES, AGGREGATES)
+    assert "wh-spacer" in html
+
+
+def test_tabs_grey_out_a_label_with_no_pane():
+    tree = {"type": "tabs", "params": {"labels": ["概览", "明细", "没有内容"]},
+            "children": [LEAF]}
+    html = render_interface(page(tree), VALUES, AGGREGATES)
+    assert "没有内容" in html
+    assert 'class="wh-tab wh-tab-off"' in html
+    assert 'aria-disabled="true"' in html
+
+
+def test_tabs_of_only_blank_panes_draw_nothing():
+    tree = {"type": "tabs", "params": {"labels": ["概览"]}, "children": []}
+    assert 'data-type="tabs"' not in render_interface(page(tree), VALUES, AGGREGATES)

@@ -1,8 +1,11 @@
 {#- Container: fixed-width columns. Layout only -- no text, no data (concept 3.1). -#}
 {% set p = params_of(module) %}
+{% set kids = layout_children(module) %}
+{% if kids %}
 <div class="wh-m wh-container wh-columns wh-columns-{{ as_int(p.get('columns'), 2) }} wh-gap-{{ gap_of(module) }}"
      data-type="columns">
-  {% for child in children_of(module) %}
-  <div class="wh-cell">{{ render_module(child) }}</div>
+  {% for child, html in kids %}
+  <div class="wh-cell">{{ html }}</div>
   {% endfor %}
 </div>
+{% endif %}

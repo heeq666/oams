@@ -146,7 +146,9 @@
   /* 列数收进变量：模块的 `span: 1..4` 是「跨父级的几列」，所以模块层保留 repeat(N)，
      不套外壳的 12 栅格（外壳那套见 docs/design/layout-grid.md §2，模块层的理由见 §6）。 */
   grid-template-columns: repeat(var(--oams-cols, 1), minmax(0, 1fr));
-  align-items: start;
+  /* 同一行等高：有底的面板并排时顶边对不齐最显眼，`.wh-cell` 里的子件
+     再 `flex: 1` 把空白留在底部（B1，与 layout-grid.md「有底面板同行等高」一致） */
+  align-items: stretch;
 }
 
 .wh-columns-1 { --oams-cols: 1; }
@@ -255,6 +257,15 @@
   outline-offset: 2px;
 }
 
+/* 标签比面板多时多出来的 chip：看得见、点不动，也不冒充开关（B1） */
+.wh-tab-off {
+  order: 1;
+  cursor: default;
+  opacity: .5;
+  /* 与可点的 chip 同高，但不吃 hover/focus */
+  pointer-events: none;
+}
+
 .wh-tabpanel {
   display: none;
   order: 2;
@@ -284,6 +295,10 @@
   font-size: 12px;
   color: var(--oams-muted);
   margin-bottom: 8px;
+  /* 标签超长按单行截断：它一换行就把那条线整体往下顶（B1） */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wh-hr {

@@ -1,8 +1,11 @@
 {#- Container: uniform grid of cards. -#}
 {% set p = params_of(module) %}
+{% set kids = layout_children(module) %}
+{% if kids %}
 <div class="wh-m wh-container wh-grid wh-columns-{{ as_int(p.get('columns'), 3) }} wh-gap-{{ gap_of(module) }}"
      data-type="grid">
-  {% for child in children_of(module) %}
-  <div class="wh-cell">{{ render_module(child) }}</div>
+  {% for child, html in kids %}
+  <div class="wh-cell">{{ html }}</div>
   {% endfor %}
 </div>
+{% endif %}

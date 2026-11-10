@@ -1,14 +1,18 @@
 {#- Container: real tabs -- one radio group, labels are the chips, no JS. -#}
-{% set p = params_of(module) %}
-{% set labels = as_list(p.get('labels')) %}
+{% set panes = tab_panes(module) %}
+{% set draws = panes | selectattr('html') | list %}
 {% set uid = tabs_uid(module) %}
+{% if draws %}
 <div class="wh-m wh-container wh-tabs" data-type="tabs">
-  {% for child in children_of(module) %}
-  {% set index = loop.index0 %}
-  {% set label = labels[index] if index < (labels | length) else '标签 ' ~ loop.index %}
-  <input class="wh-tab-radio" type="radio" name="{{ uid }}" id="{{ uid }}-{{ index }}"
+  {% for pane in panes %}
+  <input class="wh-tab-radio" type="radio" name="{{ uid }}" id="{{ uid }}-{{ pane.index }}"
          {% if loop.first %}checked{% endif %}>
-  <label class="wh-tab" for="{{ uid }}-{{ index }}">{{ label }}</label>
-  <div class="wh-tabpanel" data-panel="{{ index }}">{{ render_module(child) }}</div>
+  <label class="wh-tab" for="{{ uid }}-{{ pane.index }}">{{ pane.label }}</label>
+  <div class="wh-tabpanel" data-panel="{{ pane.index }}">{{ pane.html }}</div>
+  {% endfor %}
+  {#- 标签比面板多：多出来的 chip 置灰，不装看不见的开关（B1）-#}
+  {% for label in tab_orphan_labels(module) %}
+  <span class="wh-tab wh-tab-off" aria-disabled="true">{{ label }}</span>
   {% endfor %}
 </div>
+{% endif %}

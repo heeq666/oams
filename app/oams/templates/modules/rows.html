@@ -1,6 +1,7 @@
 {#- Container: vertical stack. -#}
+{% set kids = layout_children(module) %}
+{% if kids %}
 <div class="wh-m wh-container wh-rows wh-gap-{{ gap_of(module) }}" data-type="rows">
-  {% for child in children_of(module) %}
-  {{ render_module(child) }}
-  {% endfor %}
+  {% for child, html in kids %}{{ html }}{% endfor %}
 </div>
+{% endif %}

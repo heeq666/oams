@@ -733,6 +733,55 @@ def children_of(module: Any) -> list:
     return [child for child in _as_list(module.get("children")) if isinstance(child, dict)]
 
 
+def rendered_children(module: Any) -> list:
+    """Real children, already rendered, with the ones that draw nothing dropped.
+
+    A container whose children all draw nothing is itself empty (B1): the caller
+    checks this list and skips the wrapper, instead of leaving a titled card with
+    an empty body or a grey box that says nothing.
+    """
+    return [(child, html) for child, html in
+            ((child, render_module(child)) for child in children_of(module))
+            if str(html).strip()]
+
+
+def layout_children(module: Any) -> list:
+    """``rendered_children`` minus leading/trailing spacers (B1).
+
+    The container already leaves its gap above the first child and below the
+    last, so an edge spacer only adds an unexplained empty band. Interior
+    spacers stay: there the author is separating two things on purpose.
+    """
+    pairs = rendered_children(module)
+    while pairs and str((pairs[0][0] or {}).get("type") or "") == "spacer":
+        pairs = pairs[1:]
+    while pairs and str((pairs[-1][0] or {}).get("type") or "") == "spacer":
+        pairs = pairs[:-1]
+    return pairs
+
+
+def tab_panes(module: Any) -> list:
+    """Tabs as (index, label, rendered html), keeping labels aligned to children.
+
+    Panes are rendered here rather than in the template because a blank pane
+    must not shift the labels: label N stays with child N even when a neighbour
+    draws nothing.
+    """
+    labels = [str(item) for item in _as_list(params_of(module).get("labels"))]
+    kids = children_of(module)
+    panes = []
+    for index, child in enumerate(kids):
+        label = labels[index] if index < len(labels) else f"标签 {index + 1}"
+        panes.append({"index": index, "label": label, "html": render_module(child)})
+    return panes
+
+
+def tab_orphan_labels(module: Any) -> list:
+    """Labels with no pane behind them: they draw as greyed chips (B1)."""
+    labels = [str(item) for item in _as_list(params_of(module).get("labels"))]
+    return labels[len(children_of(module)):]
+
+
 def bucket(value: Any, total: Any) -> str:
     """Quantised share for CSS bars: p10..p100 (no inline styles anywhere)."""
     try:
@@ -828,6 +877,10 @@ _ENV.globals.update({
     "as_columns": _as_columns,
     "gap_of": gap_of,
     "children_of": children_of,
+    "rendered_children": rendered_children,
+    "layout_children": layout_children,
+    "tab_panes": tab_panes,
+    "tab_orphan_labels": tab_orphan_labels,
     "bucket": bucket,
     "private_note": private_note,
     "status_tone": status_tone,
