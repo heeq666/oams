@@ -929,47 +929,49 @@
   .wh-tag { display: none; }
 }
 
-/* 窄档（<=1100px）带控件的明细表：每条记录拆成一块，字段名在上、控件整宽在下。
+/* 带控件的明细表（edit / preview 两态）：一条记录的格子按「自己有多宽」换行，永远不裁字。
+   2026-11-10 改：以前这里是一条 @media (max-width: 1100px) 断点——按**窗口**宽度判断，
+   可这张表经常被放进半宽的卡片（`columns: 2`）：1440 的窗口、660 的卡片、6 列就是每格
+   110px，断点不触发，字被截成「附」「OA-2026」「https://par」。窗口宽不等于表格宽，
+   所以断点没有正确的取值——判据只能交给盒子自己：`auto-fit` + 每格至少 180px，
+   放不下就换行：660 宽里 6 个字段排 3 + 3，1100 宽里排 5 + 1，768 里排 3 + 3。
+   180 而不是 132：132 是「勉强放下一句话」的下限（见 §6.1），填报格子里还有下拉箭头、
+   日期选择，留到 180 才不局促。
    为什么不是「让表格横滚」：这张表出现在填报表单里，一边横滚一边填会丢行。
-   为什么必须换排布而不是缩控件：768 下 5 列时每个单元格只有 95–102px；1024 下
-   150px。看全一个常见值至少要 132px（8 个汉字 × 13px 字号 + 左右内距 24 + 边 2），
-   而这一页最长的值「差旅报销 2026-11-01」要 181px——5 列就要 905px，比 1024 的
-   801 还宽。所以 1024 也躲不过裁字，一并换排布；1440 不受影响。
    只读表不套 .wh-table-controls（它靠 td 折行就够了）。 */
-@media (max-width: 1100px) {
-  .wh-table-controls .wh-table,
-  .wh-table-controls .wh-table tbody,
-  .wh-table-controls .wh-table td { display: block; width: auto; }
-  /* 列名不再单独占一行：每个格子的 ::before 用 data-label 回显，信息没少。 */
-  .wh-table-controls .wh-table thead { display: none; }
-  .wh-table-controls .wh-table tr {
-    display: flex;
-    flex-direction: column;
-    gap: 12px; /* 字段与字段：元素档 12 */
-    padding: 16px 0; /* 记录与记录：块档 16 */
-    border-bottom: 1px solid var(--oams-line);
-  }
-  .wh-table-controls .wh-table tr:first-child { padding-top: 0; }
-  .wh-table-controls .wh-table tr:last-child { border-bottom: 0; padding-bottom: 0; }
-  .wh-table-controls .wh-table td {
-    padding: 0;
-    border-bottom: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px; /* 标签 <-> 控件：行内档 8 */
-    /* 外壳表那条 `td { max-width: 320px; white-space: nowrap; overflow: hidden;
-       text-overflow: ellipsis }`（base.html）在窄档照样命中：320 是宽表每列的容差，
-       不是这一段折行排布的宽度。不拿掉，值一长（备注、带前缀的凭证号）就又被
-       320 裁掉——等于把刚修掉的裁字换个门槛重来。这里去掉上限、允许整块换行。 */
-    max-width: none;
-    white-space: normal;
-    overflow: visible;
-    text-overflow: clip;
-  }
-  .wh-table-controls .wh-table td::before {
-    content: attr(data-label);
-    font-size: 12px;
-    line-height: 16px;
-    color: var(--oams-muted);
-  }
+.wh-table-controls .wh-table,
+.wh-table-controls .wh-table tbody { display: block; width: 100%; }
+/* 列名不再单独占一行：每个格子的 ::before 用 data-label 回显，信息没少；
+   多行表单（rows 2–5）里这一改反而更准——表头只有一行，填到第 4 行时
+   早就看不出在填哪一列了。 */
+.wh-table-controls .wh-table thead { display: none; }
+.wh-table-controls .wh-table tr {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px; /* 元素与元素：12 */
+  padding: 16px 0; /* 记录与记录：块 16 */
+  border-bottom: 1px solid var(--oams-line);
+}
+.wh-table-controls .wh-table tr:first-child { padding-top: 0; }
+.wh-table-controls .wh-table tr:last-child { border-bottom: 0; padding-bottom: 0; }
+.wh-table-controls .wh-table td {
+  padding: 0;
+  border-bottom: 0;
+  min-width: 0; /* 允许比内容更窄，别撑破网格 */
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* 标签 <-> 控件：行内档 8 */
+  /* 外壳表那条 `td { max-width: 320px; white-space: nowrap; overflow: hidden;
+     text-overflow: ellipsis }`（base.html）在这里照样命中：320 是宽表每列的容差，
+     不是表单格子的宽度。不拿掉，值一长（备注、带前缀的凭证号）就又被 320 裁掉。 */
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+.wh-table-controls .wh-table td::before {
+  content: attr(data-label);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--oams-muted);
 }

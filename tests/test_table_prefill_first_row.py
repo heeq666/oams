@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -103,3 +104,41 @@ def test_only_the_first_row_carries_the_last_entry(room):
 
     # 一行钉死整件事：这条记录的值在整页只出现一次（改之前是 5 次，一行一份）
     assert page.text.count('value="差旅报销"') == 1
+
+
+# --- 版面判据：带控件的表按「自己有多宽」换行，不按窗口宽（2026-11-10） -------------
+
+CSS = Path(__file__).resolve().parents[1] / "app" / "oams" / "static" / "oams-modules.css"
+_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+
+
+def _css() -> str:
+    return _COMMENT.sub("", CSS.read_text(encoding="utf-8"))
+
+
+def test_control_table_wraps_by_its_own_width():
+    """一条记录是网格，每格下限由 `minmax()` 兜住——放不下就换行。
+
+    钉住的是**判据**：以前这里是 `@media (max-width: 1100px)`，按窗口宽判断。
+    同一个 1440 窗口，表格放进 `columns: 2` 的半宽卡片后每格只剩 110px，断点不
+    触发，字被裁成「附」「OA-2026」「https://par」。改成 `auto-fit` 之后没有媒体
+    查询可写错，也就不该有——所以下面第二条同时禁止它回到任何媒体查询里。
+    """
+
+    css = _css()
+    block = re.search(r"\.wh-table-controls \.wh-table tr \{([^}]*)\}", css)
+    assert block, "样式表里找不到 `.wh-table-controls .wh-table tr { … }`"
+    body = block.group(1)
+    assert "display: grid" in body, body
+    grid = re.search(r"grid-template-columns:\s*repeat\(auto-fit,\s*minmax\((\d+)px", body)
+    assert grid, body
+    # 132 是「一格放得下一句 8 个汉字」的下限，填报格里还有下拉箭头与日期控件
+    assert int(grid.group(1)) >= 132
+
+
+def test_control_table_layout_is_not_keyed_on_viewport_width():
+    """带控件的表不许再出现在任何 `@media` 里——窗口宽不是表格宽。"""
+
+    css = _css()
+    for match in re.finditer(r"@media[^{]*\{(.*?)\n\}", css, re.S):
+        assert ".wh-table-controls" not in match.group(1), match.group(0)[:200]
