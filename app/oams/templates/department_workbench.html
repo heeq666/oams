@@ -136,18 +136,21 @@
           {% if can_fill and e.actions %}
           {# 部门自己声明的动作（通过／驳回）。能点哪几个由这条记录现在的状态词决定，
              按钮只是把那个动作提交回来；改不改得动由后端重新判一遍。 #}
-          <div class="row1" style="gap:8px;align-items:flex-end;margin-top:8px">
+          <div class="row1" style="gap:8px;align-items:center;margin-top:10px">
+            <span style="color:var(--muted);font-size:13px">处理这条：</span>
             {% for action in e.actions %}
             <form method="post"
                   action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/entries/{{ e.entry_id }}/transition"
-                  class="row1" style="gap:8px;align-items:flex-end">
+                  class="row1" style="gap:8px;align-items:center">
               <input type="hidden" name="csrf" value="{{ action_csrf }}">
               <input type="hidden" name="action" value="{{ action.key }}">
               {% if action.note %}
               <input type="text" name="note" placeholder="写一句原因" required maxlength="200"
-                     aria-label="{{ action.label }}的原因">
+                     style="width:240px" aria-label="{{ action.label }}的原因">
+              <button type="submit" class="ghost">{{ action.label }}</button>
+              {% else %}
+              <button type="submit">{{ action.label }}</button>
               {% endif %}
-              <button type="submit" class="{{ 'link' if not action.note else '' }}">{{ action.label }}</button>
             </form>
             {% endfor %}
           </div>
