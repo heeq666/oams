@@ -1536,6 +1536,11 @@ def entry_state_counts(conn, interface_id):
 
 
 def _entry_brief(row):
+    """One entry, with the two facts that explain whether it is in the number.
+
+    ``rollup_state`` 说的就是这一条为什么算/不算（counted / counted_unlinked /
+    draft / retracted）；``feeds_company`` 是同一件事的布尔写法，前端不用再猜。
+    """
     return {
         "entry_id": row.get("entry_id"),
         "title": row.get("title"),
@@ -1543,15 +1548,23 @@ def _entry_brief(row):
         "progress_value": row.get("progress_value"),
         "reported_at": row.get("reported_at"),
         "work_item_id": row.get("work_item_id"),
+        "rollup_state": row.get("rollup_state"),
+        "feeds_company": row.get("feeds_company"),
     }
 
 
-def rollup_entries(conn, interface_id, metric_key=None):
+def rollup_entries(conn, interface_id, metric_key=None, *, company=True):
     """The entries that actually participated in a number (or in the page).
 
     Never raises: a missing page, an undeclared metric or a broken descriptor is
     an unavailable answer with a reason, because this is what a manager opens
     when a number looks wrong -- and a 500 would hide the explanation.
+
+    ``company=True`` answers the strict question (what may lift a company
+    figure). 部门页上的数字是部门口径（``aggregate_entries``），点它打开的必须
+    是同一条口径，否则同一屏会出现「待批 1 条」与「0 条」并存：读的人只会判
+    断查询坏了，而不是版本/关联不同。所以部门页传 ``company=False``，返回值里
+    ``company`` 明写这一次回答的是哪一面。
     """
     try:
         page = conn.execute(
@@ -1562,7 +1575,7 @@ def rollup_entries(conn, interface_id, metric_key=None):
             return {"available": False, "reason": "找不到这个界面", "entries": [],
                     "metric_key": metric_key, "value": None}
         base = {"available": True, "reason": None, "interface_id": page["interface_id"],
-                "interface_name": page["name"], "metric_key": metric_key,
+                "interface_name": page["name"], "metric_key": metric_key, "company": company,
                 "mode": None, "agg": None, "from_field": None, "where_status": None}
         binding = None
         if metric_key:
@@ -1574,12 +1587,15 @@ def rollup_entries(conn, interface_id, metric_key=None):
                     "reason": "这个页面没有声明指标 " + str(metric_key) + "，因此没有条目参与它",
                     "value": None, "entries": [], "entry_count": 0})
                 return base
-            rows = _binding_entries(conn, page["interface_id"], binding, company=True)
+            rows = _binding_entries(conn, page["interface_id"], binding, company=company)
         else:
+            state_sql = ROLLUP_STATE_SQL if company else DEPARTMENT_ROLLUP_STATE_SQL
+            predicate = ROLLUP_PREDICATE if company else DEPARTMENT_ROLLUP_PREDICATE
             rows = conn.execute(
-                "SELECT " + ENTRY_COLUMNS_SQL + ", " + ROLLUP_STATE_SQL + " AS rollup_state "
+                "SELECT " + ENTRY_COLUMNS_SQL + ", " + state_sql + " AS rollup_state, "
+                + FEEDS_COMPANY_SQL + " AS feeds_company "
                 "FROM oams.interface_entries e WHERE e.interface_id = %s AND "
-                + ROLLUP_PREDICATE + " ORDER BY e.reported_at DESC, e.entry_id DESC",
+                + predicate + " ORDER BY e.reported_at DESC, e.entry_id DESC",
                 (page["interface_id"],)).fetchall()
         column = _field_map_to(page["descriptor"], (binding or {}).get("from_field"))
         value = None

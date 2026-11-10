@@ -368,6 +368,27 @@ def test_rollup_entries_lists_only_the_entries_that_counted(world):
         assert entry["reported_at"] is not None
 
 
+def test_rollup_entries_can_answer_the_department_side_of_the_same_number(world):
+    """部门页上的数字点进去，看到的必须是同一口径的条目。
+
+    2026-11-10 实况：新做的请假页显示「待批 1 条」，「看是哪几条」却回「0 条」。
+    原因是这条追溯按公司口径（要求已挂工作项）回答，而页上的数字是部门口径。
+    同一屏两套口径，读的人只会判断查询坏了。
+    """
+    result = api.rollup_entries(world["conn"], world["page"],
+                                "dept.ROLLUPD.progress_sum", company=False)
+    assert result["available"] is True
+    assert result["company"] is False
+    assert result["entry_count"] == 4, "未关联那条也算部门数"
+    assert result["value"] == 297
+    by_id = {entry["entry_id"]: entry for entry in result["entries"]}
+    unlinked = by_id[world["entries"]["unlinked"]]
+    assert unlinked["rollup_state"] == "counted_unlinked"
+    assert unlinked["feeds_company"] is False, "它算部门数、不进公司数，这一条要说清楚"
+    linked = [entry for key, entry in by_id.items() if key != world["entries"]["unlinked"]]
+    assert all(entry["feeds_company"] for entry in linked)
+
+
 def test_rollup_entries_without_metric_key_lists_the_counted_entries(world):
     result = api.rollup_entries(world["conn"], world["page"])
     assert result["available"] is True
@@ -387,6 +408,24 @@ def test_rollup_entries_missing_page_is_an_answer_not_an_error(world):
                                 "dept.ROLLUPD.progress_sum")
     assert result["available"] is False
     assert result["reason"] == "找不到这个界面"
+
+
+def test_the_trace_route_asks_for_the_department_scope():
+    """页上的数字是部门口径，点它的那条链接也必须按部门口径回答。
+
+    这条用读源码的方式钉，因为 `world` 夹具的数据在 SAVEPOINT 里、只有它自己
+    那条连接看得见，TestClient 走连接池读不到，凑不出路由级用例。写死了默认值
+    也一样会漂：真正会被人改回去的是路由那一行的 `company=False`。
+    """
+    import inspect
+
+    import oams.api  # noqa: F401  —— 先导 api，web 才能导（见 app/oams/api.py 末尾的反向 import）
+    from oams import web
+
+    assert inspect.signature(api.rollup_entries).parameters["company"].default is True, \
+        "公司口径仍是默认，别让别的调用方悄悄变成部门口径"
+    assert "company=False" in inspect.getsource(web.entry_trace), \
+        "部门页的追溯必须显式要部门口径"
 
 
 # ---------------------------------------------------------------------------

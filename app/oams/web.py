@@ -177,8 +177,13 @@ ROLLUP_STATE_BADGES = {"counted": "human", "counted_unlinked": "vacant",
 ENTRY_LINK_PURPOSE = "oams:entry-link:v1"
 
 
-def _with_rollup_labels(rows):
-    """Give each entry the short Chinese label and badge class its state deserves."""
+def _with_rollup_labels(rows, descriptor=None):
+    """Give each entry the short Chinese label and badge class its state deserves.
+
+    传了 ``descriptor`` 就同时给出这条记录在**这一页**上的状态名
+    （``status_word``）：部门用自己的话（「待批」），不是标准态的名字（「未开始」）。
+    不传就只算进不进公司数。两处口径分开算、别在一屏上用两个名字叫同一条记录。
+    """
     rows = list(rows or [])
     marked = []
     for row in rows:
@@ -188,6 +193,8 @@ def _with_rollup_labels(rows):
         item["rollup_label"] = ROLLUP_STATE_LABELS.get(state, state)
         item["rollup_badge"] = ROLLUP_STATE_BADGES.get(state, "")
         item["rollup_blocker"] = _rollup_gap(state)
+        if descriptor is not None:
+            item["status_word"] = _entry_status_word(descriptor, item)
         marked.append(item)
     return marked
 
@@ -1381,7 +1388,8 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         # whether it feeds the company, from api.ROLLUP_STATE_SQL -- the one place
         # the three conditions are written, so the badge cannot disagree with the
         # number the board shows.
-        recent = _with_rollup_labels(api.page_entries(conn, interface_id))[:12]
+        recent = _with_rollup_labels(api.page_entries(conn, interface_id),
+                                     descriptor=descriptor)[:12]
         rollup = api.build_department_aggregates(conn, org_unit_id, descriptor=descriptor,
                                                 interface_id=interface_id)
         # The link form: the work items an entry may be attached to, and the
@@ -1609,7 +1617,10 @@ def entry_trace(request: Request, org_unit_id: UUID, interface_id: UUID,
         if not can_view:
             return JSONResponse(status_code=403, content={"available": False, "reason": "not in this department"})
         api.require_app_scope(principal, "entries:read:dept")
-        data = api.rollup_entries(conn, interface_id, metric_key)
+        # 这条链接挂在部门页上，页上的数字是部门口径（aggregate_entries），
+        # 所以条目也必须按部门口径取——否则同一屏会出现「待批 1 条」与点进去
+        # 的「0 条」并存，读的人只会判断查询坏了。
+        data = api.rollup_entries(conn, interface_id, metric_key, company=False)
     return JSONResponse(content=_jsonable(data))
 
 

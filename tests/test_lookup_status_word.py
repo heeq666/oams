@@ -99,3 +99,21 @@ def test_an_old_entry_without_the_word_falls_back_to_the_standard_label():
     assert web._entry_status_word(DESCRIPTOR, labels) == "未开始"
     # 护栏：两个部门词都可能对应 planned，反查一定会挑错一个
     assert web._entry_status_word(DESCRIPTOR, labels) not in ("待取", "已取")
+
+
+def test_the_recent_entries_list_uses_the_same_word_as_the_table():
+    """「最近汇报记录」列表也必须写部门词（2026-11-10 请假页实况）。
+
+    同一屏上，指标区写「待批 1 条」，下面那条记录却写标准态的「未开始」——
+    这是同一类错的第二次（第一次是查件卡），所以规则落在 `_with_rollup_labels`
+    一处：给了 descriptor 就同时算 status_word，模板只负责显示。
+    """
+    entry = {"status": "planned", "extra": {"state_word": "待取"}, "rollup_state": "counted_unlinked"}
+
+    marked = web._with_rollup_labels([entry], descriptor=DESCRIPTOR)
+    assert marked[0]["status_word"] == "待取"
+    assert marked[0]["rollup_label"], "进不进公司数这件事仍然要标"
+
+    # 不传 descriptor 时不填这一格：宁可没有，也不许悄悄填一个标准态名字顶上
+    plain = web._with_rollup_labels([entry])
+    assert "status_word" not in plain[0]

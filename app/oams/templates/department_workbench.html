@@ -102,7 +102,7 @@
         <li class="{{ e.status or '' }}">
           <div class="row1">
             <strong>{{ e.title or '（未填事项）' }}</strong>
-            {% if e.status %}<span class="badge {% if e.status == 'blocked' %}blocked{% endif %}">{{ status_labels.get(e.status, e.status) }}</span>{% endif %}
+            {% if e.status %}<span class="badge {% if e.status == 'blocked' %}blocked{% endif %}">{{ e.status_word or status_labels.get(e.status, e.status) }}</span>{% endif %}
             <span class="badge {{ e.rollup_badge or '' }}">{{ e.rollup_label }}</span>
             <span class="pos">{{ e.reported_at | dt }}</span>
           </div>
