@@ -56,7 +56,7 @@ OAMS_DATABASE_URL=... .venv/bin/python -m pytest   # 不给库地址 = 整批 db
 
 ## 目录
 
-- `app/oams/` —— 应用本体：`modules.py`（模块注册表）、`templates/`、`static/`、`mcp/`（12 个沙箱工具 + 5 个连真站点的工具：`oams_departments` / `oams_check_descriptor` / `oams_submit_page` / `oams_my_work_items` / `oams_submit_progress`）、`cli.py`
+- `app/oams/` —— 应用本体：`modules.py`（模块注册表）、`templates/`、`static/`、`mcp/`（12 个沙箱工具 + 6 个连真站点的工具：`oams_departments` / `oams_check_descriptor` / `oams_submit_page` / `oams_page_definition` / `oams_my_work_items` / `oams_submit_progress`）、`cli.py`
 - `docs/architecture/` —— 契约与方案（`plugin-host-concept.md` 是现行主线，`v1-ui-redesign-plan.md` 已作废）；`collab-room-implementation-plan.md` 是协作室的实现清单（设计稿见 `docs/design/design-system-v1.md` §7）
 - `docs/design/` —— 界面规范与令牌
 - `app/oams/schema.sql` —— **唯一一份**建表脚本：**22 张表 + 1 个视图**（`work_item_current_state`），`oams db init` 幂等执行。按 `information_schema.tables` 数会是 **23**（视图也占一行），别当成多建了一张表；老库可能还留着旧的迁移台账 `oams.schema_migrations`（`db init` 既不再建也不删），那样会数出 24。双角色时期的建库脚本已删除（2026-11-02）；现在只有单角色，建库建表见 `oams db init`

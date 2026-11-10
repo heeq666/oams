@@ -578,6 +578,36 @@ def _submit_progress(context: Any, arguments: dict[str, Any]) -> ToolResult:
                progress_value=latest.get("progress_value"))
 
 
+@_guarded
+def _page_definition(context: Any, arguments: dict[str, Any]) -> ToolResult:
+    """Hand back one page's definition -- including pages shared as reference only."""
+
+    interface_id = str(arguments.get("interface_id") or "").strip()
+    if not interface_id:
+        return _fail(ERR_INVALID_ARGUMENTS,
+                     "要告诉我哪一页：interface_id 必填，从 oams_departments 或者页面上取。")
+    page = _client().get_interface(interface_id)
+    descriptor = page.get("descriptor")
+    if not isinstance(descriptor, dict) or not descriptor:
+        return _fail(ERR_LIVE_API,
+                     "站点没回页面定义：可能是这一版还没有描述，也可能是你没拿到这一页。",
+                     status=200, interface_id=interface_id)
+
+    name = descriptor.get("name") or page.get("name") or ""
+    org = descriptor.get("org_unit_code") or ""
+    positions = "、".join(str(code) for code in (descriptor.get("position_codes") or []))
+    if page.get("can_read"):
+        tail = "这一页你能打开。"
+    else:
+        tail = ("这一页你只有参考权：定义给你，条目内容不给。照它做一版时，把部门码、岗位码、"
+                "页面编号和指标名里的部门前缀换成你自己的，再用 oams_submit_page 提交。")
+    return _ok(summary=f"「{name}」的定义在这儿（部门 {org}，岗位 {positions or '未写'}）。{tail}",
+               interface_id=str(page.get("interface_id") or interface_id),
+               descriptor=descriptor,
+               can_read=bool(page.get("can_read")),
+               can_base=bool(page.get("can_base")))
+
+
 #: The three tools. `capability=""` is deliberate: these are guarded by the ticket
 #: on the site, not by the sandbox capability tokens the other tools use.
 LIVE_TOOL_SPECS: tuple[ToolSpec, ...] = (
@@ -622,6 +652,21 @@ LIVE_TOOL_SPECS: tuple[ToolSpec, ...] = (
         }),
         capability="",
         handler=_submit_page,
+    ),
+    ToolSpec(
+        name="oams_page_definition",
+        description=(
+            "看一页现在的定义：字段、模块、版式、状态映射、指标。别的部门开给你「可作参考」的页"
+            "也能看——这是「照着一页做本部门一版」的起点：拿它的定义，换掉部门码、岗位码、"
+            "页面编号和指标名里的部门前缀，再用 oams_submit_page 提交成你自己部门的一页。"
+            "条目内容拿不到。"),
+        input_schema=_schema({
+            "interface_id": {"type": "string",
+                             "description": "要看的那一页的编号；从 oams_departments 或页面上取"},
+        }, required=["interface_id"]),
+        capability="",
+        handler=_page_definition,
+        read_only=True,
     ),
     ToolSpec(
         name="oams_my_work_items",

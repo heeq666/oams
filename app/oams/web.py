@@ -32,7 +32,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
@@ -1149,196 +1149,6 @@ def department_create_page(request: Request, org_unit_id: UUID, csrf: str = Form
                   f"在部门工作台新建了页面草稿「{name.strip()}」",
                   {"slug": slug.strip(), "version_no": version,
                    "based_on": str(basis) if basis else None})
-    return RedirectResponse(url=f"/departments/{org_unit_id}/{row['interface_id']}?saved=1", status_code=303)
-
-
-# ---------------------------------------------------------------------------
-# 照着别人的页面做一版：复制定义，不复制数据
-#
-# 「可作参考」这一格说的是页面定义（字段、模块、版式），不是条目里的内容
-# （见 `security.can_base_interface`）。所以复制在服务端做：把描述里钉着的部门
-# 身份、岗位、页面编号换成本部门的，其余原样带过去。
-#
-# 不走「把描述发给浏览器让人粘回来」那条路，不只是省一次粘贴：那三样私有信息
-# 留在文本里，粘过来就是一页挂在别人部门身份上、只给别部门岗位看的残页，而且
-# `validate_descriptor` 看不出来——它只查「这个编码存不存在」，不查「是不是你的」。
-# ---------------------------------------------------------------------------
-
-COPY_FORM_PURPOSE = "oams:copy-form:v1"
-
-
-def _rehome_text(text: str, source_prefix: str, target_prefix: str) -> str:
-    if text.startswith(source_prefix):
-        return target_prefix + text[len(source_prefix):]
-    return text
-
-
-def _rehome_metrics(value: Any, source_prefix: str, target_prefix: str) -> Any:
-    """把指标命名空间搬进本部门：`dept.FIN.expense_total` → `dept.GA.expense_total`。
-
-    指标名两侧都写着：一边是 `metrics` 的键名，一边是模块参数里的
-    `params.metric_key`，所以键和字符串值都要走一遍。只换前缀，名字后半截一个字
-    不动——换掉的正是「这属于哪个部门」这一层。
-    """
-    if isinstance(value, dict):
-        return {_rehome_text(key, source_prefix, target_prefix)
-                if isinstance(key, str) else key:
-                _rehome_metrics(item, source_prefix, target_prefix)
-                for key, item in value.items()}
-    if isinstance(value, list):
-        return [_rehome_metrics(item, source_prefix, target_prefix) for item in value]
-    if isinstance(value, str):
-        return _rehome_text(value, source_prefix, target_prefix)
-    return value
-
-
-def copied_descriptor(source: dict[str, Any], *, interface_id: Any, name: str,
-                      org_unit_code: str, position_code: str) -> dict[str, Any]:
-    """别人的页面定义 → 本部门的一页：只换三样私有信息，其余一字不动。
-
-    `interface_id` 必须给新页的编号而不是来源页的：描述里那个字段指的是「这一页是
-    哪一版」，留成来源页就会让后面按描述找页面的代码（审核、旧版落点）认错人。
-    """
-    descriptor = json.loads(json.dumps(source, default=str))   # 深拷贝，别改到库里的那份
-    source_code = str(descriptor.get("org_unit_code") or "").strip()
-    descriptor["interface_id"] = str(interface_id)
-    descriptor["name"] = name
-    descriptor["org_unit_code"] = org_unit_code
-    descriptor["position_codes"] = [position_code]
-    if source_code and source_code != org_unit_code:
-        # 指标名里也钉着部门（`dept.<编码>.`）：不搬的话校验会当场拒——它管的是
-        # 「一页只能报自己部门的指标」，这条拒得对。
-        descriptor = _rehome_metrics(descriptor, f"dept.{source_code}.",
-                                     f"dept.{org_unit_code}.")
-    return descriptor
-
-
-def _copyable_source(conn, principal, org_unit_id, source_id: str):
-    """来源页必须是「这个人真的能照着做」的那些之一。
-
-    表单里带回来的 id 只是把来源带过门槛，不能当依据：权限每次都重新判，
-    判据和列表页用的是同一处（`_basis_pages`），不另写一套。
-    """
-    wanted = source_id.strip()
-    if not wanted:
-        return None
-    return next((row for row in _basis_pages(conn, principal["member_id"], org_unit_id)
-                 if str(row["interface_id"]) == wanted), None)
-
-
-@router.get("/departments/{org_unit_id}/copy", response_class=HTMLResponse)
-def department_copy_page(request: Request, org_unit_id: UUID, based_on: str = "",
-                         error: str | None = None):
-    """先让人确认「照哪一页做、做成本部门的哪一页」，复制本身在提交时做。"""
-    try:
-        principal = _require(request, "workforce.reports", "read")
-        _require(request, "workforce.reports", "submit")
-    except _NotSignedIn:
-        return RedirectResponse(url=f"/login?next=/departments/{org_unit_id}/copy", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "照着做一版需要 workforce.reports 读写权限。")
-    api.require_app_scope(principal, "interfaces:draft")
-    with connection() as conn:
-        unit = _resolve_department(conn, principal, org_unit_id)
-        if unit is None:
-            return _denied(request, "你不在这个部门的范围内。")
-        source = _copyable_source(conn, principal, org_unit_id, based_on)
-        if source is None:
-            # 回建页页：那里有完整的来源清单（含「从零开始」），别让人对着空表单猜。
-            return RedirectResponse(
-                url=f"/departments/{org_unit_id}/new?error="
-                    + urllib.parse.quote("先选一个能照着做的来源页面"), status_code=303)
-        positions = conn.execute(
-            """SELECT position_id, position_code, title FROM oams.positions
-               WHERE org_unit_id = %s AND status = 'active' ORDER BY position_code""",
-            (org_unit_id,)).fetchall()
-        pages = _department_pages(conn, org_unit_id)
-        found = _visible_departments(conn, principal["member_id"])
-        counts = {row["org_unit_id"]: _pages_for_reader(conn, principal, row["org_unit_id"])
-                  for row in found}
-    departments = [dict(unit=row, pages=counts.get(row["org_unit_id"], [])) for row in found]
-    return TEMPLATES.TemplateResponse(request, "department_copy_page.html", {
-        "unit": unit, "departments": departments, "pages": pages,
-        "source": source, "positions": positions,
-        "current": None, "page": None, "preview": False,
-        "member": _member(request), "error": error,
-        "csrf": _form_token(request, COPY_FORM_PURPOSE)})
-
-
-@router.post("/departments/{org_unit_id}/copy")
-def department_copy_submit(request: Request, org_unit_id: UUID, csrf: str = Form(...),
-                           source_id: str = Form(...), slug: str = Form(...),
-                           name: str = Form(...), position_id: str = Form(default="")):
-    try:
-        principal = _require(request, "workforce.reports", "read")
-        _require(request, "workforce.reports", "submit")
-    except _NotSignedIn:
-        return RedirectResponse(url="/login?next=/departments", status_code=302)
-    except _NotPermitted:
-        return _denied(request, "照着做一版需要 workforce.reports 读写权限。")
-    api.require_app_scope(principal, "interfaces:draft")
-    _check_form_token(request, csrf, COPY_FORM_PURPOSE)
-    back = f"/departments/{org_unit_id}/copy?based_on={urllib.parse.quote(source_id.strip())}"
-    with connection() as conn:
-        unit = _resolve_department(conn, principal, org_unit_id)
-        if unit is None:
-            return _denied(request, "你不在这个部门的范围内。")
-        source = _copyable_source(conn, principal, org_unit_id, source_id)
-        if source is None:
-            return RedirectResponse(
-                url=f"/departments/{org_unit_id}/new?error="
-                    + urllib.parse.quote("这个来源页面不存在，或者不开放给你"), status_code=303)
-        position = conn.execute(
-            """SELECT position_id, position_code FROM oams.positions
-               WHERE org_unit_id = %s AND status = 'active' AND position_id = %s""",
-            (org_unit_id, position_id.strip() or None)).fetchone()
-        if position is None:
-            return RedirectResponse(url=back + "&error=" + urllib.parse.quote("选一个本部门的岗位"),
-                                    status_code=303)
-        open_version = conn.execute(
-            """SELECT interface_id FROM oams.interfaces
-               WHERE org_unit_id = %s AND slug = %s AND status IN ('draft', 'pending')
-               ORDER BY version_no DESC LIMIT 1""", (org_unit_id, slug.strip())).fetchone()
-        if open_version is not None:
-            return RedirectResponse(
-                url=f"/departments/{org_unit_id}/{open_version['interface_id']}?error="
-                    + urllib.parse.quote("这个页面已经有一版在改或待审核，先把那一版处理掉"),
-                status_code=303)
-        source_row = conn.execute(
-            "SELECT descriptor FROM oams.interfaces WHERE interface_id = %s",
-            (source["interface_id"],)).fetchone()
-        new_id = uuid4()
-        descriptor = copied_descriptor(source_row["descriptor"], interface_id=new_id,
-                                       name=name.strip(), org_unit_code=unit["org_code"],
-                                       position_code=position["position_code"])
-        codes = {row["org_code"] for row in conn.execute(
-            "SELECT org_code FROM oams.org_units WHERE status = 'active'").fetchall()}
-        known_positions = {row["position_code"] for row in conn.execute(
-            "SELECT position_code FROM oams.positions WHERE status = 'active'").fetchall()}
-        problems = validate_descriptor(descriptor, known_org_unit_codes=codes,
-                                       known_position_codes=known_positions)
-        if problems:
-            return RedirectResponse(url=back + "&error=" + urllib.parse.quote("；".join(problems)[:600]),
-                                    status_code=303)
-        version = conn.execute(
-            """SELECT COALESCE(max(version_no), 0) + 1 FROM oams.interfaces
-               WHERE org_unit_id = %s AND slug = %s""",
-            (org_unit_id, slug.strip())).fetchone()["?column?"]
-        # 新页照旧是草稿：复制过来的是「长什么样」，能不能代表公司还得部门看过、填过。
-        row = conn.execute(
-            """INSERT INTO oams.interfaces
-                   (interface_id, org_unit_id, slug, name, status, visibility, schema_version,
-                    descriptor, position_id, version_no, based_on, created_by, updated_by)
-               VALUES (%s, %s, %s, %s, 'draft', 'department', %s, %s, %s, %s, %s, %s, %s)
-               RETURNING interface_id""",
-            (new_id, org_unit_id, slug.strip(), name.strip(), descriptor.get("schema_version", "0.1"),
-             Jsonb(descriptor), position["position_id"], version, source["interface_id"],
-             principal["member_id"], principal["member_id"])).fetchone()
-        api.audit(conn, principal["member_id"], "interface.copied", "interface", row["interface_id"],
-                  f"照着「{source['name']}」在部门里做了一版「{name.strip()}」",
-                  {"slug": slug.strip(), "version_no": version,
-                   "copied_from": str(source["interface_id"]),
-                   "copied_from_slug": source["slug"]})
     return RedirectResponse(url=f"/departments/{org_unit_id}/{row['interface_id']}?saved=1", status_code=303)
 
 
@@ -4733,15 +4543,21 @@ def _require_any_app_scope(principal, *scopes):
 
 @router.get("/v1/interfaces/{interface_id}")
 def api_get_interface(request: Request, interface_id: UUID):
-    """回读一页现在的状态：送审之后用它确认 status 真变成了 pending。
+    """回读一页现在的状态与定义：送审之后用它确认 status 真变成了 pending。
+
+    定义（字段、模块、版式）也在这里给：「照着一页做本部门一版」的起点是拿到那一页
+    的定义，而外面能拿到它的唯一出口就是这个接口。条目内容不在这里——参考权只给
+    定义，不给数据。
 
     「我把页面送审了」不是证据，回读到的 status 才是——外部 AI 自报完成不算数，
     所以给它一个不靠猜的出口。
     """
     principal = _api_principal(request)
     with connection() as conn:
-        page = _page_for_app(conn, principal, interface_id)
+        page = _page_for_app_or_reference(conn, principal, interface_id)
         _require_any_app_scope(principal, "interfaces:draft", "entries:read:dept")
+        rights = security.interface_rights(conn, principal["member_id"],
+                                          page["org_unit_id"], page["slug"]) or {}
         versions = conn.execute(
             """SELECT interface_id, version_no, status FROM oams.interfaces
                 WHERE org_unit_id = %s AND slug = %s ORDER BY version_no DESC""",
@@ -4758,23 +4574,55 @@ def api_get_interface(request: Request, interface_id: UUID):
         "updated_at": page["updated_at"].isoformat() if page["updated_at"] else None,
         "versions": [{"interface_id": str(row["interface_id"]), "version_no": row["version_no"],
                       "status": row["status"]} for row in versions],
+        "descriptor": page["descriptor"],
+        # 「可作参考」的页也能读到这里：定义拿得到，条目拿不到。外部 AI 照着一页
+        # 做自己的版本时靠的就是它，而 `can_read` 让它知道这一页自己打不开。
+        "can_read": bool(rights.get("can_read")),
+        "can_base": bool(rights.get("can_base")),
         "url": f"/departments/{page['org_unit_id']}/{page['interface_id']}",
     }
 
 
 def _page_for_app(conn, principal, interface_id):
-    """应用票能碰的页面：必须是这个人在部门范围内看得见的某一版。"""
-    page = conn.execute("SELECT * FROM oams.interfaces WHERE interface_id = %s",
-                        (interface_id,)).fetchone()
-    if page is None:
-        raise HTTPException(status_code=404, detail="没有这个页面")
-    # 部门内照旧；部门外只认页面自己共享出去的那张表（页面设置里授权的部门）。
+    """应用票能碰的页面：必须是这个人在部门范围内看得见的某一版。
+
+    条目（读、写）走这里：**参考权不算**——参考只给定义，条目内容一概不给。
+    """
+
+    page = _one_page(conn, interface_id)
     if not can_access_org_unit(conn, principal["member_id"], page["org_unit_id"]):
         if not security.can_view_interface(conn, principal["member_id"],
                                           page["org_unit_id"], page["slug"]):
             raise HTTPException(
                 status_code=403,
                 detail="这个部门不在你的范围内：你的岗位和被授权的部门都不含它")
+    return page
+
+
+def _page_for_app_or_reference(conn, principal, interface_id):
+    """读**定义**时用的那一支：能打开，或者只拿到「可作参考」。
+
+    参考权本来就是给定义的（`security.can_base_interface` 的 docstring 写着），所以
+    定义出口认它；而条目出口认它就是一个泄漏，两边必须分开，不能图省事共用一个函数。
+    """
+
+    page = _one_page(conn, interface_id)
+    if can_access_org_unit(conn, principal["member_id"], page["org_unit_id"]):
+        return page
+    rights = security.interface_rights(conn, principal["member_id"],
+                                      page["org_unit_id"], page["slug"]) or {}
+    if not (rights.get("can_read") or rights.get("can_base")):
+        raise HTTPException(
+            status_code=403,
+            detail="这个部门不在你的范围内：你的岗位和被授权的部门都不含它")
+    return page
+
+
+def _one_page(conn, interface_id):
+    page = conn.execute("SELECT * FROM oams.interfaces WHERE interface_id = %s",
+                        (interface_id,)).fetchone()
+    if page is None:
+        raise HTTPException(status_code=404, detail="没有这个页面")
     return page
 
 

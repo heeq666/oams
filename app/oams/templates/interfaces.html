@@ -34,7 +34,7 @@
         {% if not i.rights or i.rights.can_read %}
           <a href="/pages/{{ i.org_code }}/{{ i.slug }}">打开填写 →</a>
         {% elif build_target %}
-          <a href="/departments/{{ build_target.org_unit_id }}/copy?based_on={{ i.interface_id }}">照着做一版 →</a>
+          <a href="/departments/{{ build_target.org_unit_id }}/new?based_on={{ i.interface_id }}">照着做一版 →</a>
         {% else %}
           <span class="meta">只可参考</span>
         {% endif %}
