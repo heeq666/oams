@@ -639,6 +639,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 数值与单位同一行、底对齐：单位自己占一行时，120 宽的小卡会被挤成两行，
+   24 号数字下面吊着一个 12 号「件」（B3） */
+.wh-metric-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .wh-metric-unit {
   font-size: 12px;
   color: var(--oams-muted);
@@ -689,7 +699,9 @@
 
 .wh-status-row {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) 72px;
+  /* 标签列跟着内容走，最多 120：原来固定 88，四字以上的状态名一律被截成
+     「等待外部…」，而那正是这一行要说的东西（B3） */
+  grid-template-columns: minmax(88px, max-content) minmax(120px, 1fr) 72px;
   align-items: center;
   /* 标签·条·数值之间 8（规范 §6 模块层 · status_chart） */
   gap: 8px;
@@ -699,8 +711,9 @@
 
 .wh-status-row:last-child { margin-bottom: 0; }
 
-/* 标签列定宽 88，超长截断，别把轨道挤变形。 */
+/* 标签列最宽 120，超长才截断，别把轨道挤变形。 */
 .wh-status-label {
+  max-width: 120px;
   color: var(--oams-muted);
   overflow: hidden;
   text-overflow: ellipsis;

@@ -939,3 +939,32 @@ def test_tabs_grey_out_a_label_with_no_pane():
 def test_tabs_of_only_blank_panes_draw_nothing():
     tree = {"type": "tabs", "params": {"labels": ["概览"]}, "children": []}
     assert 'data-type="tabs"' not in render_interface(page(tree), VALUES, AGGREGATES)
+
+
+# --------------------------------------------------------------------------- #
+# B3 展示层：数字和它的单位在同一行
+# --------------------------------------------------------------------------- #
+
+def test_metric_card_keeps_its_unit_on_the_value_line():
+    """单位单独占一行时，小卡会被挤成两行：24 号数字下面吊一个 12 号「件」。"""
+    descriptor = page({"type": "metric_card", "params": {"metric_key": "dept.DESIGN.qty"}})
+    for metric in descriptor.get("metrics", []):
+        if str(metric.get("metric_key", "")).endswith(".qty"):
+            metric["unit"] = "件"
+    html = render_preview(descriptor)
+    start = html.index('class="wh-metric-line"')
+    value_at = html.index('class="wh-metric-value"', start)
+    unit_at = html.index('class="wh-metric-unit"', start)
+    assert value_at < unit_at, "数值在前、单位在后"
+    assert unit_at < html.index("</article>", start), "单位在这条行容器里收尾，不另起一行"
+
+
+def test_metric_grid_cells_use_the_same_value_line():
+    descriptor = page({"type": "metric_grid",
+                       "params": {"metric_keys": ["dept.DESIGN.qty"], "columns": 2}})
+    for metric in descriptor.get("metrics", []):
+        if str(metric.get("metric_key", "")).endswith(".qty"):
+            metric["unit"] = "件"
+    html = render_preview(descriptor)
+    start = html.index('class="wh-metric-line"')
+    assert html.index('class="wh-metric-unit"', start) < html.index("</section>", start)

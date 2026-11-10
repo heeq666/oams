@@ -4,6 +4,8 @@
 <article class="wh-m wh-display wh-metric-card wh-span-{{ as_int(p.get('span'), 1, low=1, high=4) }}"
          data-type="metric_card" data-metric="{{ key }}">
   <span class="wh-metric-label">{{ metric_name(key) }}</span>
-  <span class="wh-metric-value">{{ aggregate(key, with_unit=False) }}</span>
-  {% if metric_unit(key) %}<span class="wh-metric-unit">{{ metric_unit(key) }}</span>{% endif %}
+  <span class="wh-metric-line">
+    <span class="wh-metric-value">{{ aggregate(key, with_unit=False) }}</span>
+    {% if metric_unit(key) %}<span class="wh-metric-unit">{{ metric_unit(key) }}</span>{% endif %}
+  </span>
 </article>

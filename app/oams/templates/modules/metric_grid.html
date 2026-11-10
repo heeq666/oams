@@ -6,8 +6,10 @@
   {% for key in keys %}
   <div class="wh-metric-cell" data-metric="{{ key }}">
     <span class="wh-metric-label">{{ metric_name(key) }}</span>
-    <span class="wh-metric-value">{{ aggregate(key, with_unit=False) }}</span>
-    {% if metric_unit(key) %}<span class="wh-metric-unit">{{ metric_unit(key) }}</span>{% endif %}
+    <span class="wh-metric-line">
+      <span class="wh-metric-value">{{ aggregate(key, with_unit=False) }}</span>
+      {% if metric_unit(key) %}<span class="wh-metric-unit">{{ metric_unit(key) }}</span>{% endif %}
+    </span>
   </div>
   {% endfor %}
   {% if not keys %}<p class="wh-empty">还没有绑定指标。</p>{% endif %}
