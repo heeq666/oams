@@ -782,6 +782,23 @@ def tab_orphan_labels(module: Any) -> list:
     return labels[len(children_of(module)):]
 
 
+def table_has_values(module: Any) -> bool:
+    """True when at least one declared table cell has a value.
+
+    Read-only tables use this to tell "this page records nothing yet" apart
+    from "this table has no columns at all" (a definition error, which the
+    reader must not be shown at all): a grid of dashes reads as breakage.
+    """
+    for column in _as_columns(params_of(module).get("columns")):
+        key = str(column.get("key") or "")
+        if not key:
+            continue
+        raw = _value_for(key)
+        if raw is not None and str(raw).strip():
+            return True
+    return False
+
+
 def bucket(value: Any, total: Any) -> str:
     """Quantised share for CSS bars: p10..p100 (no inline styles anywhere)."""
     try:
@@ -875,6 +892,7 @@ _ENV.globals.update({
     "as_int": _as_int,
     "as_list": _as_list,
     "as_columns": _as_columns,
+    "table_has_values": table_has_values,
     "gap_of": gap_of,
     "children_of": children_of,
     "rendered_children": rendered_children,

@@ -2,12 +2,11 @@
 {% set p = params_of(module) %}
 {% set cols = as_columns(p.get('columns')) %}
 {% set row_count = as_int(p.get('rows'), 1, low=1, high=5) %}
+{#- 只读视角只画一条记录：一页存的是一份数，画满 rows 行等于把同一条复制 N 遍（B2）。 -#}
+{% set drawn_rows = row_count if inline_widgets() else 1 %}
+{% if cols %}
 <section class="wh-m wh-input wh-table-module{% if inline_widgets() %} wh-table-controls{% endif %}" data-type="table">
-  {% if cols %}
-  {#- data-label 只给窄档换排布用（<=1100px 每条记录拆成一块，字段名靠 ::before 回显）；
-      断点与 static/oams-modules.css 末尾那段 @media (max-width: 1100px) 一致；
-      为什么是 1100 不是 900，见 docs/design/design-system-v1.md §6.1。
-      宽档不读它，视觉不变。 -#}
+  {% if inline_widgets() or table_has_values(module) %}
   <table class="wh-table">
     <thead>
       <tr>
@@ -15,9 +14,11 @@
       </tr>
     </thead>
     <tbody>
-      {% for row in range(row_count) %}
+      {% for row in range(drawn_rows) %}
       <tr>
         {% for col in cols %}
+        {#- data-label 给窄档用：表格按自己有多宽换行时，字段名靠 ::before 回显
+            （见 docs/design/design-system-v1.md §6.1）。宽档不读它。 -#}
         <td data-label="{{ col.get('label') or col.get('key') }}">
           {% set key = col.get('key') %}
           {% if inline_widgets() %}{{ input_for_key(key, labelled=False, prefill=(row == 0)) or static_for(key) }}{% else %}{{ static_for(key) }}{% endif %}
@@ -27,11 +28,17 @@
       {% endfor %}
     </tbody>
   </table>
-  {% if row_count >= 5 %}
+  {% if row_count >= 5 and inline_widgets() %}
   <p class="wh-table-hint">行数已到上限 5，超过请拆成多个表。</p>
   {% endif %}
   {% else %}
-  <p class="wh-empty">{% if inline_widgets() %}缺列配置：这个表还没声明列。{% else %}还没有明细。{% endif %}</p>
+  {#- 有列但一条都没记过：说一句人话，别摆一张全是横线的空表（B2）。 -#}
+  <p class="wh-empty">还没有明细。</p>
   {% endif %}
   {{ private_note(module, spec) }}
 </section>
+{% elif mode == 'preview' %}
+{#- 没有列是「这页的定义缺一块」，只有审这版页面的人该看到；
+    填表的人和只读的人看见它只会以为自己点坏了（B2）。 -#}
+<p class="wh-empty wh-config-error">这个表还没声明列，配页时补上列才能填。</p>
+{% endif %}

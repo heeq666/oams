@@ -611,11 +611,30 @@ def test_timeline_says_there_are_no_milestones_before_anything_is_planned():
     assert empty_lines(render_interface(page(node))) == ["还没有里程碑。"]
 
 
-def test_table_empty_copy_depends_on_the_viewpoint():
-    # 填报的人缺列配置是要去修的错；读的人只是没内容。
+def test_table_without_columns_is_a_definition_error_only_the_reviewer_sees():
+    # 缺列是「这页的定义缺一块」：审这版的人要看到才好打回，
+    # 填表的人和只读的人看见它只会以为自己点坏了（2026-11-10 B2 定）。
     node = {"type": "table", "params": {"columns": []}, "source_fields": ["title", "status"]}
-    assert empty_lines(render_interface(page(node))) == ["缺列配置：这个表还没声明列。"]
-    assert empty_lines(render_read_only(page(node))) == ["还没有明细。"]
+    assert 'data-type="table"' not in render_interface(page(node))
+    assert 'data-type="table"' not in render_read_only(page(node))
+    assert "这个表还没声明列，配页时补上列才能填。" in render_preview(page(node))
+
+
+def test_readonly_table_with_nothing_recorded_says_so():
+    # 有列、但一条都没记过：说一句人话，不摆一张全是横线的空表。
+    node = {"type": "table", "params": {"columns": [{"key": "f_title", "label": "款号"}]},
+            "source_fields": ["title"]}
+    html = render_read_only(page(node), {}, {})
+    assert empty_lines(html) == ["还没有明细。"]
+    assert "<table" not in html
+
+
+def test_readonly_table_draws_one_record_not_rows_copies():
+    # rows: 2 是「填表时给两行」，不是「这条数据有两条」：只读画两行等于把同一条复制一遍。
+    node = {"type": "table", "params": {"columns": [{"key": "f_title", "label": "款号"}], "rows": 2},
+            "source_fields": ["title"]}
+    html = render_read_only(page(node), VALUES, {})
+    assert html.count("<tr>") == 2  # 一行表头 + 一行明细
 
 
 def test_table_honours_a_flat_rows_count():
