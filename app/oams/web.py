@@ -45,7 +45,8 @@ from pydantic import ValidationError
 from oams import admin_labels, api, collab, metrics, review as review_rules, security
 from oams.config import settings
 from oams.db import connection
-from oams.descriptor import recorded_approval_gaps, validate_descriptor
+from oams.descriptor import (action_applies, action_for, action_target_status,
+                             entry_actions, recorded_approval_gaps, validate_descriptor)
 from oams.render import RenderError, render_interface, render_preview, render_read_only
 from oams.schemas import (AssignmentCreate, GrantCreate, MemberCreate, OrgUnitCreate, PositionCreate,
                              ReportCreate, WorkItemCreate)
@@ -175,6 +176,9 @@ ROLLUP_STATE_BADGES = {"counted": "human", "counted_unlinked": "vacant",
                        "rolled": "human", "unlinked": "vacant", "draft": "decision",
                        "retracted": ""}
 ENTRY_LINK_PURPOSE = "oams:entry-link:v1"
+#: 一条记录上的动作（通过 / 驳回）用这张令牌：与「关联工作项」「填写」各一张，
+#: 一张令牌只能做它对应的那件事。
+ENTRY_ACTION_PURPOSE = "oams:entry-action:v1"
 
 
 def _with_rollup_labels(rows, descriptor=None):
@@ -1390,6 +1394,11 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         # number the board shows.
         recent = _with_rollup_labels(api.page_entries(conn, interface_id),
                                      descriptor=descriptor)[:12]
+        # 每条记录带上「现在能点哪几个动作」：动作是页面自己声明的（通过／驳回），
+        # 起止词都是部门自己的话；能点什么由记录当前的状态词决定，不由按钮决定。
+        for item in recent:
+            item["actions"] = [action for action in entry_actions(descriptor)
+                               if action_applies(action, item.get("status_word") or "")]
         rollup = api.build_department_aggregates(conn, org_unit_id, descriptor=descriptor,
                                                 interface_id=interface_id)
         # The link form: the work items an entry may be attached to, and the
@@ -1463,6 +1472,7 @@ def _workbench_page(request: Request, principal: dict[str, Any], org_unit_id: UU
         "link_positions": link_positions,
         "link_purpose": ENTRY_LINK_PURPOSE,
         "link_csrf": _form_token(request, ENTRY_LINK_PURPOSE),
+        "action_csrf": _form_token(request, ENTRY_ACTION_PURPOSE),
         "work_item_csrf": _form_token(request, "oams:work-item-form:v1"),
         "can_manage_work_items": can_manage_work_items,
         # The page holds two different forms (fill it in, submit it for review),
@@ -1593,6 +1603,105 @@ def entry_link(request: Request, org_unit_id: UUID, interface_id: UUID, entry_id
     except ForeignKeyViolation:
         return RedirectResponse(url=base + "?error=work-item-invalid", status_code=303)
     return RedirectResponse(url=base + "?saved=linked", status_code=303)
+
+
+@router.post("/departments/{org_unit_id}/{interface_id}/entries/{entry_id}/transition")
+def entry_transition(request: Request, org_unit_id: UUID, interface_id: UUID, entry_id: UUID,
+                     csrf: str = Form(...), action: str = Form(...), note: str = Form("")):
+    """Move one record to another status with the action the page itself declared.
+
+    This is the layer a leave request needs and a weekly report does not: the
+    department says「通过」「驳回」on the record, and the record changes. The page
+    declares the moves (`actions`), so the same framework serves 请假 and 报销
+    without either one being hard-coded here.
+
+    What this does NOT do: it does not decide who may approve. Anyone who can edit
+    this page's entries can press the button, and the audit line names them --
+    a separate「审批人」permission would be a different feature with a different
+    design (per-position routing), not a hidden default here.
+    """
+    try:
+        principal = _require(request, "workforce.reports", "read")
+        _require(request, "workforce.reports", "submit")
+    except _NotSignedIn:
+        return RedirectResponse(url="/login?next=/departments", status_code=302)
+    except _NotPermitted:
+        return _denied(request, "改记录状态需要 workforce.reports/read 与 submit 权限。")
+    api.require_app_scope(principal, "entries:write")
+    _check_form_token(request, csrf, ENTRY_ACTION_PURPOSE)
+    base = f"/departments/{org_unit_id}/{interface_id}"
+    with connection() as conn:
+        unit = _resolve_department(conn, principal, org_unit_id)
+        if unit is None:
+            return _denied(request, "你不在这个部门的范围内。")
+        page = _page_version(conn, org_unit_id, interface_id)
+        if page is None:
+            return _denied(request, "这个页面不存在或不属于该部门。")
+        can_view, can_fill = _page_access(conn, principal, page)
+        if not can_view:
+            return _denied(request, "你不在这个部门的范围内。")
+        if not can_fill:
+            return _denied(request, "这一页你只能查看，不能改它的记录：这一页归所属部门管。")
+        if page["status"] == "archived":
+            return _archived_writer_response(org_unit_id, page, conn)
+        descriptor = page["descriptor"]
+        entry = conn.execute(
+            """SELECT e.entry_id, e.title, e.status, e.extra, e.interface_id
+                 FROM oams.interface_entries e
+                WHERE e.entry_id = %s AND e.interface_id IN (
+                    SELECT v.interface_id FROM oams.interfaces v
+                     WHERE v.org_unit_id = %s AND v.slug = %s)""",
+            (entry_id, org_unit_id, page["slug"])).fetchone()
+        if entry is None:
+            return _denied(request, "找不到这条记录。")
+        declared = action_for(descriptor, action)
+        if declared is None:
+            return RedirectResponse(url=base + "?error=" + urllib.parse.quote("这一页没有这个动作。"), status_code=303)
+        word = _entry_status_word(descriptor, entry)
+        if not action_applies(declared, word):
+            # 表单带回来的动作不算数：能不能点由这条记录现在是什么状态决定。
+            return RedirectResponse(url=base + "?error=" + urllib.parse.quote("这条记录现在的状态不能点这个动作。"), status_code=303)
+        target_word = str(declared.get("to") or "")
+        target_status = action_target_status(descriptor, declared)
+        if target_status is None:
+            return RedirectResponse(url=base + "?error=" + urllib.parse.quote("这一页没有这个动作。"), status_code=303)
+        reason = note.strip()
+        if declared.get("note") and not reason:
+            return RedirectResponse(url=base + "?error=" + urllib.parse.quote("驳回要写一句原因，看的人才知道该改什么。"), status_code=303)
+        status_field = next(
+            (str(f.get("key")) for f in (descriptor.get("fields") or [])
+             if isinstance(f, dict) and f.get("map_to") == "status" and f.get("key")),
+            None)
+        # 「阻塞」这个状态在库里必须带一句原因（schema 的 check 约束就是这么写的），
+        # 而驳回的那句原因正好就是它——同一句话不让人在第二个框里再打一遍。
+        # 反过来，从阻塞移到别的状态时把旧原因清掉：留着会让人以为它还在被卡着。
+        blocked_reason = reason if target_status == "blocked" else None
+        clear_blocked = target_status != "blocked" and entry["status"] == "blocked"
+        if status_field:
+            conn.execute(
+                """UPDATE oams.interface_entries
+                      SET status = %s,
+                          extra = jsonb_set(COALESCE(extra, '{}'::jsonb),
+                                            %s::text[], to_jsonb(%s::text), true),
+                          blocked_reason = COALESCE(%s, CASE WHEN %s THEN NULL
+                                                             ELSE blocked_reason END)
+                    WHERE entry_id = %s""",
+                (target_status, [status_field], target_word, blocked_reason, clear_blocked,
+                 entry_id))
+        else:
+            conn.execute(
+                """UPDATE oams.interface_entries
+                      SET status = %s,
+                          blocked_reason = COALESCE(%s, CASE WHEN %s THEN NULL
+                                                             ELSE blocked_reason END)
+                    WHERE entry_id = %s""",
+                (target_status, blocked_reason, clear_blocked, entry_id))
+        api.audit(conn, principal["member_id"], "interface_entry.transitioned", "interface_entry",
+                  entry_id,
+                  f"把「{entry['title']}」从「{word}」改成「{target_word}」"
+                  + (f"｜{reason}" if reason else ""),
+                  {"from": word, "to": target_word, "action": action})
+    return RedirectResponse(url=base + "?saved=transitioned", status_code=303)
 
 
 @router.get("/departments/{org_unit_id}/{interface_id}/entries.json")

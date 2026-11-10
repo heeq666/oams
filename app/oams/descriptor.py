@@ -103,6 +103,13 @@ REVIEWED_CAPABILITIES: tuple[str, ...] = ("aggregate:read:company",)
 #: `CAPABILITIES`, so removing it from the vocabulary cannot silently orphan it.
 UNIMPLEMENTED_CAPABILITIES: tuple[str, ...] = ("export:dept",)
 
+#: 一页最多声明几条「记录上的动作」。
+#:
+#: 动作是部门自己的话（「通过」「驳回」），不是系统状态名：`from` / `to` 都必须是
+#: `status_map` 里已经出现过的词，所以校验器不需要另一套词汇表，也不用猜部门
+#: 说的「已批」到底对应哪个标准态。
+ENTRY_ACTION_LIMIT = 8
+
 #: Reject-reason codes (contract §3 / concept §4.4). Every v0.2 problem message
 #: starts with one of them, in brackets, before the path.
 REJECT_CODES: tuple[str, ...] = (
@@ -114,6 +121,9 @@ REJECT_CODES: tuple[str, ...] = (
     "MODULE_NOT_WHITELISTED",
     "LAYOUT_TOO_DEEP",
     "DATA_RULE_VIOLATION",
+    "ACTION_UNKNOWN_STATE",
+    "ACTION_DUPLICATE_KEY",
+    "ACTION_TOO_MANY",
 )
 
 #: Top-level keys that only a v0.2 descriptor may carry.
@@ -316,6 +326,104 @@ def _check_status_map(problems: _Problems, descriptor: dict) -> None:
         if target not in STANDARD_STATUSES:
             problems.add("STATUS_UNMAPPED", f"status_map[{word}]",
                          f"{target!r} is not one of {STANDARD_STATUSES}")
+
+
+def _check_actions(problems: _Problems, descriptor: dict) -> None:
+    """Declared per-record actions (通过 / 驳回), in the department's own words.
+
+    Optional. A page without it behaves exactly as before, which is why this is a
+    new key rather than a reinterpretation of `status_map`.
+
+    Every `from` / `to` must already be a word in `status_map`: the action speaks
+    the department's language, and the department's words are the ones it maps.
+    That also means no second vocabulary can drift away from the first.
+    """
+    actions = descriptor.get("actions")
+    if actions is None:
+        return
+    if not isinstance(actions, list):
+        problems.add("DATA_RULE_VIOLATION", "actions", "must be a list")
+        return
+    if len(actions) > ENTRY_ACTION_LIMIT:
+        problems.add("ACTION_TOO_MANY", "actions",
+                     f"at most {ENTRY_ACTION_LIMIT} actions, got {len(actions)}")
+    status_map = descriptor.get("status_map")
+    words = set(status_map) if isinstance(status_map, dict) else set()
+    seen: set[str] = set()
+    for index, action in enumerate(actions):
+        path = f"actions[{index}]"
+        if not isinstance(action, dict):
+            problems.add("DATA_RULE_VIOLATION", path, "must be an object")
+            continue
+        key = action.get("key")
+        if not isinstance(key, str) or not key.strip():
+            problems.add("DATA_RULE_VIOLATION", f"{path}.key", "must be a non-empty string")
+        elif key in seen:
+            problems.add("ACTION_DUPLICATE_KEY", f"{path}.key", f"{key!r} is declared twice")
+        else:
+            seen.add(key)
+        label = action.get("label")
+        if not isinstance(label, str) or not label.strip():
+            problems.add("DATA_RULE_VIOLATION", f"{path}.label",
+                         "must be a non-empty string (the button's words)")
+        source = action.get("from")
+        if (not isinstance(source, list) or not source
+                or any(not isinstance(w, str) for w in source)):
+            problems.add("ACTION_UNKNOWN_STATE", f"{path}.from",
+                         "must be a non-empty list of the department's status words")
+        else:
+            unknown = [w for w in source if w not in words]
+            if unknown:
+                problems.add("ACTION_UNKNOWN_STATE", f"{path}.from",
+                             f"{unknown!r} not in status_map ({sorted(words)!r})")
+        target = action.get("to")
+        if not isinstance(target, str) or not target:
+            problems.add("ACTION_UNKNOWN_STATE", f"{path}.to", "must be a status word")
+        elif target not in words:
+            problems.add("ACTION_UNKNOWN_STATE", f"{path}.to",
+                         f"{target!r} not in status_map ({sorted(words)!r})")
+        elif isinstance(source, list) and target in source:
+            problems.add("ACTION_UNKNOWN_STATE", f"{path}.to",
+                         f"{target!r} is also in `from`: an action must move the record")
+        if "note" in action and not isinstance(action["note"], bool):
+            problems.add("DATA_RULE_VIOLATION", f"{path}.note", "must be true or false")
+
+
+def entry_actions(descriptor: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The actions a page offers, normalized; unreadable ones are skipped.
+
+    Validation rejects malformed actions, so this only has to be defensive about
+    documents that were stored before the rules existed.
+    """
+    if not isinstance(descriptor, dict):
+        return []
+    raw = descriptor.get("actions")
+    if not isinstance(raw, list):
+        return []
+    return [dict(action) for action in raw
+            if isinstance(action, dict) and action.get("key") and action.get("from")
+            and isinstance(action.get("from"), list)]
+
+
+def action_for(descriptor: dict[str, Any] | None, key: str) -> dict[str, Any] | None:
+    for action in entry_actions(descriptor):
+        if action.get("key") == key:
+            return action
+    return None
+
+
+def action_applies(action: dict[str, Any], word: str) -> bool:
+    """Does this action start from the record's current word?"""
+    return word in (action.get("from") or [])
+
+
+def action_target_status(descriptor: dict[str, Any], action: dict[str, Any]) -> str | None:
+    """The standard status the action lands on, through the page's own status_map."""
+    status_map = descriptor.get("status_map") if isinstance(descriptor, dict) else None
+    if not isinstance(status_map, dict):
+        return None
+    target = action.get("to")
+    return status_map.get(target) if isinstance(target, str) else None
 
 
 def _check_modules_legacy(problems: _Problems, modules: list, fields: list[dict],
@@ -783,6 +891,7 @@ def validate_descriptor(descriptor: dict[str, Any],
     )
 
     _check_status_map(problems, descriptor)
+    _check_actions(problems, descriptor)
 
     _check_v01_only_legacy(problems, descriptor, version)
 

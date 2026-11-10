@@ -29,6 +29,7 @@
     {% if saved == 'withdrawn' %}<div class="flash">已撤回提交，页面回到待提交审核状态。试填内容都保留着。</div>
     {% elif saved == 'review' %}<div class="flash">已提交审核。部门负责人通过后就正式使用；要对外公开、要进公司汇总、或这一版是拿别的部门的页面做底子的，还会转到公司终审。</div>
     {% elif saved == 'linked' %}<div class="flash">{{ '已更新关联。页面还没正式使用，这条汇报仍只在测试区。' if draft_mode else '已更新关联。汇报关联到工作项后，才会计入公司汇总。' }}</div>
+    {% elif saved == 'transitioned' %}<div class="flash">已改。下面那条记录的状态已经变了，谁在什么时候改的记在审计里。</div>
     {% elif saved %}<div class="flash">{{ '已保存到测试区——页面还没正式使用，这条不计入公司汇总。' if draft_mode else '已保存。关联到工作项后，这条才会计入公司汇总。' }}</div>{% endif %}
     {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
@@ -131,6 +132,25 @@
             <span class="pos">本部门还没有未完结的工作项，先在下面建一个。</span>
             {% endif %}
           </form>
+          {% endif %}
+          {% if can_fill and e.actions %}
+          {# 部门自己声明的动作（通过／驳回）。能点哪几个由这条记录现在的状态词决定，
+             按钮只是把那个动作提交回来；改不改得动由后端重新判一遍。 #}
+          <div class="row1" style="gap:8px;align-items:flex-end;margin-top:8px">
+            {% for action in e.actions %}
+            <form method="post"
+                  action="/departments/{{ unit.org_unit_id }}/{{ page.interface_id }}/entries/{{ e.entry_id }}/transition"
+                  class="row1" style="gap:8px;align-items:flex-end">
+              <input type="hidden" name="csrf" value="{{ action_csrf }}">
+              <input type="hidden" name="action" value="{{ action.key }}">
+              {% if action.note %}
+              <input type="text" name="note" placeholder="写一句原因" required maxlength="200"
+                     aria-label="{{ action.label }}的原因">
+              {% endif %}
+              <button type="submit" class="{{ 'link' if not action.note else '' }}">{{ action.label }}</button>
+            </form>
+            {% endfor %}
+          </div>
           {% endif %}
         </li>
         {% endfor %}

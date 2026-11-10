@@ -112,6 +112,7 @@ def test_constants_are_frozen():
         "FIELD_UNMAPPED", "STATUS_UNMAPPED", "METRIC_UNDEFINED", "CAPABILITY_ESCALATION",
         "CAPABILITY_NOT_IMPLEMENTED",
         "MODULE_NOT_WHITELISTED", "LAYOUT_TOO_DEEP", "DATA_RULE_VIOLATION",
+        "ACTION_UNKNOWN_STATE", "ACTION_DUPLICATE_KEY", "ACTION_TOO_MANY",
     )
     # Whatever is marked unimplemented must still be a *declared* capability:
     # otherwise the mark points at nothing, and a later removal from the frozen
