@@ -771,6 +771,51 @@ def interface_audience(conn, owner_org_unit_id: Any, slug: str) -> list[dict[str
     ]
 
 
+def reference_pages_for(conn, member_id: Any) -> list[dict[str, Any]]:
+    """别人开给我的页：哪几页我可以照着做一版，哪几页我连条目也能看。
+
+    「可作参考」这件事必须在**取定义之前**就能被发现——否则一个外部 AI 手里有票、
+    有工具，却不知道有哪一页可以照着做，这条路就只有人来告诉它页面编号。所以这里
+    按「我坐的部门（含祖先）」把开给我的行拉出来，和 `interface_rights` 用同一条座位链
+    算，不另写一套判据。
+
+    自己部门的页不算「别人开给我的」：本部门页面本来就能看能填，`interface_access`
+    也不收录它（见 `interface_audience`）；那条规矩在这里不复述一遍判据。
+    """
+    chain = _seat_chain(conn, member_id)
+    if not chain:
+        return []
+    rows = conn.execute(
+        """SELECT i.interface_id, i.slug, i.name, i.org_unit_id,
+                  u.org_code, u.name AS org_name,
+                  a.can_read, a.can_write, a.can_base
+             FROM oams.interface_access a
+             JOIN oams.interfaces i
+               ON i.org_unit_id = a.owner_org_unit_id
+              AND i.slug = a.slug
+              AND i.status = 'active'
+             JOIN oams.org_units u ON u.org_unit_id = a.owner_org_unit_id
+            WHERE a.org_unit_id = ANY(%s)
+              AND (a.can_base OR a.can_read)
+            ORDER BY u.org_code, i.slug""",
+        (list(chain),),
+    ).fetchall()
+    return [
+        {
+            "interface_id": str(row["interface_id"]),
+            "slug": row["slug"],
+            "name": row["name"],
+            "from_org_unit_id": str(row["org_unit_id"]),
+            "from_org_code": row["org_code"],
+            "from_org_name": row["org_name"],
+            "can_read": bool(row["can_read"]),
+            "can_write": bool(row["can_write"]),
+            "can_base": bool(row["can_base"]),
+        }
+        for row in rows
+    ]
+
+
 def _reachable_by_audience(conn, member_id: Any, owner_org_unit_id: Any, slug: str,
                            column: str) -> bool:
     """祖先链上有没有一行把这一页开给了这个人所在的部门。

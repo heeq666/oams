@@ -986,7 +986,7 @@ class ToolRegistry:
     def __init__(self, context: ToolContext | None = None,
                  specs: tuple[ToolSpec, ...] | None = None) -> None:
         self.context = context or ToolContext()
-        #: 默认就是沙盒那 12 个工具；`live.py` 的三个（走 HTTP 调真站点）由
+        #: 默认就是沙盒那 12 个工具；`live.py` 那几个（走 HTTP 调真站点）由
         #: `build_live_registry` 传进来，不塞进 TOOL_SPECS——它们不需要沙盒的
         #: 能力票，守卫在站点那一侧。
         self._specs = tuple(specs) if specs is not None else TOOL_SPECS

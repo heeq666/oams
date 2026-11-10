@@ -99,7 +99,7 @@ OAMS 自带 MCP 服务（`oams-interface`）。下面三个工具**不连数据�
 
 顺序：`oams_departments` → 写 descriptor → `oams_check_descriptor` 到通过 → `oams_submit_page`。
 
-**照着一页做自己部门一版**：`oams_page_definition` 拿来那一页的定义 → 换掉部门码、岗位码、页面编号和指标名的部门前缀 → 走同一条 `oams_check_descriptor` → `oams_submit_page`。参考权只给定义，那条路上读条目一律 403；要是这不成立，说明站点把「参考」当成了「能看」。
+**照着一页做自己部门一版**：`oams_departments` 会把别人开给你「可作参考」的页连编号一起列出来——不用问人要编号；`oams_page_definition` 拿那份定义 → 换掉部门码、岗位码、页面编号和指标名的部门前缀 → 走同一条 `oams_check_descriptor` → `oams_submit_page`。参考权只给定义，那条路上读条目一律 403；要是这不成立，说明站点把「参考」当成了「能看」。
 
 **它不会静默退回本地沙盒**：报「还没拿到票」就是让你回第 1 步请人点一次「允许」。沙盒里那些读模块目录、预览渲染的工具照旧可用，但它们不落库。
 

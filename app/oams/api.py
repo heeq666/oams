@@ -24,7 +24,7 @@ from oams.security import (accessible_org_unit_ids, active_org_unit_ids,
                               has_all_scope_grant, current_principal,
                               has_company_scope, has_permission, issue_session, principal_for_token,
                               principal_from_request, readable_org_unit_ids,
-                              readable_sensitive_fields,
+                              readable_sensitive_fields, reference_pages_for,
                               require_org_unit_access,
                               require_permission, revoke_session)
 from oams.sensitive_fields import MEMBER_READ_FIELDS, project_member_row
@@ -134,6 +134,7 @@ def me(principal: dict = Depends(current_principal)):
             (principal["member_id"],),
         ).fetchall()
         writable, writable_all, writable_note = writable_org_units(conn, principal["member_id"])
+        reference_pages = reference_pages_for(conn, principal["member_id"])
         authorization = live_app_authorization(principal)
     app_block = None
     if authorization is not None:
@@ -149,7 +150,8 @@ def me(principal: dict = Depends(current_principal)):
     return {"member_id": principal["member_id"], "display_name": principal["display_name"],
             "assignments": assignments,
             "writable_org_units": writable, "writable_all": writable_all,
-            "writable_note": writable_note, "app": app_block}
+            "writable_note": writable_note, "reference_pages": reference_pages,
+            "app": app_block}
 
 
 @app.get("/v1/org-units")

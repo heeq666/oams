@@ -1,6 +1,6 @@
 """Three MCP tools that act on a running OAMS over HTTP.
 
-Why these three live apart from `tools.py`: the tools over there are a contract
+Why the live tools sit apart from `tools.py`: the tools over there are a contract
 sandbox (an in-memory store, no database). These three must do *real* work --
 create a page in a department and send it for review -- and they do it the same
 way an external AI would: with a ticket, over `/v1`.
@@ -394,12 +394,23 @@ def _departments(context: Any, arguments: dict[str, Any]) -> ToolResult:
     for unit in units:
         positions = "、".join(str(item.get("position_code")) for item in (unit.get("positions") or []))
         lines.append(f"- {unit.get('org_code')}（{unit.get('name')}）：岗位 {positions or '（没有在用岗位）'}")
+    pages = me.get("reference_pages") or []
+    if pages:
+        lines.append("")
+        lines.append("别人开给你的页（定义能读；照它做一版时，换成你自己的部门码、岗位码、页面编号和指标前缀）：")
+        for page in pages:
+            what = "条目也能看" if page.get("can_read") else "只能参考，条目看不到"
+            lines.append(f"- {page.get('from_org_code')}（{page.get('from_org_name')}）"
+                         f"{page.get('slug')}「{page.get('name')}」——{what}；"
+                         f"用 oams_page_definition 取定义，interface_id 填 {page.get('interface_id')}")
+    else:
+        lines.append("别人还没有开给你可照着做的页：要么自己从空页面写，要么请他们开一页「可作参考」。")
     if units:
         lines.append("写法：descriptor 里 org_unit_code 填上面的部门码，position_codes 填该部门列出的岗位码；"
                      "写完先 oams_check_descriptor，再 oams_submit_page。")
     return _ok(summary="\n".join(lines), member_id=me.get("member_id"),
                display_name=me.get("display_name"), writable_all=me.get("writable_all"),
-               org_units=units, app=app or None)
+               org_units=units, reference_pages=pages, app=app or None)
 
 
 @_guarded
@@ -701,7 +712,7 @@ LIVE_TOOLS_BY_NAME = {spec.name: spec for spec in LIVE_TOOL_SPECS}
 
 
 def build_live_registry(**kwargs: Any):
-    """The registry the stdio server hands out: the 12 sandbox tools + these three.
+    """The registry the stdio server hands out: the 12 sandbox tools + the live ones.
 
     Kept as a function so a test can build one with its own store/audit and
     inspect it; the defaults of `build_registry` stay at 12 so the sandbox

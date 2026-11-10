@@ -32,6 +32,8 @@ BUILD_SCOPES = ["interfaces:draft", "entries:read:dept"]
 
 SHARED_SLUG = "ref-parcel-lookup"
 PRIVATE_SLUG = "ref-expense-ledger"
+#: 有一行授权的记录、但三格全假：既不能看也不能参考，不该出现在「别人开给你的页」里。
+BLIND_SLUG = "ref-blind-lookup"
 
 
 def _descriptor(interface_id: str, *, name: str, slug: str, org: str, positions: list[str]) -> dict:
@@ -116,7 +118,8 @@ def world(db_ready):
             ).fetchone()[0]
             pages = {}
             for slug, display, org in ((SHARED_SLUG, "快递代收台账", "FIN"),
-                                       (PRIVATE_SLUG, "报销明细台账", "FIN")):
+                                       (PRIVATE_SLUG, "报销明细台账", "FIN"),
+                                       (BLIND_SLUG, "对不上的台账", "FIN")):
                 page_id = str(__import__("uuid").uuid4())
                 descriptor = _descriptor(page_id, name=display, slug=slug,
                                          org=org, positions=["FIN_LEAD"])
@@ -134,6 +137,12 @@ def world(db_ready):
                        (owner_org_unit_id, slug, org_unit_id, can_read, can_write, can_base, granted_at)
                    VALUES (%s, %s, %s, false, false, true, now())""",
                 (fin_org, SHARED_SLUG, ga_org))
+            # 一行三格全假的授权：表格里躺着，但什么都没给。
+            conn.execute(
+                """INSERT INTO oams.interface_access
+                       (owner_org_unit_id, slug, org_unit_id, can_read, can_write, can_base, granted_at)
+                   VALUES (%s, %s, %s, false, false, false, now())""",
+                (fin_org, BLIND_SLUG, ga_org))
             members = {code: str(member_id) for code, member_id in conn.execute(
                 "SELECT employee_code, member_id FROM oams.workforce_members").fetchall()}
         with suite.serve(url) as base:
@@ -261,3 +270,51 @@ def test_the_live_tool_says_which_page_it_cannot_reach(world, monkeypatch):
     body = result.to_dict()
     assert not result.ok, body
     assert body.get("status") == 403, body
+
+
+# ---------------------------------------------------------------------------
+# ③ 起点要能被发现：AI 拿到票之后，怎么知道有哪一页可以照着做
+# ---------------------------------------------------------------------------
+
+
+def test_me_lists_the_pages_others_opened_to_you(world):
+    """不列出来，AI 就只能等人告诉它页面编号——这条路的第一步就断了。"""
+
+    token = _ticket(world, "GA001", BUILD_SCOPES)
+    status, body = _call(world["base"], "GET", "/v1/me", token=token)
+    assert status == 200, body
+    listed = {page["slug"]: page for page in body["reference_pages"]}
+    # 三格全假的那一页不算：清单上是「能拿去用的页」，不是「表格里出现过的行」。
+    assert set(listed) == {SHARED_SLUG}, body["reference_pages"]
+    page = listed[SHARED_SLUG]
+    assert page["interface_id"] == world["pages"][SHARED_SLUG]
+    assert page["can_base"] is True
+    # 只有参考权：条目看不到，这一点必须一起报出来，别让 AI 以为能读数据。
+    assert page["can_read"] is False
+    assert page["from_org_code"] == "FIN"
+    # 没开给它的页不在清单里。
+    assert PRIVATE_SLUG not in listed
+
+
+def test_me_does_not_call_your_own_pages_a_reference(world):
+    """自己部门的页能看能填，不是「别人开给你的参考」，混进来会让 AI 反复照抄自己。"""
+
+    token = _ticket(world, "FIN001", BUILD_SCOPES)
+    status, body = _call(world["base"], "GET", "/v1/me", token=token)
+    assert status == 200, body
+    assert body["reference_pages"] == [], body["reference_pages"]
+
+
+def test_departments_tool_points_at_the_reference_page(world, monkeypatch):
+    """AI 的第一声问话里就得有它：哪一页可以照着做、用哪个编号去取定义。"""
+
+    token = _ticket(world, "GA001", BUILD_SCOPES)
+    spec = _live_tool(world, token, monkeypatch, "oams_departments")
+    result = spec.handler(None, {})
+    body = result.to_dict()
+    assert result.ok, json.dumps(body, ensure_ascii=False)[:800]
+    summary = body["summary"]
+    assert SHARED_SLUG in summary, summary
+    assert world["pages"][SHARED_SLUG] in summary, summary
+    assert "条目看不到" in summary, summary
+    assert [p["slug"] for p in body["reference_pages"]] == [SHARED_SLUG]
