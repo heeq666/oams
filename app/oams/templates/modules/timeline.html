@@ -16,11 +16,19 @@
   <p class="wh-empty">还没有里程碑。</p>
   {% endif %}
   {% if inline_widgets() %}
-  <div class="wh-grid-3">
-    {{ input_for('title') }}
-    {{ input_for('due_at') }}
-    {{ input_for('status') }}
-  </div>
+  {#- 节点表单默认收在「加一个节点」后面：空表时它是第一步，
+      有节点时它只是「再加一个」，不该一开始就占掉半屏（B4）。 -#}
+  <details class="wh-timeline-add"{% if items %} open{% endif %}>
+    <summary class="wh-btn-sm">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      {% if items %}加一个节点{% else %}加第一个节点{% endif %}
+    </summary>
+    <div class="wh-grid-3">
+      {{ input_for('title') }}
+      {{ input_for('due_at') }}
+      {{ input_for('status') }}
+    </div>
+  </details>
   {% else %}
   <div class="wh-row">
     <span class="wh-title">{{ value_of('title') or '未填写里程碑' }}</span>

@@ -968,3 +968,19 @@ def test_metric_grid_cells_use_the_same_value_line():
     html = render_preview(descriptor)
     start = html.index('class="wh-metric-line"')
     assert html.index('class="wh-metric-unit"', start) < html.index("</section>", start)
+
+
+# --------------------------------------------------------------------------- #
+# B4 图标与小动作：加一个节点
+# --------------------------------------------------------------------------- #
+
+def test_timeline_hides_the_node_form_behind_a_disclosure():
+    empty = render_interface(page({"type": "timeline", "params": {"items": []}}))
+    assert 'class="wh-timeline-add"' in empty
+    assert "加第一个节点" in empty
+    assert " open" not in empty.split('class="wh-timeline-add"', 1)[1].split(">", 1)[0]
+
+    filled = render_interface(page({"type": "timeline",
+                                    "params": {"items": [{"text": "定稿", "status": "done"}]}}))
+    assert "加一个节点" in filled
+    assert " open" in filled.split('class="wh-timeline-add"', 1)[1].split(">", 1)[0]

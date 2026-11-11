@@ -1016,3 +1016,35 @@
   line-height: 16px;
   color: var(--oams-muted);
 }
+
+/* --- 模块层小动作：加一个节点（B4） --- */
+/* 按钮 28 高、描边而不是实心：它是模块里的辅助动作，抢了实心色就成了这一屏的主按钮。 */
+.wh-btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  line-height: 28px;
+  border: 1px solid var(--oams-line);
+  border-radius: var(--oams-radius-sm);
+  background: var(--oams-bg);
+  color: var(--oams-ink);
+  cursor: pointer;
+  list-style: none;
+}
+
+.wh-btn-sm:hover { background: var(--oams-bg-muted); }
+.wh-btn-sm:disabled { opacity: .5; cursor: default; }
+.wh-btn-sm:disabled:hover { background: var(--oams-bg); }
+.wh-btn-sm svg { width: 14px; height: 14px; color: var(--oams-muted); }
+
+/* 加一个节点：默认收起，空表时它是第一步，有节点时也只是「再加一个」。
+   收起时必须真收起来：新版浏览器把 details 的内容交给 ::details-content 管，
+   模块层的 display:grid 会把它顶成常显，所以显式写一条。 */
+.wh-timeline-add { margin-top: 12px; }
+.wh-timeline-add:not([open]) > *:not(summary) { display: none; }
+.wh-timeline-add summary::-webkit-details-marker { display: none; }
+.wh-timeline-add summary::marker { content: ''; }
+.wh-timeline-add[open] summary { margin-bottom: 8px; }
